@@ -106,6 +106,32 @@ fn shot(name: &'static str, open: f32, page: Page) -> Shot {
     Shot { name, open, wobble: 0.0, page, hover: None, setup: nothing, ticks: 180 }
 }
 
+/// Fake events around "now" for the calendar frames.
+fn demo_calendar(vm: &mut ViewModel, _: &mut Settings, _: &mut UiState, _: u64) {
+    use crate::calendar::{CalendarView, Event, FeedState, Join};
+    let now = vm.now.timestamp();
+    let ev = |uid: &str, title: &str, start: i64, mins: i64, join: Option<(&str, &str)>| Event {
+        uid: uid.into(),
+        start,
+        end: start + mins * 60,
+        title: title.into(),
+        location: String::new(),
+        all_day: false,
+        join: join.map(|(p, u)| Join { platform: p.into(), url: u.into() }),
+    };
+    vm.calendar_feeds = 1;
+    vm.calendar = CalendarView {
+        events: vec![
+            ev("a", "Design review", now + 12 * 60, 45, Some(("Google Meet", "https://meet.google.com/abc-defg-hij"))),
+            ev("b", "1:1 with Rina", now + 3 * 3600, 30, Some(("Zoom", "https://zoom.us/j/123"))),
+            ev("c", "Sprint planning", now + 26 * 3600, 60, Some(("Teams", "https://teams.microsoft.com/l/meetup-join/x"))),
+        ],
+        state: FeedState::Ok,
+        error: String::new(),
+        updated: Some(now),
+    };
+}
+
 fn shots() -> Vec<Shot> {
     vec![
         Shot { setup: |vm, _, _, _| vm.track.playback = teardrop_core::Playback::Stopped, ..shot("01-collapsed-clock", 0.0, Page::Music) },
@@ -156,7 +182,79 @@ fn shots() -> Vec<Shot> {
         Shot { setup: |_, _, ui, _| ui.input = Some("Draft the launch notes".into()), ..shot("24-page-tasks-typing", 1.0, Page::Tasks) },
         shot("25-page-clipboard", 1.0, Page::Clipboard),
         shot("26-page-today", 1.0, Page::Today),
+        Shot { setup: demo_calendar, ..shot("26i-today-agenda", 1.0, Page::Today) },
+        Shot {
+            setup: |vm, _, _, _| {
+                demo_calendar(vm, &mut Settings::default(), &mut UiState::new(Page::Music), 0);
+                let ev = vm.calendar.events[0].clone();
+                vm.calendar.events[0].start = vm.now.timestamp() + 180;
+                vm.calendar.events[0].end = vm.now.timestamp() + 1980;
+                let _ = ev;
+            },
+            ..shot("26j-collapsed-meeting", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, _, _, _| {
+                demo_calendar(vm, &mut Settings::default(), &mut UiState::new(Page::Music), 0);
+                let mut hud = Hud::transient(HudKind::Meeting, "Design review", "in 5m", 0, u64::MAX / 2);
+                hud.action_label = Some("Join".into());
+                vm.hud = Some(hud);
+            },
+            ..shot("26k-hud-meeting", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, _, _, _| {
+                use crate::usage::{Limits, OpenCode, Spend, UsageView, Window};
+                let now = chrono::Utc::now().timestamp();
+                vm.usage = UsageView {
+                    claude: Limits {
+                        plan: "Pro".into(),
+                        primary: Some(Window { used_pct: 72.0, resets_at: Some(now + 2 * 3600 + 14 * 60) }),
+                        secondary: Some(Window { used_pct: 31.0, resets_at: Some(now + 4 * 86_400) }),
+                        ..Default::default()
+                    },
+                    codex: Limits {
+                        plan: "Plus".into(),
+                        primary: Some(Window { used_pct: 91.0, resets_at: Some(now + 50 * 60) }),
+                        secondary: Some(Window { used_pct: 27.0, resets_at: Some(now + 3 * 86_400) }),
+                        ..Default::default()
+                    },
+                    opencode: OpenCode {
+                        today_tokens: 412_000,
+                        today_cost: 0.31,
+                        week_tokens: 2_840_000,
+                        week_cost: 2.4,
+                        top: vec![
+                            Spend { label: "xai/grok-4.5".into(), tokens: 1_900_000, cost: 1.6 },
+                            Spend { label: "kimi-for-coding/k2".into(), tokens: 700_000, cost: 0.5 },
+                        ],
+                        note: String::new(),
+                    },
+                    loaded: true,
+                    refreshing: false,
+                };
+            },
+            ..shot("26e-page-usage", 1.0, Page::Usage)
+        },
+        shot("26f-page-voice-idle", 1.0, Page::Voice),
+        Shot {
+            setup: |vm, _, ui, _| {
+                vm.voice = crate::voice::VoiceView { phase: crate::voice::VoicePhase::Recording, elapsed_ms: 83_400, level: 0.6, saved: None, error: String::new() };
+                for (i, b) in ui.voice_bars.iter_mut().enumerate() {
+                    *b = 0.15 + 0.7 * ((i as f32 * 0.7).sin().abs());
+                }
+            },
+            ..shot("26g-page-voice-recording", 1.0, Page::Voice)
+        },
+        Shot {
+            setup: |vm, _, _, _| {
+                vm.voice = crate::voice::VoiceView { phase: crate::voice::VoicePhase::Recording, elapsed_ms: 83_400, level: 0.6, saved: None, error: String::new() };
+            },
+            ..shot("26h-collapsed-recording", 0.0, Page::Music)
+        },
         Shot { setup: |_, _, ui, _| { ui.drag_files = 2; ui.drop_amt = 1.0; ui.clock_s = 0.3; }, ..shot("23b-shelf-drag-over", 1.0, Page::Shelf) },
+        Shot { setup: |_, _, ui, _| { ui.drag_files = 2; ui.drop_amt = 1.0; ui.clock_s = 0.3; ui.drag_zone = 1; ui.zone_amt = 1.0; }, ..shot("23c-drag-over-phone", 1.0, Page::Shelf) },
+        Shot { setup: |_, _, ui, _| { ui.absorb_t = 0.7; ui.absorb_zone = 1; }, ..shot("23d-drop-phone-burst", 1.0, Page::Shelf) },
         shot("26b-page-speed", 1.0, Page::Speed),
         Shot {
             setup: |vm, _, ui, _| {
@@ -370,7 +468,7 @@ pub fn run(dir: &str) -> i32 {
     if vm.pomo.remaining_ms(now) == 0 {
         failures.push("focus start failed".into());
     }
-    if Page::Music.step(1) != Page::Focus || Page::Speed.step(1) != Page::Music || Page::Settings.step(1) != Page::Music {
+    if Page::Music.step(1) != Page::Focus || Page::Voice.step(1) != Page::Music || Page::Settings.step(1) != Page::Music {
         failures.push("page stepping wrong".into());
     }
     interactions.push(json!({"action": "tasks/focus/page-step", "open": vm.tasks.open_count()}));

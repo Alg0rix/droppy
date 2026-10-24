@@ -17,6 +17,9 @@ pub enum Icon {
     Clipboard,
     Calendar,
     Gauge,
+    Chart,
+    Mic,
+    Phone,
     Gear,
     Plus,
     Minus,
@@ -88,6 +91,20 @@ pub fn draw(s: &mut Scene, icon: Icon, cx: f32, cy: f32, size: f32, c: Color) {
         Icon::Gauge => {
             s.ring(cx, cy + 0.8 * u, 6.2 * u, sw, 0.62, 1.38, c);
             s.line(p(8.0, 9.2).0, p(8.0, 9.2).1, p(11.0, 5.0).0, p(11.0, 5.0).1, sw, c);
+        }
+        Icon::Chart => {
+            s.rect(rect(2.2, 8.6, 3.0, 5.2), 1.2 * u, c);
+            s.rect(rect(6.5, 4.6, 3.0, 9.2), 1.2 * u, c);
+            s.rect(rect(10.8, 1.8, 3.0, 12.0), 1.2 * u, c);
+        }
+        Icon::Mic => {
+            s.stroke(rect(5.6, 1.4, 4.8, 7.4), 2.4 * u, sw, c);
+            s.ring(cx, cy + 0.4 * u, 5.0 * u, sw, 0.30, 0.70, c);
+            s.line(p(8.0, 12.6).0, p(8.0, 12.6).1, p(8.0, 14.8).0, p(8.0, 14.8).1, sw, c);
+        }
+        Icon::Phone => {
+            s.stroke(rect(4.2, 1.2, 7.6, 13.6), 2.2 * u, sw, c);
+            s.line(p(6.8, 12.6).0, p(6.8, 12.6).1, p(9.2, 12.6).0, p(9.2, 12.6).1, sw, c);
         }
         Icon::Gear => {
             for k in 0..8 {
@@ -183,7 +200,7 @@ mod tests {
     fn every_icon_draws() {
         use Icon::*;
         let mut s = Scene::new();
-        for i in [Play, Pause, Next, Prev, Note, Timer, Drop, Tray, Check, List, Clipboard, Calendar, Gauge, Gear, Plus, Minus, Close, Folder, Speaker, Muted, Bolt, Headphones, Undo, Reset, File] {
+        for i in [Play, Pause, Next, Prev, Note, Timer, Drop, Tray, Check, List, Clipboard, Calendar, Gauge, Chart, Mic, Phone, Gear, Plus, Minus, Close, Folder, Speaker, Muted, Bolt, Headphones, Undo, Reset, File] {
             let before = s.cmds.len();
             draw(&mut s, i, 10.0, 10.0, 16.0, Color::rgb(255, 255, 255));
             assert!(s.cmds.len() > before, "{i:?} drew nothing");

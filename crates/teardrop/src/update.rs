@@ -214,68 +214,14 @@ pub fn install() {
     });
 }
 
-#[cfg(windows)]
 mod net {
-    use windows::core::PCWSTR;
-    use windows::Win32::Networking::WinInet::*;
-
     /// Blocking HTTPS GET (follows redirects) of up to `limit` bytes.
     pub fn get_bytes(url: &str, limit: usize) -> Option<Vec<u8>> {
-        unsafe {
-            let agent: Vec<u16> = "Teardrop-Updater\0".encode_utf16().collect();
-            let hinet = InternetOpenW(PCWSTR::from_raw(agent.as_ptr()), 0, None, None, 0);
-            if hinet.is_null() {
-                return None;
-            }
-            let timeout: u32 = 15_000;
-            for opt in [2u32, 6] {
-                let _ = InternetSetOptionW(Some(hinet as *const _), opt, Some(&timeout as *const u32 as *const _), 4);
-            }
-            let wurl: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
-            // GitHub's API wants a UA (set above) and asks for JSON via Accept.
-            let headers: Vec<u16> = "Accept: application/vnd.github+json\r\n".encode_utf16().collect();
-            let hurl = InternetOpenUrlW(hinet as *const _, PCWSTR::from_raw(wurl.as_ptr()), Some(&headers), 0x8000_0000 | 0x0080_0000, 0);
-            if hurl.is_null() {
-                let _ = InternetCloseHandle(hinet as *const _);
-                return None;
-            }
-            let mut status = [0u16; 8];
-            let mut len = (status.len() * 2) as u32;
-            let ok_status = HttpQueryInfoW(hurl as *const _, HTTP_QUERY_STATUS_CODE, Some(status.as_mut_ptr() as *mut _), &mut len, None).is_ok()
-                && String::from_utf16_lossy(&status[..(len as usize / 2)]).trim() == "200";
-            let mut out = Vec::new();
-            if ok_status {
-                let mut buf = vec![0u8; 64 * 1024];
-                loop {
-                    let mut read = 0u32;
-                    if InternetReadFile(hurl as *const _, buf.as_mut_ptr() as *mut _, buf.len() as u32, &mut read).is_err() || read == 0 {
-                        break;
-                    }
-                    out.extend_from_slice(&buf[..read as usize]);
-                    if out.len() > limit {
-                        out.clear();
-                        break;
-                    }
-                }
-            }
-            let _ = InternetCloseHandle(hurl as *const _);
-            let _ = InternetCloseHandle(hinet as *const _);
-            (!out.is_empty()).then_some(out)
-        }
+        crate::http::get(url, &[("Accept", "application/vnd.github+json")], limit).ok()
     }
 
     pub fn get_text(url: &str) -> Option<String> {
         String::from_utf8(get_bytes(url, 2 * 1024 * 1024)?).ok()
-    }
-}
-
-#[cfg(not(windows))]
-mod net {
-    pub fn get_bytes(_: &str, _: usize) -> Option<Vec<u8>> {
-        None
-    }
-    pub fn get_text(_: &str) -> Option<String> {
-        None
     }
 }
 

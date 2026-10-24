@@ -127,6 +127,20 @@ pub enum Action {
     UpdateCheck,
     /// Download, verify and run the new installer.
     UpdateInstall,
+    /// Re-read Claude / Codex / OpenCode usage.
+    UsageRefresh,
+    /// Start or stop the voice recorder.
+    VoiceToggle,
+    /// Open the recordings folder.
+    VoiceFolder,
+    /// Paste an iCal link from the clipboard as a calendar feed.
+    CalendarPaste,
+    /// Disconnect all calendars.
+    CalendarClear,
+    /// Open the join link of the n-th agenda entry.
+    Join(u8),
+    /// Open the join link of the next meeting (from its alert).
+    MeetingJoin,
     Quit,
 }
 
@@ -137,6 +151,9 @@ pub struct Hit {
     /// Show an I-beam instead of a hand.
     pub text: bool,
 }
+
+/// Per-page animation slots (every tab plus Settings, with headroom).
+pub const PAGE_SLOTS: usize = 12;
 
 pub fn page_index(p: Page) -> usize {
     Page::all().iter().position(|&x| x == p).unwrap_or(Page::all().len())
@@ -160,7 +177,7 @@ pub struct UiState {
     pub mouse: Option<(f32, f32)>,
     amt: HashMap<Action, f32>,
     tog: HashMap<SettingKey, f32>,
-    pub tab_amt: [f32; 9],
+    pub tab_amt: [f32; PAGE_SLOTS],
     pub page: Page,
     pub prev_page: Page,
     pub page_t: f32,
@@ -170,7 +187,7 @@ pub struct UiState {
     pub peek_until_ms: u64,
     pub peek_amt: f32,
     track_key: String,
-    pub scroll: [usize; 9],
+    pub scroll: [usize; PAGE_SLOTS],
     /// Months the Today calendar is shifted from the current one.
     pub cal_offset: i32,
     /// Task text being typed (None = field not focused).
@@ -190,12 +207,21 @@ pub struct UiState {
     pub drop_amt: f32,
     /// 1 -> 0 burst right after a drop lands.
     pub absorb_t: f32,
+    /// Which half of the card the drag is over: 0 = Shelf, 1 = Phone Link.
+    pub drag_zone: u8,
+    /// Eased `drag_zone` (0..1) so the highlight glides between halves.
+    pub zone_amt: f32,
+    /// The half the last drop landed on (for the burst colour).
+    pub absorb_zone: u8,
+    /// Recent microphone levels for the recorder's waveform (oldest first).
+    pub voice_bars: [f32; 40],
+    voice_acc: f32,
 }
 
 impl UiState {
     pub fn new(page: Page) -> Self {
-        let mut tab_amt = [0.0; 9];
-        tab_amt[page_index(page).min(8)] = if page == Page::Settings { 0.0 } else { 1.0 };
+        let mut tab_amt = [0.0; PAGE_SLOTS];
+        tab_amt[page_index(page).min(PAGE_SLOTS - 1)] = if page == Page::Settings { 0.0 } else { 1.0 };
         Self {
             hover: None,
             pressed: None,
@@ -212,7 +238,7 @@ impl UiState {
             peek_until_ms: 0,
             peek_amt: 0.0,
             track_key: String::new(),
-            scroll: [0; 9],
+            scroll: [0; PAGE_SLOTS],
             cal_offset: 0,
             input: None,
             toast: None,
@@ -225,6 +251,11 @@ impl UiState {
             drag_files: 0,
             drop_amt: 0.0,
             absorb_t: 0.0,
+            drag_zone: 0,
+            zone_amt: 0.0,
+            absorb_zone: 0,
+            voice_bars: [0.0; 40],
+            voice_acc: 0.0,
         }
     }
 
@@ -246,11 +277,11 @@ impl UiState {
     }
 
     pub fn scroll_of(&self, p: Page) -> usize {
-        self.scroll[page_index(p).min(8)]
+        self.scroll[page_index(p).min(PAGE_SLOTS - 1)]
     }
 
     pub fn scroll_by(&mut self, p: Page, delta: i32, max: usize) {
-        let s = &mut self.scroll[page_index(p).min(8)];
+        let s = &mut self.scroll[page_index(p).min(PAGE_SLOTS - 1)];
         *s = (*s as i32 + delta).clamp(0, max as i32) as usize;
     }
 
@@ -274,9 +305,16 @@ impl UiState {
             let w = match h.kind {
                 Volume | Muted => 270.0,
                 Water => 310.0,
+                Meeting => 340.0,
                 _ => 290.0,
             };
             return (w, 38.0);
+        }
+        if vm.voice.phase == crate::voice::VoicePhase::Recording {
+            return (170.0, 36.0);
+        }
+        if vm.meeting_soon().is_some() {
+            return (236.0, 36.0);
         }
         if vm.focus_visible() {
             return (176.0, 36.0);
@@ -304,18 +342,20 @@ impl UiState {
                 Page::Music => vm.track.playback == teardrop_core::Playback::Playing,
                 Page::Tasks => self.input.is_some(),
                 Page::Speed => vm.speed.phase.running(),
+                Page::Voice => vm.voice.phase == crate::voice::VoicePhase::Recording,
+                Page::Usage => vm.usage.refreshing,
                 _ => false,
             } || self.toast.is_some();
         }
         if vm.live_hud(now_ms).is_some() {
             return true;
         }
-        (vm.music_active() && vm.hud.is_none()) || s.idle_look == IdleLook::Eyes
+        vm.voice.phase == crate::voice::VoicePhase::Recording || (vm.music_active() && vm.hud.is_none()) || s.idle_look == IdleLook::Eyes
     }
 
     /// Where the eyes sit on the collapsed island right now, if anywhere.
     pub fn face_spot(&self, vm: &ViewModel, s: &Settings, now_ms: u64) -> Option<Spot> {
-        if s.idle_look != IdleLook::Eyes || vm.live_hud(now_ms).is_some() {
+        if s.idle_look != IdleLook::Eyes || vm.live_hud(now_ms).is_some() || vm.meeting_soon().is_some() || vm.voice.phase == crate::voice::VoicePhase::Recording {
             None
         } else if vm.focus_visible() {
             Some(Spot::Focus)
@@ -383,7 +423,7 @@ impl UiState {
 
         // Tab pill.
         let want = page_index(vm.page);
-        for i in 0..9 {
+        for i in 0..PAGE_SLOTS {
             let target = if i == want && vm.page != Page::Settings { 1.0 } else { 0.0 };
             moving |= approach(&mut self.tab_amt[i], target, 16.0, dt);
         }
@@ -425,11 +465,24 @@ impl UiState {
         moving |= approach(&mut self.water_level, level, 5.0, dt);
 
         moving |= approach(&mut self.drop_amt, if self.drag_files > 0 { 1.0 } else { 0.0 }, 12.0, dt);
+        moving |= approach(&mut self.zone_amt, self.drag_zone as f32, 14.0, dt);
         if self.drag_files > 0 {
             moving = true;
         }
         if self.absorb_t > 0.0 {
             self.absorb_t = (self.absorb_t - dt / 0.8).max(0.0);
+            moving = true;
+        }
+
+        // Recorder waveform: a new bar every 55 ms while recording, decaying after.
+        self.voice_acc += dt;
+        if self.voice_acc >= 0.055 {
+            self.voice_acc = 0.0;
+            let lvl = if vm.voice.phase == crate::voice::VoicePhase::Recording { vm.voice.level.powf(0.6) } else { 0.0 };
+            self.voice_bars.rotate_left(1);
+            self.voice_bars[39] = lvl;
+        }
+        if vm.voice.phase == crate::voice::VoicePhase::Recording || self.voice_bars.iter().any(|b| *b > 0.0) {
             moving = true;
         }
 

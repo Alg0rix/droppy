@@ -24,6 +24,11 @@ pub struct ViewModel {
     pub env: Ambient,
     pub speed: SpeedView,
     pub update: crate::update::UpdateView,
+    pub usage: crate::usage::UsageView,
+    pub voice: crate::voice::VoiceView,
+    pub calendar: crate::calendar::CalendarView,
+    /// Connected calendar feeds (the links themselves stay in Settings).
+    pub calendar_feeds: usize,
     pub now: DateTime<Utc>,
 }
 
@@ -146,6 +151,10 @@ impl ViewModel {
             env: Ambient::default(),
             speed: SpeedView::IDLE,
             update: Default::default(),
+            usage: Default::default(),
+            voice: Default::default(),
+            calendar: Default::default(),
+            calendar_feeds: 0,
             now,
         }
     }
@@ -168,6 +177,10 @@ impl ViewModel {
             env: Ambient::default(),
             speed: SpeedView::IDLE,
             update: Default::default(),
+            usage: Default::default(),
+            voice: Default::default(),
+            calendar: Default::default(),
+            calendar_feeds: 0,
             now,
         }
     }
@@ -189,6 +202,13 @@ impl ViewModel {
     /// Focus timer should own the collapsed island (running or paused mid-phase).
     pub fn focus_visible(&self) -> bool {
         self.pomo.phase != Phase::Idle
+    }
+
+    /// A meeting starting within 10 minutes (or begun within the last 5) that
+    /// owns the collapsed island.
+    pub fn meeting_soon(&self) -> Option<&crate::calendar::Event> {
+        let now = self.now.timestamp();
+        self.calendar.next(now).filter(|e| e.start - now <= 600 && now - e.start <= 300)
     }
 
     pub fn music_active(&self) -> bool {

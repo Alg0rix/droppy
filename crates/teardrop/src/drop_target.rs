@@ -13,11 +13,14 @@ use windows::Win32::System::Ole::{
 use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
 use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
 
+/// Pointer positions are screen pixels.
 pub enum DropEvent {
     /// A drag carrying this many files entered the island.
-    Enter(u32),
+    Enter(u32, i32, i32),
+    /// The drag moved.
+    Over(i32, i32),
     Leave,
-    Drop(Vec<String>),
+    Drop(Vec<String>, i32, i32),
 }
 
 #[implement(IDropTarget)]
@@ -65,17 +68,18 @@ fn paths_of(data: &IDataObject) -> Vec<String> {
 
 #[allow(non_snake_case)]
 impl IDropTarget_Impl for DropTarget_Impl {
-    fn DragEnter(&self, pdataobj: Option<&IDataObject>, _keys: MODIFIERKEYS_FLAGS, _pt: &POINTL, pdweffect: *mut DROPEFFECT) -> Result<()> {
+    fn DragEnter(&self, pdataobj: Option<&IDataObject>, _keys: MODIFIERKEYS_FLAGS, pt: &POINTL, pdweffect: *mut DROPEFFECT) -> Result<()> {
         let n = pdataobj.map(|d| paths_of(d).len()).unwrap_or(0) as u32;
         unsafe { *pdweffect = if n > 0 { DROPEFFECT_COPY } else { DROPEFFECT_NONE } };
         if n > 0 {
-            self.emit(DropEvent::Enter(n));
+            self.emit(DropEvent::Enter(n, pt.x, pt.y));
         }
         Ok(())
     }
 
-    fn DragOver(&self, _keys: MODIFIERKEYS_FLAGS, _pt: &POINTL, pdweffect: *mut DROPEFFECT) -> Result<()> {
+    fn DragOver(&self, _keys: MODIFIERKEYS_FLAGS, pt: &POINTL, pdweffect: *mut DROPEFFECT) -> Result<()> {
         unsafe { *pdweffect = DROPEFFECT_COPY };
+        self.emit(DropEvent::Over(pt.x, pt.y));
         Ok(())
     }
 
@@ -84,10 +88,10 @@ impl IDropTarget_Impl for DropTarget_Impl {
         Ok(())
     }
 
-    fn Drop(&self, pdataobj: Option<&IDataObject>, _keys: MODIFIERKEYS_FLAGS, _pt: &POINTL, pdweffect: *mut DROPEFFECT) -> Result<()> {
+    fn Drop(&self, pdataobj: Option<&IDataObject>, _keys: MODIFIERKEYS_FLAGS, pt: &POINTL, pdweffect: *mut DROPEFFECT) -> Result<()> {
         let list = pdataobj.map(paths_of).unwrap_or_default();
         unsafe { *pdweffect = if list.is_empty() { DROPEFFECT_NONE } else { DROPEFFECT_COPY } };
-        self.emit(DropEvent::Drop(list));
+        self.emit(DropEvent::Drop(list, pt.x, pt.y));
         Ok(())
     }
 }

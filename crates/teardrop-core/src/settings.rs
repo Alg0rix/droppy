@@ -61,6 +61,9 @@ pub struct Settings {
     /// (month, day) for the birthday party.
     #[serde(default)]
     pub birthday: Option<(u8, u8)>,
+    /// iCal feed links (secret addresses): never shown, logged or put in a view model.
+    #[serde(default)]
+    pub calendar_urls: Vec<String>,
 }
 
 fn yes() -> bool {
@@ -83,6 +86,7 @@ impl Default for Settings {
             mood_ring: false,
             weather_mood: false,
             birthday: None,
+            calendar_urls: Vec::new(),
         }
     }
 }

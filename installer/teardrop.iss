@@ -51,7 +51,10 @@ WizardStyle=modern
 
 Compression=lzma2/max
 SolidCompression=yes
-CloseApplications=yes
+; Teardrop is stopped by StopTeardrop() below. Inno's own close-applications
+; step asks the app to end the session and shows a "Try again" dialog forever
+; when it doesn't, so it stays off.
+CloseApplications=no
 RestartApplications=no
 
 [Files]
@@ -83,17 +86,25 @@ const
 procedure StopTeardrop();
 var
   I, ResultCode: Integer;
+  Wnd: HWND;
 begin
-  if FindWindowByClassName('{#IslandClass}') = 0 then
-    Exit;
-  PostMessage(FindWindowByClassName('{#IslandClass}'), WM_CLOSE, 0, 0);
-  for I := 1 to 20 do
+  // Ask nicely first so recordings and settings get saved...
+  Wnd := FindWindowByClassName('{#IslandClass}');
+  if Wnd <> 0 then
   begin
-    if FindWindowByClassName('{#IslandClass}') = 0 then
-      Exit;
-    Sleep(50);
+    PostMessage(Wnd, WM_CLOSE, 0, 0);
+    for I := 1 to 40 do
+    begin
+      if FindWindowByClassName('{#IslandClass}') = 0 then
+        Break;
+      Sleep(50);
+    end;
   end;
+  // ...then make sure the process is really gone, window or not, so the exe
+  // can be replaced. (No /T: when Teardrop launched this updater, the
+  // updater is its child and must survive.) Exit code 128 = not running.
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM {#AppExe} /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(400);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;

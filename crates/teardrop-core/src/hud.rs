@@ -13,7 +13,7 @@ pub struct Hud {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum HudKind { Volume, Charging, Bluetooth, Water, Timer, Muted }
+pub enum HudKind { Volume, Charging, Bluetooth, Water, Timer, Muted, Meeting }
 
 impl Hud {
     pub fn transient(kind: HudKind, title: &str, detail: &str, now_ms: u64, ttl_ms: u64) -> Self {

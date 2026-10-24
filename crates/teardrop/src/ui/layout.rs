@@ -168,6 +168,8 @@ fn tab_icon(p: Page) -> Icon {
         Page::Clipboard => Icon::Clipboard,
         Page::Today => Icon::Calendar,
         Page::Speed => Icon::Gauge,
+        Page::Usage => Icon::Chart,
+        Page::Voice => Icon::Mic,
         Page::Settings => Icon::Gear,
     }
 }
@@ -182,10 +184,14 @@ fn tab_label_w(p: Page) -> f32 {
         Page::Clipboard => 108.0,
         Page::Today => 86.0,
         Page::Speed => 86.0,
+        Page::Usage => 86.0,
+        Page::Voice => 84.0,
         Page::Settings => 36.0,
     }
 }
 
+/// Width of an inactive tab: ten tabs plus the widest label must clear the gear.
+pub const TAB_W: f32 = 30.0;
 pub const HEADER_H: f32 = 34.0;
 pub const HEADER_Y: f32 = 14.0;
 pub const CONTENT_TOP: f32 = 64.0;
@@ -199,7 +205,7 @@ fn header(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
     let mut x = card_x + 18.0;
     for (i, &p) in Page::all().iter().enumerate() {
         let amt = c.ui.tab_amt[i];
-        let w = 36.0 + (tab_label_w(p) - 36.0) * amt;
+        let w = TAB_W + (tab_label_w(p) - TAB_W) * amt;
         let r = Rect::new(x, HEADER_Y, w, HEADER_H);
         let a = Action::Tab(p);
         let h = c.hov(a);
@@ -211,13 +217,13 @@ fn header(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
             c.s.rect(r, HEADER_H / 2.0, SURFACE_HOVER.fade(h * (1.0 - amt)));
         }
         let ic = TEXT_2.mix(TEXT, h * 0.7).mix(acc, amt);
-        icons::draw(&mut c.s, tab_icon(p), r.x + 18.0, r.cy(), 16.0, ic);
+        icons::draw(&mut c.s, tab_icon(p), r.x + 15.0 + 3.0 * amt, r.cy(), 16.0, ic);
         if amt > 0.12 {
             let lr = Rect::new(r.x + 35.0, r.y, (w - 35.0 - 6.0).max(0.0), r.h);
             c.s.text(p.title(), lr, 12.5, Weight::Semibold, acc.fade(smooth((amt - 0.2) / 0.8)), Align::Left);
         }
         c.hit(r, a);
-        x += w + 4.0;
+        x += w + 2.0;
     }
     // Settings gear, far right.
     let gr = Rect::new(card_x + geom.card_w - 18.0 - HEADER_H, HEADER_Y, HEADER_H, HEADER_H);
@@ -247,6 +253,22 @@ fn collapsed(c: &mut Ctx, r: Rect, a: f32) {
     let vm = c.vm;
     if let Some(h) = vm.live_hud(c.now_ms) {
         hud(c, r, h, cy);
+    } else if vm.voice.phase == crate::voice::VoicePhase::Recording {
+        let red = accent(Page::Voice);
+        let pulse = 0.55 + 0.45 * (c.now_ms % 1000) as f32 / 1000.0 * std::f32::consts::PI;
+        let pulse = pulse.sin().abs();
+        c.s.circle(r.x + 22.0, cy, 8.0 + 3.0 * pulse, red.fade(0.25));
+        c.s.circle(r.x + 22.0, cy, 5.0, red);
+        c.text("REC", Rect::new(r.x + 38.0, cy - 10.0, 40.0, 20.0), 12.0, Weight::Semibold, red, Align::Left);
+        c.text(crate::voice::clock(vm.voice.elapsed_ms), Rect::new(r.right() - 74.0, cy - 10.0, 60.0, 20.0), 14.0, Weight::Semibold, TEXT, Align::Right);
+    } else if let Some(ev) = vm.meeting_soon() {
+        let acc = accent(Page::Today);
+        icons::draw(&mut c.s, Icon::Calendar, r.x + 22.0, cy, 15.0, acc);
+        let tr = Rect::new(r.x + 40.0, cy - 10.0, r.w - 40.0 - 78.0, 20.0);
+        marquee(c, tr, &ev.title, 12.0, Weight::Medium, TEXT, c.now_ms);
+        let left = ev.start - vm.now.timestamp();
+        let col = if left <= 120 { AMBER } else { TEXT_2 };
+        c.text(crate::calendar::countdown(ev, vm.now.timestamp()), Rect::new(r.right() - 74.0, cy - 10.0, 62.0, 20.0), 12.5, Weight::Semibold, col, Align::Right);
     } else if vm.focus_visible() {
         let p = Page::Focus;
         let acc = accent(p);
@@ -362,6 +384,20 @@ fn hud(c: &mut Ctx, r: Rect, h: &teardrop_core::Hud, cy: f32) {
                 c.text(h.detail.clone(), Rect::new(r.x + 42.0, cy - 10.0, r.w - 42.0 - 14.0, 20.0), 13.0, Weight::Medium, TEXT, Align::Left);
             }
         }
+        HudKind::Meeting => {
+            let acc = accent(Page::Today);
+            icons::draw(&mut c.s, Icon::Calendar, left + 8.0, cy, 17.0, acc);
+            if h.action_label.is_some() {
+                let tr = Rect::new(r.x + 42.0, cy - 10.0, r.w - 42.0 - 96.0, 20.0);
+                c.text(h.title.clone(), tr, 13.0, Weight::Medium, TEXT, Align::Left);
+                let pill = Rect::new(r.right() - 82.0, cy - 12.0, 70.0, 24.0);
+                c.s.rect(pill, 12.0, acc);
+                c.text("Join", pill, 11.5, Weight::Semibold, Color::rgb(8, 16, 32), Align::Center);
+            } else {
+                c.text(h.title.clone(), Rect::new(r.x + 42.0, cy - 10.0, r.w - 42.0 - 90.0, 20.0), 13.0, Weight::Medium, TEXT, Align::Left);
+                c.text(h.detail.clone(), Rect::new(r.right() - 84.0, cy - 10.0, 72.0, 20.0), 12.0, Weight::Regular, TEXT_2, Align::Right);
+            }
+        }
         _ => {
             let (icon, col) = match h.kind {
                 HudKind::Charging => (Icon::Bolt, GREEN),
@@ -399,6 +435,7 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
     if open < 0.5 {
         let a = match vm.live_hud(now_ms) {
             Some(h) if h.kind == HudKind::Water && h.action_label.is_some() => Action::HudWater,
+            Some(h) if h.kind == HudKind::Meeting && h.action_label.is_some() => Action::MeetingJoin,
             _ => Action::Island,
         };
         c.hit(body, a);

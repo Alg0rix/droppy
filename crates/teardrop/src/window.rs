@@ -69,6 +69,7 @@ mod inner {
     const WTS_SESSION_LOCK: u32 = 7;
     const WTS_SESSION_UNLOCK: u32 = 8;
     const WM_APP_DOWNLOAD: u32 = 0x8002;
+    const WM_APP_SHARE: u32 = 0x8003;
     const HSHELL_WINDOWCREATED: u32 = 1;
     const HSHELL_FLASH: u32 = 0x8006;
     const CF_BITMAP_U32: u32 = 2;
@@ -100,6 +101,11 @@ mod inner {
         static MENU_OPEN: Cell<bool> = Cell::new(false);
         static HIDDEN: Cell<bool> = Cell::new(false);
         static UPDATE_REV: Cell<u32> = Cell::new(u32::MAX);
+        static CAL_REV: Cell<u32> = Cell::new(u32::MAX);
+        static ALERTED: RefCell<Vec<String>> = RefCell::new(Vec::new());
+        static LAST_MEETING_TEXT: RefCell<String> = RefCell::new(String::new());
+        static USAGE_REV: Cell<u32> = Cell::new(u32::MAX);
+        static USAGE_STARTED: Cell<bool> = Cell::new(false);
         static DRAG_OPENED: Cell<bool> = Cell::new(false);
         static HOVER_PENDING: Cell<bool> = Cell::new(false);
         static LAST_MOUSE: Cell<(f32, f32)> = Cell::new((-1.0, -1.0));
@@ -294,6 +300,9 @@ mod inner {
         let open = open_amount();
         sync_position();
         sync_update();
+        sync_voice();
+        sync_calendar();
+        sync_usage();
         let speed = crate::speedtest::snapshot();
         VIEW.with(|v| {
             let mut vm = v.borrow_mut();
@@ -669,6 +678,63 @@ mod inner {
                 crate::update::install();
                 save = false;
             }
+            Action::CalendarPaste => {
+                let text = read_clipboard_text(hwnd);
+                match text.as_deref().and_then(crate::calendar::normalize_feed_url) {
+                    Some(url) => {
+                        let added = SETTINGS.with(|s| {
+                            let mut st = s.borrow_mut();
+                            if st.calendar_urls.contains(&url) {
+                                false
+                            } else {
+                                st.calendar_urls.push(url);
+                                true
+                            }
+                        });
+                        // The link is a secret and the clipboard history already
+                        // captured it when it was copied: take it back out.
+                        if let Some(t) = &text {
+                            VIEW.with(|v| v.borrow_mut().clipboard.remove(t));
+                        }
+                        refresh_calendar();
+                        toast(if added { "Calendar connected" } else { "That calendar is already connected" });
+                    }
+                    None => toast("Copy your calendar's iCal link first"),
+                }
+            }
+            Action::CalendarClear => {
+                SETTINGS.with(|s| s.borrow_mut().calendar_urls.clear());
+                refresh_calendar();
+                toast("Calendars removed");
+            }
+            Action::Join(i) => {
+                let url = VIEW.with(|v| {
+                    let vm = v.borrow();
+                    vm.calendar.agenda(vm.now.timestamp(), 3).get(i as usize).and_then(|e| e.join.as_ref().map(|j| j.url.clone()))
+                });
+                open_meeting(hwnd, url);
+            }
+            Action::MeetingJoin => {
+                let url = VIEW.with(|v| {
+                    let vm = v.borrow();
+                    vm.calendar.next(vm.now.timestamp()).and_then(|e| e.join.as_ref().map(|j| j.url.clone()))
+                });
+                open_meeting(hwnd, url);
+            }
+            Action::UsageRefresh => {
+                crate::usage::refresh();
+                save = false;
+            }
+            Action::VoiceToggle => {
+                crate::voice::toggle();
+                save = false;
+            }
+            Action::VoiceFolder => {
+                let dir = crate::voice::recordings_dir();
+                let _ = std::fs::create_dir_all(&dir);
+                shell_open(hwnd, "open", &dir.to_string_lossy(), None);
+                save = false;
+            }
             Action::SpeedTest => {
                 crate::speedtest::start();
                 save = false;
@@ -1015,6 +1081,86 @@ mod inner {
         });
     }
 
+    fn refresh_calendar() {
+        let urls = SETTINGS.with(|s| s.borrow().calendar_urls.clone());
+        crate::calendar::refresh(urls);
+    }
+
+    /// Open a meeting link, but only one that points at a known meeting host.
+    fn open_meeting(hwnd: HWND, url: Option<String>) {
+        match url.filter(|u| crate::calendar::meeting_platform(u).is_some()) {
+            Some(u) => shell_open(hwnd, "open", &u, None),
+            None => toast("This meeting has no join link"),
+        }
+    }
+
+    /// Calendar events into the view model when the worker publishes new ones.
+    fn sync_calendar() {
+        let feeds = SETTINGS.with(|s| s.borrow().calendar_urls.len());
+        VIEW.with(|v| v.borrow_mut().calendar_feeds = feeds);
+        let rev = crate::calendar::revision();
+        if CAL_REV.replace(rev) == rev {
+            return;
+        }
+        let snap = crate::calendar::snapshot();
+        VIEW.with(|v| v.borrow_mut().calendar = snap);
+    }
+
+    /// Once a second: raise the "meeting starting" alert and wake a redraw when
+    /// the pill's countdown text changes (nothing else animates then).
+    fn calendar_tick(hwnd: HWND, ms: u64) {
+        let now = Utc::now().timestamp();
+        let alert = VIEW.with(|v| {
+            let vm = v.borrow();
+            ALERTED.with(|seen| crate::calendar::due_alerts(&vm.calendar.events, now, 300, &mut seen.borrow_mut()).into_iter().last().cloned())
+        });
+        if let Some(ev) = alert {
+            let detail = crate::calendar::countdown(&ev, now);
+            VIEW.with(|v| {
+                let mut hud = Hud::transient(HudKind::Meeting, &ev.title, &detail, ms, 15_000);
+                hud.action_label = ev.join.as_ref().map(|_| "Join".to_string());
+                v.borrow_mut().hud = Some(hud);
+            });
+            chime(880, 180);
+            wake(hwnd);
+        }
+        let text = VIEW.with(|v| v.borrow().meeting_soon().map(|e| crate::calendar::countdown(e, now)).unwrap_or_default());
+        if LAST_MEETING_TEXT.with(|t| t.replace(text.clone())) != text {
+            wake(hwnd);
+        }
+    }
+
+    /// Recorder state into the view model; a finished recording goes onto the
+    /// shelf so it can be dragged out like any other file.
+    fn sync_voice() {
+        let snap = crate::voice::snapshot();
+        let finished = crate::voice::take_finished();
+        VIEW.with(|v| {
+            let mut vm = v.borrow_mut();
+            if vm.voice != snap {
+                vm.voice = snap;
+            }
+            if let Some(p) = &finished {
+                vm.shelf.add(&p.to_string_lossy(), Utc::now());
+                vm.page = Page::Shelf;
+            }
+        });
+        if finished.is_some() {
+            toast("Recording saved to the shelf");
+            save_all();
+        }
+    }
+
+    /// Usage numbers into the view model when the worker publishes new ones.
+    fn sync_usage() {
+        let rev = crate::usage::revision();
+        if USAGE_REV.replace(rev) == rev {
+            return;
+        }
+        let snap = crate::usage::snapshot();
+        VIEW.with(|v| v.borrow_mut().usage = snap);
+    }
+
     /// Copy the updater's state into the view model when it changes and
     /// announce a newly found release once.
     fn sync_update() {
@@ -1093,7 +1239,8 @@ mod inner {
             let (mic, cam) = env::mic_cam();
             VIEW.with(|v| {
                 let mut vm = v.borrow_mut();
-                vm.env.mic = mic;
+                // Our own recorder must not make the eyes suspicious.
+                vm.env.mic = mic && vm.voice.phase != crate::voice::VoicePhase::Recording;
                 vm.env.camera = cam;
             });
         }
@@ -1144,6 +1291,15 @@ mod inner {
             poll_env(n);
         }
         poll_volume();
+        if VIEW.with(|v| v.borrow().page) == Page::Usage && !USAGE_STARTED.replace(true) {
+            crate::usage::refresh();
+        } else if USAGE_STARTED.get() && n % 300 == 0 {
+            crate::usage::refresh();
+        }
+        calendar_tick(hwnd, ms);
+        if n == 10 || n % 900 == 10 {
+            refresh_calendar();
+        }
         if n == 25 || n % 21_600 == 25 {
             crate::update::check();
         }
@@ -1209,15 +1365,18 @@ mod inner {
         UI.with(|u| u.borrow_mut().set_hover(act));
         let over_body = matches!(act, Some(Action::Island) | Some(Action::HudWater));
         let collapsed = ISLAND.with(|s| s.borrow().mode == IslandMode::Collapsed);
+        let hover_open = SETTINGS.with(|s| s.borrow().open_on_hover);
         ISLAND.with(|s| {
             let mut st = s.borrow_mut();
             if st.mode == IslandMode::Collapsed {
-                st.set_hover(over_body);
+                // The pre-stretch only hints that the island is about to open;
+                // with open-on-hover off it would lurch and fade the content
+                // for nothing every time the pointer brushes it.
+                st.set_hover(over_body && hover_open);
             } else {
                 st.hover = true;
             }
         });
-        let hover_open = SETTINGS.with(|s| s.borrow().open_on_hover);
         unsafe {
             if over_body && collapsed && hover_open {
                 if !HOVER_PENDING.get() {
@@ -1414,11 +1573,20 @@ mod inner {
     /// A file drag entered, left or landed on the island (OLE drop target).
     fn drop_event(hwnd: HWND, ev: DropEvent) {
         match ev {
-            DropEvent::Enter(n) => {
+            DropEvent::Enter(n, x, _) => {
                 DRAG_OPENED.set(!is_open());
                 VIEW.with(|v| v.borrow_mut().page = Page::Shelf);
-                UI.with(|u| u.borrow_mut().drag_files = n);
+                let zone = drop_zone(x);
+                UI.with(|u| {
+                    let mut u = u.borrow_mut();
+                    u.drag_files = n;
+                    u.drag_zone = zone;
+                });
                 open_island(hwnd, false);
+            }
+            DropEvent::Over(x, _) => {
+                let zone = drop_zone(x);
+                UI.with(|u| u.borrow_mut().drag_zone = zone);
             }
             DropEvent::Leave => {
                 UI.with(|u| u.borrow_mut().drag_files = 0);
@@ -1426,16 +1594,59 @@ mod inner {
                     close_island(hwnd);
                 }
             }
-            DropEvent::Drop(list) => {
+            DropEvent::Drop(list, x, _) => {
                 DRAG_OPENED.set(false);
+                let zone = drop_zone(x);
                 UI.with(|u| u.borrow_mut().drag_files = 0);
                 if !list.is_empty() {
-                    UI.with(|u| u.borrow_mut().absorb_t = 1.0);
-                    on_drop_paths(hwnd, list);
+                    UI.with(|u| {
+                        let mut u = u.borrow_mut();
+                        u.absorb_t = 1.0;
+                        u.absorb_zone = zone;
+                    });
+                    if zone == 1 {
+                        send_to_phone(hwnd, list);
+                    } else {
+                        on_drop_paths(hwnd, list);
+                    }
                 }
             }
         }
         wake(hwnd);
+    }
+
+    /// 0 = the Shelf half of the card, 1 = the Phone Link half, for a screen x.
+    fn drop_zone(screen_x: i32) -> u8 {
+        let local = (screen_x - WIN_POS.get().0) as f32 / SCALE.get();
+        let mid = ISLAND.with(|s| s.borrow().geom.card_w) / 2.0 + ui::theme::PAD;
+        u8::from(local >= mid)
+    }
+
+    /// Files dropped on the Phone Link half: resolve them off the UI thread,
+    /// then show Windows' share window (Phone Link is a share target) on it.
+    fn send_to_phone(hwnd: HWND, list: Vec<String>) {
+        let raw = hwnd.0 as isize;
+        std::thread::spawn(move || {
+            let n = crate::share::prepare(&list);
+            unsafe {
+                let _ = PostMessageW(HWND(raw as *mut _), WM_APP_SHARE, WPARAM(n), LPARAM(list.len() as isize));
+            }
+        });
+    }
+
+    fn on_share_ready(hwnd: HWND, resolved: usize, dropped: usize) {
+        if resolved == 0 {
+            toast("Phone Link can only take files, not folders");
+            return;
+        }
+        activate(hwnd);
+        match crate::share::show(hwnd) {
+            Ok(()) => {
+                let skipped = dropped.saturating_sub(resolved);
+                toast(&if skipped > 0 { format!("Pick Phone Link \u{2014} {skipped} folder(s) skipped") } else { "Pick Phone Link in the share window".to_string() });
+            }
+            Err(_) => toast("Couldn't open the share window"),
+        }
     }
 
     fn on_drop_paths(hwnd: HWND, list: Vec<String>) {
@@ -1458,6 +1669,7 @@ mod inner {
         match msg {
             WM_CREATE => {
                 load_all();
+                crate::calendar::load_cache();
                 let (_data, cache) = paths::ensure_dirs();
                 store::log_line(&cache, "island created");
                 let dpi = GetDpiForWindow(hwnd);
@@ -1671,9 +1883,19 @@ mod inner {
                 LRESULT(0)
             }
             WM_COMMAND => LRESULT(0),
+            // Windows shutting down, or an installer's Restart Manager asking
+            // us to close: agree, then actually quit when told it is final.
+            WM_QUERYENDSESSION => LRESULT(1),
+            WM_ENDSESSION => {
+                if wp.0 != 0 {
+                    let _ = DestroyWindow(hwnd);
+                }
+                LRESULT(0)
+            }
             WM_DESTROY => {
                 let (_d, cache) = paths::ensure_dirs();
                 store::log_line(&cache, "island destroyed");
+                crate::voice::stop_and_wait();
                 save_all();
                 let _ = RemoveClipboardFormatListener(hwnd);
                 let _ = UnregisterHotKey(hwnd, HOTKEY_ID);
@@ -1704,6 +1926,10 @@ mod inner {
                     with_eyes(|e| e.react(if locked { React::Goodnight } else { React::WelcomeBack }));
                     wake(hwnd);
                 }
+                LRESULT(0)
+            }
+            _ if msg == WM_APP_SHARE => {
+                on_share_ready(hwnd, wp.0, lp.0 as usize);
                 LRESULT(0)
             }
             _ if msg == WM_APP_DOWNLOAD => {

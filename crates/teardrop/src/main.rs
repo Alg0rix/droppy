@@ -11,9 +11,13 @@ mod demo;
 #[cfg(windows)]
 mod drop_target;
 #[cfg(windows)]
+mod share;
+#[cfg(windows)]
 mod shelf_drag;
 mod lyrics_service;
 mod media_smtc;
+mod calendar;
+mod http;
 mod paths;
 mod render_d2d;
 mod selftest;
@@ -22,6 +26,8 @@ mod speedtest;
 mod services_system;
 mod startup;
 mod update;
+mod usage;
+mod voice;
 mod state;
 mod ui;
 mod store;

@@ -21,6 +21,12 @@ impl ClipboardRing {
         true
     }
 
+    /// Drop one entry (e.g. a calendar link that was copied to be pasted into Teardrop).
+    pub fn remove(&mut self, text: &str) {
+        let t = text.trim();
+        self.items.retain(|s| s != t);
+    }
+
     pub fn items(&self) -> &[String] {
         &self.items
     }

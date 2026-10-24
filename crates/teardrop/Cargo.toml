@@ -14,6 +14,9 @@ teardrop-core = { path = "../teardrop-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
+rusqlite = { version = "0.37", features = ["bundled"] }
+rrule = "0.14"
+chrono-tz = "0.10"
 
 [build-dependencies]
 embed-resource = "2.5"
@@ -29,6 +32,9 @@ windows = { version = "0.58", features = [
   "Win32_Graphics_Dxgi",
   "Win32_Graphics_Dxgi_Common",
   "Foundation_Numerics",
+  "Foundation_Collections",
+  "ApplicationModel_DataTransfer",
+  "Storage",
   "Win32_Graphics_Imaging",
   "Win32_Graphics_DirectWrite",
   "Win32_Graphics_Gdi",

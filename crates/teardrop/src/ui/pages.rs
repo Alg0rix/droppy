@@ -19,6 +19,8 @@ pub fn draw(c: &mut Ctx, page: Page, a: Rect) {
         Page::Clipboard => clipboard(c, a),
         Page::Today => today(c, a),
         Page::Speed => speed(c, a),
+        Page::Usage => usage(c, a),
+        Page::Voice => voice(c, a),
         Page::Settings => settings(c, a),
     }
 }
@@ -320,35 +322,57 @@ fn shelf(c: &mut Ctx, a: Rect) {
     drop_overlay(c, a);
 }
 
-/// While a file is carried over the island the shelf is swallowed by inward
-/// ripples and a bobbing tray; right after the drop a ring bursts outward.
+/// Phone Link blue.
+const PHONE: Color = Color::rgb(56, 160, 255);
+
+/// While files are carried over the island the card splits in two drop zones,
+/// Shelf (left) and Phone Link (right); the one under the pointer lights up
+/// with inward ripples and a bobbing icon. After the drop a ring bursts out in
+/// the colour of the zone that took it.
 fn drop_overlay(c: &mut Ctx, a: Rect) {
-    let acc = accent(Page::Shelf);
     let (amt, u) = (c.ui.drop_amt, c.ui.absorb_t);
-    let (cx, cy) = (a.cx(), a.cy());
+    let t = c.ui.clock_s;
     if amt > 0.01 {
-        let t = c.ui.clock_s;
-        c.s.rect(a.inset(-6.0), 20.0, Color::rgba(14, 14, 18, 0.88 * amt));
-        c.s.rect(a.inset(-6.0), 20.0, acc.fade(0.10 * amt));
-        for k in 0..3 {
-            let ph = (t * 0.8 + k as f32 / 3.0).fract();
-            let r = Rect::new(a.x, a.y, a.w, a.h).inset(ph * 52.0);
-            c.s.stroke(r, (18.0 - ph * 10.0).max(6.0), 2.0, acc.fade((1.0 - ph) * 0.55 * amt));
-        }
-        let bob = (t * 4.2).sin() * 5.0;
-        let pulse = 1.0 + 0.06 * (t * 4.2).sin();
-        c.s.circle(cx, cy - 14.0, 40.0 * pulse * amt.max(0.2), acc.fade(0.16 * amt));
-        icons::draw(&mut c.s, Icon::Tray, cx, cy - 14.0 + bob, 38.0, acc.fade(amt));
+        let zw = (a.w - 12.0) / 2.0;
+        let phone_w = c.ui.zone_amt.clamp(0.0, 1.0);
+        c.s.rect(a.inset(-6.0), 20.0, Color::rgba(14, 14, 18, 0.9 * amt));
         let n = c.ui.drag_files.max(1);
-        let msg = if n == 1 { "Release to add to the shelf".to_string() } else { format!("Release to add {n} files") };
-        c.text(msg, Rect::new(a.x, cy + 34.0, a.w, 20.0), 14.0, Weight::Semibold, TEXT.fade(amt), Align::Center);
+        let zones = [
+            (Rect::new(a.x, a.y, zw, a.h), accent(Page::Shelf), Icon::Tray, "Shelf", "Keep it here", 1.0 - phone_w),
+            (Rect::new(a.x + zw + 12.0, a.y, zw, a.h), PHONE, Icon::Phone, "Phone Link", "Send to your phone", phone_w),
+        ];
+        for (z, col, icon, title, sub, hot) in zones {
+            let k = amt * (0.35 + 0.65 * hot);
+            c.s.rect(z, 18.0, col.fade(0.05 + 0.10 * hot * amt));
+            c.s.stroke(z, 18.0, 1.0 + 1.5 * hot, col.fade((0.25 + 0.6 * hot) * amt));
+            if hot > 0.05 {
+                for i in 0..3 {
+                    let ph = (t * 0.8 + i as f32 / 3.0).fract();
+                    c.s.stroke(z.inset(ph * 36.0), (18.0 - ph * 8.0).max(6.0), 2.0, col.fade((1.0 - ph) * 0.5 * hot * amt));
+                }
+            }
+            let bob = (t * 4.2).sin() * 4.0 * hot;
+            let (zx, zy) = (z.cx(), z.cy() - 16.0);
+            c.s.circle(zx, zy, (30.0 + 4.0 * hot) * amt.max(0.2), col.fade(0.14 * k));
+            icons::draw(&mut c.s, icon, zx, zy + bob, 32.0, col.fade(k));
+            c.text(title, Rect::new(z.x, zy + 30.0, z.w, 20.0), 15.0, Weight::Semibold, TEXT.fade(k), Align::Center);
+            let line = if hot > 0.5 && n > 1 { format!("{n} files") } else { sub.to_string() };
+            c.text(line, Rect::new(z.x, zy + 50.0, z.w, 16.0), 11.5, Weight::Regular, TEXT_2.fade(k), Align::Center);
+        }
     }
     if u > 0.0 {
+        let (cx, cy) = (a.cx(), a.cy());
+        let phone = c.ui.absorb_zone == 1;
+        let col = if phone { PHONE } else { accent(Page::Shelf) };
         let p = 1.0 - u;
         let ease = 1.0 - (1.0 - p).powi(3);
-        c.s.ring(cx, cy, 24.0 + ease * 150.0, 5.0 * u + 1.0, 0.0, 1.0, acc.fade(u * 0.8));
-        c.s.circle(cx, cy, 30.0, acc.fade(u));
-        icons::draw(&mut c.s, Icon::Check, cx, cy, 30.0 * (0.7 + 0.3 * ease), ON_ACCENT.fade(u));
+        c.s.ring(cx, cy, 24.0 + ease * 150.0, 5.0 * u + 1.0, 0.0, 1.0, col.fade(u * 0.8));
+        c.s.circle(cx, cy, 30.0, col.fade(u));
+        let icon = if phone { Icon::Phone } else { Icon::Check };
+        icons::draw(&mut c.s, icon, cx, cy, 28.0 * (0.7 + 0.3 * ease), ON_ACCENT.fade(u));
+        if phone {
+            c.text("Opening share window\u{2026}", Rect::new(a.x, cy + 40.0, a.w, 18.0), 12.5, Weight::Medium, TEXT.fade(u), Align::Center);
+        }
     }
 }
 
@@ -558,17 +582,6 @@ pub fn days_in_month(y: i32, m: u32) -> u32 {
     (next - first).num_days() as u32
 }
 
-fn meter(c: &mut Ctx, r: Rect, label: &str, value: &str, frac: f32, col: Color) {
-    c.text(label, Rect::new(r.x, r.y, 80.0, 16.0), 12.0, Weight::Regular, TEXT_2, Align::Left);
-    c.text(value, Rect::new(r.right() - 80.0, r.y, 80.0, 16.0), 12.0, Weight::Semibold, TEXT, Align::Right);
-    let bar = Rect::new(r.x, r.y + 21.0, r.w, 6.0);
-    c.s.rect(bar, 3.0, Color::rgba(255, 255, 255, 0.10));
-    let f = frac.clamp(0.0, 1.0);
-    if f > 0.0 {
-        c.s.rect(Rect::new(bar.x, bar.y, (bar.w * f).max(6.0), 6.0), 3.0, col);
-    }
-}
-
 fn today(c: &mut Ctx, a: Rect) {
     let acc = accent(Page::Today);
     let vm = c.vm;
@@ -592,6 +605,7 @@ fn today(c: &mut Ctx, a: Rect) {
     for (i, d) in ["M", "T", "W", "T", "F", "S", "S"].iter().enumerate() {
         c.text(*d, Rect::new(cal.x + i as f32 * cell_w, cal.y + 30.0, cell_w, 16.0), 10.5, Weight::Semibold, TEXT_3, Align::Center);
     }
+    let busy = crate::calendar::busy_days(&vm.calendar.events, shown_y, shown_m);
     let first = NaiveDate::from_ymd_opt(shown_y, shown_m, 1).unwrap();
     let off = first.weekday().num_days_from_monday() as usize;
     for d in 1..=days_in_month(shown_y, shown_m) {
@@ -602,32 +616,74 @@ fn today(c: &mut Ctx, a: Rect) {
         if is_today {
             c.s.circle(r.cx(), r.cy(), 12.0, acc);
         }
+        if busy.contains(&d) {
+            c.s.circle(r.cx(), r.y + r.h - 2.5, 1.9, if is_today { ON_ACCENT } else { acc });
+        }
         let wk = col >= 5;
         c.text(d.to_string(), r, 12.0, if is_today { Weight::Bold } else { Weight::Regular }, if is_today { ON_ACCENT } else if wk { TEXT_3 } else { TEXT_2 }, Align::Center);
     }
 
-    // Day + system.
-    let x = a.x + 246.0;
-    let w = a.w - 246.0;
+    // Day + agenda + a one-line system summary.
+    let x = a.x + 232.0;
+    let w = a.w - 232.0;
     c.text(date.format("%A").to_string(), Rect::new(x, a.y, w, 30.0), 23.0, Weight::Semibold, TEXT, Align::Left);
     c.text(date.format("%-d %B").to_string(), Rect::new(x, a.y + 30.0, w, 20.0), 14.0, Weight::Regular, acc, Align::Left);
+    agenda(c, Rect::new(x, a.y + 58.0, w, 158.0), acc);
     let sys = &vm.system;
-    let y0 = a.y + 74.0;
-    let hot = |p: f32| if p > 85.0 { RED } else if p > 65.0 { AMBER } else { acc };
-    meter(c, Rect::new(x, y0, w, 28.0), "CPU", &format!("{:.0}%", sys.cpu_pct), sys.cpu_pct / 100.0, hot(sys.cpu_pct));
-    meter(c, Rect::new(x, y0 + 40.0, w, 28.0), "Memory", &format!("{:.1} / {:.0} GB", sys.mem_used_gb, sys.mem_total_gb), sys.mem_pct() / 100.0, hot(sys.mem_pct()));
-    meter(c, Rect::new(x, y0 + 80.0, w, 28.0), "Disk", &format!("{:.0}%", sys.disk_pct()), sys.disk_pct() / 100.0, hot(sys.disk_pct()));
-    match sys.battery_pct {
-        Some(b) => {
-            let col = if sys.charging { GREEN } else if b <= 20 { RED } else { acc };
-            let label = if sys.charging { "Battery \u{00b7} charging" } else { "Battery" };
-            meter(c, Rect::new(x, y0 + 120.0, w, 28.0), label, &format!("{b}%"), b as f32 / 100.0, col);
+    let mut line = format!("CPU {:.0}%  \u{00b7}  RAM {:.0}%  \u{00b7}  Disk {:.0}%", sys.cpu_pct, sys.mem_pct(), sys.disk_pct());
+    if let Some(b) = sys.battery_pct {
+        line.push_str(&format!("  \u{00b7}  {b}%{}", if sys.charging { "\u{26a1}" } else { "" }));
+    }
+    c.text(line, Rect::new(x, a.bottom() - 16.0, w, 16.0), 9.5, Weight::Regular, TEXT_3, Align::Left);
+}
+
+/// Upcoming meetings from the connected calendars, or the prompt to connect one.
+fn agenda(c: &mut Ctx, r: Rect, acc: Color) {
+    use crate::calendar::{clock_label, countdown, day_label, FeedState};
+    let vm = c.vm;
+    let now = vm.now.timestamp();
+    if vm.calendar_feeds == 0 {
+        c.text("Never miss a meeting", Rect::new(r.x, r.y + 2.0, r.w, 20.0), 13.5, Weight::Semibold, TEXT, Align::Left);
+        for (i, l) in ["Paste an iCal link from Google", "Calendar or Outlook and Teardrop", "alerts you before each meeting."].iter().enumerate() {
+            c.text(*l, Rect::new(r.x, r.y + 26.0 + i as f32 * 15.0, r.w, 15.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
         }
-        None => {
-            c.text("Power", Rect::new(x, y0 + 120.0, 80.0, 16.0), 12.0, Weight::Regular, TEXT_2, Align::Left);
-            c.text("Plugged in", Rect::new(x + w - 100.0, y0 + 120.0, 100.0, 16.0), 12.0, Weight::Semibold, TEXT, Align::Right);
+        c.pill(Rect::new(r.x, r.y + 82.0, 150.0, 26.0), Action::CalendarPaste, "Paste calendar link", Some(acc), 11.0);
+        c.text("Copy the link first, then press it.", Rect::new(r.x, r.y + 114.0, r.w, 15.0), 10.0, Weight::Regular, TEXT_3, Align::Left);
+        return;
+    }
+    let items = vm.calendar.agenda(now, 3);
+    if items.is_empty() {
+        let (msg, col) = match vm.calendar.state {
+            FeedState::Loading | FeedState::Idle => ("Loading your calendar\u{2026}".to_string(), TEXT_3),
+            FeedState::Failed => (vm.calendar.error.clone(), AMBER),
+            FeedState::Ok => ("No meetings in the next 2 weeks".to_string(), TEXT_3),
+        };
+        c.text(msg, Rect::new(r.x, r.y + 6.0, r.w, 18.0), 12.0, Weight::Medium, col, Align::Left);
+    }
+    for (i, ev) in items.iter().enumerate() {
+        let row = Rect::new(r.x, r.y + i as f32 * 44.0, r.w, 40.0);
+        c.s.rect(row, 10.0, SURFACE);
+        if i == 0 {
+            c.s.rect(Rect::new(row.x, row.y + 8.0, 3.0, row.h - 16.0), 1.5, acc);
+        }
+        let join = ev.join.is_some();
+        let tw = row.w - 20.0 - if join { 48.0 } else { 0.0 };
+        c.text(ev.title.clone(), Rect::new(row.x + 12.0, row.y + 4.0, tw, 18.0), 12.5, Weight::Semibold, TEXT, Align::Left);
+        let day = day_label(ev, now);
+        let when = if ev.all_day { format!("{day} \u{00b7} All day") } else { format!("{day} {}", clock_label(ev)) };
+        let tail = match (&ev.join, i) {
+            (Some(j), _) => format!(" \u{00b7} {}", j.platform),
+            (None, 0) if !ev.all_day => format!(" \u{00b7} {}", countdown(ev, now)),
+            _ => String::new(),
+        };
+        c.text(format!("{when}{tail}"), Rect::new(row.x + 12.0, row.y + 22.0, tw, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+        if join {
+            c.pill(Rect::new(row.right() - 46.0, row.cy() - 11.0, 40.0, 22.0), Action::Join(i as u8), "Join", Some(acc), 10.5);
         }
     }
+    let fy = r.y + 3.0 * 44.0 + 4.0;
+    c.pill(Rect::new(r.x, fy, 64.0, 20.0), Action::CalendarPaste, "Add link", None, 10.0);
+    c.pill(Rect::new(r.x + 70.0, fy, 64.0, 20.0), Action::CalendarClear, "Remove", None, 10.0);
 }
 
 // -------------------------------------------------------------------- speed
@@ -745,6 +801,129 @@ fn speed(c: &mut Ctx, a: Rect) {
 }
 
 // ----------------------------------------------------------------- settings
+
+// -------------------------------------------------------------------- usage
+
+fn usage_bar(c: &mut Ctx, r: Rect, label: &str, w: Option<&crate::usage::Window>, now: i64, acc: Color) {
+    c.text(label, Rect::new(r.x, r.y, r.w - 40.0, 14.0), 10.5, Weight::Medium, TEXT_3, Align::Left);
+    let bar = Rect::new(r.x, r.y + 20.0, r.w, 6.0);
+    c.s.rect(bar, 3.0, Color::rgba(255, 255, 255, 0.10));
+    match w {
+        Some(w) => {
+            let used = w.used_now(now);
+            let col = if used > 85.0 { RED } else if used > 65.0 { AMBER } else { acc };
+            c.text(format!("{used:.0}%"), Rect::new(r.right() - 40.0, r.y - 1.0, 40.0, 16.0), 12.0, Weight::Semibold, TEXT, Align::Right);
+            if used > 0.0 {
+                c.s.rect(Rect::new(bar.x, bar.y, (bar.w * used / 100.0).max(6.0), 6.0), 3.0, col);
+            }
+        }
+        None => c.text("\u{2014}", Rect::new(r.right() - 40.0, r.y - 1.0, 40.0, 16.0), 12.0, Weight::Semibold, TEXT_3, Align::Right),
+    }
+}
+
+fn limits_card(c: &mut Ctx, r: Rect, name: &str, l: &crate::usage::Limits, loaded: bool, acc: Color, now: i64) {
+    c.s.rect(r, 12.0, SURFACE);
+    let head = if l.plan.is_empty() { name.to_string() } else { format!("{name}  \u{00b7}  {}", l.plan) };
+    c.text(head, Rect::new(r.x + 12.0, r.y + 7.0, r.w - 24.0, 18.0), 13.0, Weight::Semibold, TEXT, Align::Left);
+    if !l.has_data() {
+        let msg = if !loaded { "Reading\u{2026}" } else if l.note.is_empty() { "No data yet" } else { l.note.as_str() };
+        c.text(msg, Rect::new(r.x + 12.0, r.y + 28.0, r.w - 24.0, 18.0), 11.5, Weight::Regular, TEXT_3, Align::Left);
+        return;
+    }
+    let half = (r.w - 36.0) / 2.0;
+    let reset = |w: &Option<crate::usage::Window>, name: &str| match w.as_ref().and_then(|w| w.resets_at) {
+        Some(t) if t > now => format!("{name} \u{00b7} resets {}", crate::usage::reset_text(t, now)),
+        _ => name.to_string(),
+    };
+    usage_bar(c, Rect::new(r.x + 12.0, r.y + 28.0, half, 30.0), &reset(&l.primary, "5-hour"), l.primary.as_ref(), now, acc);
+    usage_bar(c, Rect::new(r.x + 24.0 + half, r.y + 28.0, half, 30.0), &reset(&l.secondary, "Weekly"), l.secondary.as_ref(), now, acc);
+}
+
+fn usage(c: &mut Ctx, a: Rect) {
+    let acc = accent(Page::Usage);
+    let u = &c.vm.usage;
+    let now = chrono::Utc::now().timestamp();
+    c.text("Usage", Rect::new(a.x, a.y, 120.0, 26.0), 17.0, Weight::Semibold, TEXT, Align::Left);
+    if u.refreshing {
+        c.pill(Rect::new(a.right() - 96.0, a.y + 1.0, 96.0, 24.0), Action::Island, "Updating\u{2026}", None, 11.5);
+    } else {
+        c.pill(Rect::new(a.right() - 96.0, a.y + 1.0, 96.0, 24.0), Action::UsageRefresh, "Refresh", None, 11.5);
+    }
+    let w = a.w;
+    limits_card(c, Rect::new(a.x, a.y + 34.0, w, 62.0), "Claude Code", &u.claude, u.loaded, acc, now);
+    limits_card(c, Rect::new(a.x, a.y + 102.0, w, 62.0), "Codex", &u.codex, u.loaded, acc, now);
+
+    // OpenCode: spend from its local database (no plan limits to read).
+    let r = Rect::new(a.x, a.y + 170.0, w, a.h - 170.0);
+    c.s.rect(r, 12.0, SURFACE);
+    let o = &u.opencode;
+    c.text("OpenCode", Rect::new(r.x + 12.0, r.y + 7.0, 120.0, 18.0), 13.0, Weight::Semibold, TEXT, Align::Left);
+    if !u.loaded || !o.note.is_empty() {
+        let msg = if !u.loaded { "Reading\u{2026}" } else { o.note.as_str() };
+        c.text(msg, Rect::new(r.x + 12.0, r.y + 28.0, r.w - 24.0, 18.0), 11.5, Weight::Regular, TEXT_3, Align::Left);
+    } else if o.week_tokens == 0 {
+        c.text("No OpenCode activity in the last 7 days", Rect::new(r.x + 12.0, r.y + 28.0, r.w - 24.0, 18.0), 11.5, Weight::Regular, TEXT_3, Align::Left);
+    } else {
+        let money = |v: f64| if v > 0.0 { format!(" \u{00b7} ${v:.2}") } else { String::new() };
+        let line = format!("Today {} tokens{}    Week {} tokens{}", crate::usage::compact_count(o.today_tokens), money(o.today_cost), crate::usage::compact_count(o.week_tokens), money(o.week_cost));
+        c.text(line, Rect::new(r.x + 12.0, r.y + 26.0, r.w - 24.0, 18.0), 12.0, Weight::Medium, TEXT, Align::Left);
+        let top = o.top.iter().map(|s| format!("{} {}", s.label.rsplit('/').next().unwrap_or(&s.label), crate::usage::compact_count(s.tokens))).collect::<Vec<_>>().join("  \u{00b7}  ");
+        if !top.is_empty() {
+            c.text(top, Rect::new(r.x + 12.0, r.y + 45.0, r.w - 24.0, 16.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+        }
+    }
+}
+
+// -------------------------------------------------------------------- voice
+
+fn voice(c: &mut Ctx, a: Rect) {
+    use crate::voice::VoicePhase;
+    let acc = accent(Page::Voice);
+    let v = &c.vm.voice;
+    let rec = v.phase == VoicePhase::Recording;
+    let cx = a.cx();
+
+    c.text(crate::voice::clock(v.elapsed_ms), Rect::new(a.x, a.y, a.w, 34.0), 28.0, Weight::Semibold, if rec { TEXT } else { TEXT_3 }, Align::Center);
+
+    // Waveform of the last few seconds, mirrored around the middle.
+    let n = c.ui.voice_bars.len();
+    let (bw, gap) = (5.0, 3.0);
+    let x0 = cx - (n as f32 * (bw + gap) - gap) / 2.0;
+    let mid = a.y + 66.0;
+    for (i, b) in c.ui.voice_bars.iter().enumerate() {
+        let h = 3.0 + b * 40.0;
+        let fade = 0.35 + 0.65 * (i as f32 / n as f32);
+        c.s.rect(Rect::new(x0 + i as f32 * (bw + gap), mid - h / 2.0, bw, h), 2.5, if rec { acc.fade(fade) } else { Color::rgba(255, 255, 255, 0.12) });
+    }
+
+    // Record / stop button.
+    let (by, br) = (a.y + 134.0, 34.0);
+    let act = Action::VoiceToggle;
+    let hv = c.hov(act);
+    if rec {
+        let pulse = ((c.now_ms % 1400) as f32 / 1400.0 * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+        c.s.circle(cx, by, br + 6.0 + 4.0 * pulse, acc.fade(0.16));
+        c.s.circle(cx, by, br + hv * 2.0, acc);
+        c.s.rect(Rect::new(cx - 11.0, by - 11.0, 22.0, 22.0), 5.0, WHITE);
+    } else {
+        c.s.circle(cx, by, br + 6.0, acc.fade(0.10 + 0.10 * hv));
+        c.s.ring(cx, by, br, 3.0, 0.0, 1.0, acc);
+        c.s.circle(cx, by, 14.0 + hv * 2.0, acc);
+    }
+    c.hit(Rect::new(cx - br, by - br, br * 2.0, br * 2.0), act);
+
+    // Status line.
+    let (msg, col) = match v.phase {
+        VoicePhase::Recording => ("Recording\u{2026} tap to stop".to_string(), TEXT_2),
+        VoicePhase::Failed => (v.error.clone(), AMBER),
+        VoicePhase::Idle => match &v.saved {
+            Some(name) => (format!("Saved to the shelf \u{00b7} {name}"), TEXT_2),
+            None => ("Tap to record from your microphone".to_string(), TEXT_3),
+        },
+    };
+    c.text(msg, Rect::new(a.x, a.y + 184.0, a.w, 18.0), 12.0, Weight::Medium, col, Align::Center);
+    c.pill(Rect::new(a.right() - 112.0, a.bottom() - 26.0, 112.0, 24.0), Action::VoiceFolder, "Open folder", None, 11.0);
+}
 
 /// "Check for updates" / "Update to vX" button for the GitHub release check.
 fn update_pill(c: &mut Ctx, r: Rect) {
