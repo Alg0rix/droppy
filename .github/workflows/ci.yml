@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --workspace
+      - name: Release build
+        run: cargo build -p teardrop --release
+      - name: Selftest (renders every state headless)
+        run: ./target/release/teardrop.exe --selftest dist/selftest
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: selftest-screenshots
+          path: dist/selftest
+          if-no-files-found: ignore

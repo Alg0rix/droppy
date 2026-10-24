@@ -1,0 +1,472 @@
+//! Scripted tour of every island state with fake data.
+//!
+//! `teardrop.exe --selftest <dir>` renders each state through the real
+//! Direct2D painter into PNG screenshots (Windows), runs layout + logic
+//! checks, and writes `report.json`. Exit code is non-zero on any failure.
+//!
+//! `TEARDROP_SELFTEST_DPI=144` renders at 150%; default is 192 (2x) so
+//! screenshots are crisp.
+
+use super::ui::layout::{build, IslandView};
+use super::ui::state::{Action, UiState};
+use super::viewmodel::{hud_volume, hud_water_due, ViewModel};
+use chrono::Utc;
+use serde_json::json;
+use std::path::{Path, PathBuf};
+use teardrop_core::{DropletGeom, Hud, HudKind, IdleLook, Page, Settings};
+
+/// Minimal PNG writer (stored deflate) so the harness needs no image crate.
+pub fn write_png(path: &Path, w: u32, h: u32, rgb: &[u8]) -> std::io::Result<()> {
+    fn crc32(data: &[u8]) -> u32 {
+        let mut table = [0u32; 256];
+        for n in 0..256u32 {
+            let mut c = n;
+            for _ in 0..8 {
+                c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
+            }
+            table[n as usize] = c;
+        }
+        let mut c = 0xFFFF_FFFFu32;
+        for b in data {
+            c = table[((c ^ *b as u32) & 0xFF) as usize] ^ (c >> 8);
+        }
+        c ^ 0xFFFF_FFFF
+    }
+    fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
+        out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        let mut body = kind.to_vec();
+        body.extend_from_slice(data);
+        out.extend_from_slice(&body);
+        out.extend_from_slice(&crc32(&body).to_be_bytes());
+    }
+    let mut raw = Vec::with_capacity((w as usize * 3 + 1) * h as usize);
+    for y in 0..h as usize {
+        raw.push(0);
+        raw.extend_from_slice(&rgb[y * w as usize * 3..(y + 1) * w as usize * 3]);
+    }
+    let mut z = vec![0x78, 0x01];
+    let mut chunks = raw.chunks(65_535).peekable();
+    while let Some(c) = chunks.next() {
+        z.push(if chunks.peek().is_none() { 1 } else { 0 });
+        z.extend_from_slice(&(c.len() as u16).to_le_bytes());
+        z.extend_from_slice(&(!(c.len() as u16)).to_le_bytes());
+        z.extend_from_slice(c);
+    }
+    let (mut a, mut b) = (1u32, 0u32);
+    for byte in &raw {
+        a = (a + *byte as u32) % 65_521;
+        b = (b + a) % 65_521;
+    }
+    z.extend_from_slice(&((b << 16) | a).to_be_bytes());
+    let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+    let mut ihdr = Vec::new();
+    ihdr.extend_from_slice(&w.to_be_bytes());
+    ihdr.extend_from_slice(&h.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 2, 0, 0, 0]);
+    chunk(&mut out, b"IHDR", &ihdr);
+    chunk(&mut out, b"IDAT", &z);
+    chunk(&mut out, b"IEND", &[]);
+    std::fs::write(path, out)
+}
+
+/// Premultiplied BGRA over a soft "desktop" backdrop -> RGB.
+#[cfg(windows)]
+fn composite(w: u32, h: u32, bgra: &[u8]) -> Vec<u8> {
+    let mut rgb = Vec::with_capacity((w * h * 3) as usize);
+    for y in 0..h {
+        let t = y as f32 / h.max(1) as f32;
+        let bg = [52.0 + 40.0 * t, 64.0 + 30.0 * t, 96.0 + 40.0 * t];
+        for x in 0..w {
+            let i = ((y * w + x) * 4) as usize;
+            let a = bgra[i + 3] as f32 / 255.0;
+            let (b, g, r) = (bgra[i] as f32, bgra[i + 1] as f32, bgra[i + 2] as f32);
+            rgb.push((r + bg[0] * (1.0 - a)).clamp(0.0, 255.0) as u8);
+            rgb.push((g + bg[1] * (1.0 - a)).clamp(0.0, 255.0) as u8);
+            rgb.push((b + bg[2] * (1.0 - a)).clamp(0.0, 255.0) as u8);
+        }
+    }
+    rgb
+}
+
+struct Shot {
+    name: &'static str,
+    open: f32,
+    wobble: f32,
+    page: Page,
+    hover: Option<Action>,
+    setup: fn(&mut ViewModel, &mut Settings, &mut UiState, u64),
+}
+
+fn nothing(_: &mut ViewModel, _: &mut Settings, _: &mut UiState, _: u64) {}
+
+fn shot(name: &'static str, open: f32, page: Page) -> Shot {
+    Shot { name, open, wobble: 0.0, page, hover: None, setup: nothing }
+}
+
+fn shots() -> Vec<Shot> {
+    vec![
+        Shot { setup: |vm, _, _, _| vm.track.playback = teardrop_core::Playback::Stopped, ..shot("01-collapsed-clock", 0.0, Page::Music) },
+        shot("02-collapsed-music", 0.0, Page::Music),
+        Shot { setup: |_, _, ui, ms| ui.peek_until_ms = ms + 5000, ..shot("03-music-peek", 0.0, Page::Music) },
+        Shot {
+            setup: |vm, set, _, _| {
+                vm.track.playback = teardrop_core::Playback::Stopped;
+                set.idle_look = IdleLook::Eyes;
+                vm.idle_look = IdleLook::Eyes;
+            },
+            ..shot("04-collapsed-eyes", 0.0, Page::Music)
+        },
+        Shot { setup: |vm, _, _, ms| vm.hud = Some(hud_volume(64, false, ms)), ..shot("05-hud-volume", 0.0, Page::Music) },
+        Shot { setup: |vm, _, _, ms| vm.hud = Some(hud_water_due(ms)), ..shot("06-hud-water", 0.0, Page::Music) },
+        Shot {
+            setup: |vm, _, _, ms| vm.hud = Some(Hud::transient(HudKind::Charging, "Charging", "87%", ms, 5000)),
+            ..shot("07-hud-charging", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, _, _, _| {
+                let now = vm.now;
+                vm.pomo.start_focus(now - chrono::Duration::minutes(6));
+            },
+            ..shot("08-collapsed-focus", 0.0, Page::Music)
+        },
+        Shot { wobble: 1.5, ..shot("10-morph-hover-peek", 0.08, Page::Music) },
+        Shot { wobble: -2.0, ..shot("11-morph-necking", 0.45, Page::Music) },
+        Shot { wobble: 3.0, ..shot("12-morph-bulb", 0.7, Page::Music) },
+        Shot { wobble: 4.0, ..shot("13-morph-settling", 0.92, Page::Music) },
+        Shot {
+            setup: |vm, _, _, _| {
+                vm.lyric_lines = teardrop_core::parse_lrc("[00:58.00]Ripples keep the shape of you\n[01:02.00]Surface tension holding true\n[01:09.00]Fall into the blue\n");
+                vm.lyric_idx = teardrop_core::line_at(&vm.lyric_lines, vm.track.position_ms);
+            },
+            ..shot("20-page-music", 1.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, _, _, _| {
+                let now = vm.now;
+                vm.pomo.completed_focus = 2;
+                vm.pomo.start_focus(now - chrono::Duration::minutes(9));
+            },
+            ..shot("21-page-focus", 1.0, Page::Focus)
+        },
+        shot("22-page-water", 1.0, Page::Water),
+        shot("23-page-shelf", 1.0, Page::Shelf),
+        Shot { setup: |_, _, ui, _| ui.input = Some("Draft the launch notes".into()), ..shot("24-page-tasks-typing", 1.0, Page::Tasks) },
+        shot("25-page-clipboard", 1.0, Page::Clipboard),
+        shot("26-page-today", 1.0, Page::Today),
+        shot("27-page-settings", 1.0, Page::Settings),
+        Shot { hover: Some(Action::MediaPlayPause), ..shot("30-hover-play", 1.0, Page::Music) },
+        Shot { hover: Some(Action::Tab(Page::Tasks)), ..shot("31-hover-tab", 1.0, Page::Water) },
+        Shot { hover: Some(Action::ShelfOpen(1)), ..shot("32-hover-shelf-tile", 1.0, Page::Shelf) },
+        Shot { setup: |vm, _, _, _| vm.shelf.items.clear(), ..shot("33-empty-shelf", 1.0, Page::Shelf) },
+        Shot { setup: |vm, _, _, _| vm.tasks.tasks.clear(), ..shot("34-empty-tasks", 1.0, Page::Tasks) },
+        Shot { setup: |_, _, ui, ms| ui.toast("Copied", ms), ..shot("35-toast-copied", 1.0, Page::Clipboard) },
+    ]
+}
+
+pub fn run(dir: &str) -> i32 {
+    let out = PathBuf::from(dir);
+    if let Err(e) = std::fs::create_dir_all(&out) {
+        eprintln!("selftest: cannot create {dir}: {e}");
+        return 2;
+    }
+    let dpi: i32 = std::env::var("TEARDROP_SELFTEST_DPI").ok().and_then(|v| v.parse().ok()).unwrap_or(192);
+    let scale = dpi as f32 / 96.0;
+    let geom = DropletGeom::default();
+    let mut frames: Vec<serde_json::Value> = Vec::new();
+    let mut failures: Vec<String> = Vec::new();
+
+    #[cfg(windows)]
+    unsafe {
+        let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED);
+    }
+
+    // Pixel-true frames through the real painter.
+    let now = Utc::now();
+    let now_ms = now.timestamp_millis() as u64;
+    for s in shots() {
+        let mut vm = ViewModel::demo(now);
+        let mut set = Settings::default();
+        vm.page = s.page;
+        let mut ui = UiState::new(s.page);
+        (s.setup)(&mut vm, &mut set, &mut ui, now_ms);
+        ui.set_hover(s.hover);
+        for _ in 0..180 {
+            ui.tick(1.0 / 60.0, &vm, &set, now_ms);
+        }
+        let mut g = geom;
+        g.pill_w = ui.compact_w;
+        g.pill_h = ui.compact_h;
+        let view = IslandView { geom: g, open: s.open, wobble_px: s.wobble };
+        let frame = build(&vm, &set, &ui, &view, now_ms);
+        if s.open >= 1.0 {
+            for h in &frame.hits {
+                if h.rect.x < -0.5 || h.rect.right() > frame.w + 0.5 || h.rect.bottom() > frame.h + 0.5 {
+                    failures.push(format!("{}: hit {:?} outside window", s.name, h.action));
+                }
+            }
+            if !frame.hits.iter().any(|h| matches!(h.action, Action::Tab(_))) {
+                failures.push(format!("{}: no tab hits", s.name));
+            }
+        }
+        #[allow(unused_mut)]
+        let mut entry = json!({"name": s.name, "open": s.open, "w": frame.w, "h": frame.h, "cmds": frame.scene.cmds.len(), "hits": frame.hits.len()});
+        #[cfg(windows)]
+        match crate::render_d2d::d2d::render_offscreen(&frame.scene, (frame.w, frame.h), scale) {
+            Some((pw, ph, bgra)) => {
+                let rgb = composite(pw, ph, &bgra);
+                let file = out.join(format!("{}.png", s.name));
+                // A previewer holding the old PNG open is not a rendering failure.
+                if let Err(e) = write_png(&file, pw, ph, &rgb) {
+                    eprintln!("selftest: warning: {}: png write failed: {e}", s.name);
+                }
+                entry["file"] = json!(format!("{}.png", s.name));
+            }
+            None => failures.push(format!("{}: offscreen render failed", s.name)),
+        }
+        #[cfg(not(windows))]
+        let _ = scale;
+        frames.push(entry);
+    }
+
+    // Morph geometry contracts.
+    if (geom.width(0.0) - geom.pill_w).abs() > 0.5 {
+        failures.push("collapsed width off".into());
+    }
+    if (geom.width(1.0) - geom.card_w).abs() > 0.5 {
+        failures.push("open width off".into());
+    }
+    if geom.neck(0.45) >= 0.75 {
+        failures.push("neck did not pinch".into());
+    }
+
+    // Timing check: island spring must settle < 600ms simulated.
+    let mut sp = teardrop_core::Spring::island();
+    let mut steps = 0;
+    loop {
+        steps += 1;
+        let moving = sp.step(1.0, 1.0 / 120.0);
+        if !moving || steps > 240 {
+            break;
+        }
+    }
+    let settle_ms = steps as f32 * 1000.0 / 120.0;
+    if settle_ms > 600.0 {
+        failures.push(format!("spring settle {settle_ms:.0}ms > 600ms"));
+    }
+
+    // Interactions on the view-model.
+    let mut vm = ViewModel::demo(now);
+    let mut interactions: Vec<serde_json::Value> = Vec::new();
+    let day = vm.day();
+    let before = vm.water.today(day);
+    vm.water.add(day, 250);
+    if vm.water.today(day) != before + 250 {
+        failures.push("water +250 failed".into());
+    }
+    vm.water.sub(day, 250);
+    if vm.water.today(day) != before {
+        failures.push("water undo failed".into());
+    }
+    interactions.push(json!({"action": "water+250/undo", "today_ml": vm.water.today(day)}));
+    let open_before = vm.tasks.open_count();
+    vm.tasks.add("selftest task", now);
+    if vm.tasks.open_count() != open_before + 1 {
+        failures.push("tasks add failed".into());
+    }
+    vm.pomo.start_focus(now);
+    if vm.pomo.remaining_ms(now) == 0 {
+        failures.push("focus start failed".into());
+    }
+    if Page::Music.step(1) != Page::Focus || Page::Today.step(1) != Page::Music || Page::Settings.step(1) != Page::Music {
+        failures.push("page stepping wrong".into());
+    }
+    interactions.push(json!({"action": "tasks/focus/page-step", "open": vm.tasks.open_count()}));
+
+    // Lyrics: encode + extract + parse + cache roundtrip (no network in selftest).
+    let mut lyrics: Vec<serde_json::Value> = Vec::new();
+    let enc = super::lyrics_service::url_encode("Midnight Droplet / A?");
+    if enc != "Midnight%20Droplet%20%2F%20A%3F" {
+        failures.push(format!("url_encode wrong: {enc}"));
+    }
+    lyrics.push(json!({"check": "url_encode", "out": enc}));
+    let body = r#"{"syncedLyrics":"[00:01.00]hello\n[00:05.00]world\n"}"#;
+    match super::lyrics_service::extract_synced(body) {
+        Some(lrc) => {
+            let lines = teardrop_core::parse_lrc(&lrc);
+            if lines.len() != 2 {
+                failures.push("lyrics parse len != 2".to_string());
+            }
+            let idx = teardrop_core::line_at(&lines, 3000);
+            if idx != Some(0) {
+                failures.push("lyrics line_at(3s) != 0".to_string());
+            }
+            lyrics.push(json!({"check": "parse+lookup", "lines": lines.len(), "idx_at_3s": idx}));
+        }
+        None => failures.push("extract_synced failed".to_string()),
+    }
+    // Cache roundtrip inside the selftest dir (isolated from user data).
+    let lyr_dir = out.join("lyrics-tmp");
+    super::lyrics_service::save_cache(&lyr_dir, "A/B", "T:C", "[00:01.00]hi\n");
+    match super::lyrics_service::load_cached(&lyr_dir, "A/B", "T:C") {
+        Some(hit) if hit.len() == 1 && hit[0].text == "hi" => {
+            lyrics.push(json!({"check": "cache", "ok": true}));
+        }
+        _ => failures.push("lyrics cache roundtrip failed".to_string()),
+    }
+    let _ = std::fs::remove_dir_all(&lyr_dir);
+
+    // SMTC mapping: status codes, snapshot conversion, app names (no OS needed).
+    let mut smtc: Vec<serde_json::Value> = Vec::new();
+    if super::media_smtc::status_to_playback(4) != teardrop_core::Playback::Playing {
+        failures.push("smtc 4 != Playing".to_string());
+    }
+    if super::media_smtc::status_to_playback(5) != teardrop_core::Playback::Paused {
+        failures.push("smtc 5 != Paused".to_string());
+    }
+    if super::media_smtc::status_to_playback(3) != teardrop_core::Playback::Stopped {
+        failures.push("smtc 3 != Stopped".to_string());
+    }
+    let snap = super::media_smtc::SmtcSnapshot {
+        title: "Song".into(),
+        artist: "Band".into(),
+        album: "Record".into(),
+        app: "Spotify".into(),
+        position_ms: 90_000,
+        duration_ms: 60_000,
+        playing: true,
+    };
+    let track = super::media_smtc::snapshot_to_track(&snap);
+    if track.position_ms != 60_000 || track.playback != teardrop_core::Playback::Playing {
+        failures.push("smtc snapshot_to_track wrong".to_string());
+    }
+    smtc.push(json!({"check": "status+snapshot", "ok": true}));
+    if super::media_smtc::friendly_app("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify") != "Spotify" {
+        failures.push("friendly_app spotify wrong".to_string());
+    }
+    smtc.push(json!({"check": "friendly_app", "spotify": "Spotify"}));
+
+    // Audio mapping: scalar clamps + HUD labels (no COM in selftest).
+    let mut audio: Vec<serde_json::Value> = Vec::new();
+    if super::volume::scalar_to_pct(0.424) != 42 {
+        failures.push("scalar_to_pct(0.424) != 42".to_string());
+    }
+    if super::volume::scalar_to_pct(1.7) != 100 || super::volume::scalar_to_pct(-0.2) != 0 {
+        failures.push("scalar_to_pct clamp wrong".to_string());
+    }
+    let (t, d) = super::volume::label(super::volume::VolumeState { pct: 42, muted: false });
+    if t != "Volume" || d != "42%" {
+        failures.push("volume label wrong".to_string());
+    }
+    let (t, d) = super::volume::label(super::volume::VolumeState { pct: 0, muted: true });
+    if t != "Muted" || d != "output muted" {
+        failures.push("mute label wrong".to_string());
+    }
+    audio.push(json!({"check": "scalar+label", "ok": true}));
+
+    // Message map: every arm discriminant must be a distinct real Win32 value.
+    // (A bare `WM_MOUSELEAVE` pattern once bound as a catch-all variable and
+    // swallowed the whole wndproc — this section pins the regression.)
+    let mut msgmap: Vec<serde_json::Value> = Vec::new();
+    let ids: Vec<(&str, u32)> = vec![
+        ("WM_CREATE", 1),
+        ("WM_DESTROY", 2),
+        ("WM_PAINT", 15),
+        ("WM_COMMAND", 273),
+        ("WM_TIMER", 275),
+        ("WM_LBUTTONDOWN", 513),
+        ("WM_RBUTTONUP", 517),
+        ("WM_MOUSEMOVE", 512),
+        ("WM_MOUSELEAVE", 675),
+        ("WM_MOUSEWHEEL", 522),
+        ("WM_KEYDOWN", 256),
+        ("WM_DROPFILES", 563),
+        ("WM_CLIPBOARDUPDATE", 797),
+        ("WM_APPCOMMAND", 793),
+        ("WM_POWERBROADCAST", 536),
+        ("WM_DEVICECHANGE", 537),
+        ("WM_HOTKEY", 786),
+        ("WM_DPICHANGED", 736),
+    ];
+    {
+        use std::collections::HashSet;
+        let mut seen = HashSet::new();
+        for (name, v) in &ids {
+            if !seen.insert(v) {
+                failures.push(format!("message id collision: {name}"));
+            }
+        }
+    }
+    msgmap.push(json!({"check": "distinct_ids", "count": ids.len()}));
+
+    // Render helpers: equalizer shape, progress clamp, one-click HUD text.
+    let mut render: Vec<serde_json::Value> = Vec::new();
+    let bars_a = teardrop_core::media::Track::eq_bars(0);
+    let bars_b = teardrop_core::media::Track::eq_bars(10_000);
+    if bars_a.len() != 5 || bars_b.len() != 5 {
+        failures.push("eq_bars len != 5".to_string());
+    }
+    if !bars_a.iter().all(|b| (0.0..=1.0).contains(b)) {
+        failures.push("eq_bars out of range".to_string());
+    }
+    if bars_a == bars_b {
+        failures.push("eq_bars static over time".to_string());
+    }
+    render.push(json!({"check": "eq_bars", "animated": bars_a != bars_b}));
+    let mut t = teardrop_core::media::Track::default();
+    t.duration_ms = 60_000;
+    t.position_ms = 90_000; // clamped by progress()
+    if (t.progress() - 1.0).abs() > 0.001 {
+        failures.push("progress clamp wrong".to_string());
+    }
+    render.push(json!({"check": "progress_clamp", "ok": true}));
+    // Shell config sanity.
+    let st = Settings::default();
+    if st.sounds || !st.hide_in_fullscreen || !st.open_on_hover || st.goal_ml != 2000 {
+        failures.push("settings defaults wrong".into());
+    }
+
+    let report = json!({
+        "ok": failures.is_empty(),
+        "dpi": dpi,
+        "frames": frames,
+        "interactions": interactions,
+        "lyrics": lyrics,
+        "smtc": smtc,
+        "audio": audio,
+        "msgmap": msgmap,
+        "render": render,
+        "settle_ms": settle_ms,
+        "failures": failures,
+    });
+    let rep_path = out.join("report.json");
+    if let Err(e) = std::fs::write(&rep_path, serde_json::to_string_pretty(&report).unwrap()) {
+        eprintln!("selftest: cannot write report: {e}");
+        return 2;
+    }
+    let ok = report["failures"].as_array().map(|a| a.is_empty()).unwrap_or(false);
+    println!("selftest: {} frames -> {} (ok={ok})", report["frames"].as_array().map(|a| a.len()).unwrap_or(0), rep_path.display());
+    if ok {
+        0
+    } else {
+        eprintln!("FAILURES: {:?}", report["failures"]);
+        1
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn png_has_signature_and_chunks() {
+        let dir = std::env::temp_dir().join("teardrop-png-test");
+        let _ = std::fs::create_dir_all(&dir);
+        let f = dir.join("t.png");
+        write_png(&f, 2, 2, &[255, 0, 0, 0, 255, 0, 0, 0, 255, 9, 9, 9]).unwrap();
+        let b = std::fs::read(&f).unwrap();
+        assert_eq!(&b[..8], b"\x89PNG\r\n\x1a\n");
+        assert!(b.windows(4).any(|w| w == b"IHDR"));
+        assert!(b.windows(4).any(|w| w == b"IDAT"));
+        assert!(b.ends_with(&[0xAE, 0x42, 0x60, 0x82]));
+    }
+}

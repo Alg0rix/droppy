@@ -1,0 +1,89 @@
+# ARCHITECTURE — Teardrop
+
+Teardrop is a living notch for Windows 10/11: a small black droplet hangs
+from the top of the screen, shows live activities while collapsed, and
+stretches open like a teardrop into quick pages.
+
+Native Rust, no web view, no runtime. Zero CPU while nothing is moving.
+
+## Crates
+
+| Crate | Role |
+|---|---|
+| `crates/teardrop-core` | Pure logic. Springs, droplet geometry, LRC parsing, Pomodoro, water log, tasks, shelf, settings, clipboard ring, media/HUD/system models. Unit-tested on any OS. No Windows deps. |
+| `crates/teardrop` | Windows app: Win32 + GDI now, Direct2D/DirectWrite next, WinRT for media. Owns the window, tray, services, persistence, selftest. |
+
+## Threads / runtime model
+
+- **UI thread**: Win32 message loop. While anything animates it switches to a
+  frame loop: drain input, draw one frame, `DwmFlush()` (vsync of whatever
+  refresh rate the monitor runs: 60/120/144/240 Hz). Physics advance on a fixed
+  240 Hz step with a carried remainder, so speed is identical at every refresh
+  rate. Ambient motion (equalizer, eyes) uses a 30 fps timer; idle = no frames.
+- **1 s service tick**: system sample, Pomodoro, water reminder, volume poll,
+  media position, SMTC adoption, lyric lookup.
+- **Workers**: SMTC poller (MTA, 5 s), lyric fetch (spawned per track, never blocks UI).
+
+## Rendering model
+
+`ViewModel` + `UiState` + morph amount --`ui::layout::build`--> `Frame { Scene, hits }`.
+
+- `ui/scene.rs`: retained draw list (rects, rings, polys, text, clip) with a
+  builder-level translate + opacity so pages slide/fade as a unit. Pure data,
+  unit-tested on any OS.
+- `ui/layout.rs` + `ui/pages.rs`: header tabs (sliding accent pill), collapsed
+  activities (music, focus ring, HUDs, eyes), one layout fn per page.
+- `ui/state.rs`: hover glow, press, toggle knobs, page slide, compact width,
+  track-change peek, water level, all eased with frame-rate independent smoothing.
+- `render_d2d.rs`: replays a Scene with Direct2D + DirectWrite. The island is a
+  **layered window with per-pixel alpha** (soft shadow, antialiased silhouette).
+  Frames render on the GPU (D3D11 texture, GDI-compatible) and go to
+  `UpdateLayeredWindow`; machines without a hardware device fall back to a CPU DIB.
+  `--selftest` renders the same scenes through WIC to PNG.
+- `droplet.rs` (core): flush-top silhouette. Rest states are exact rects; mid-morph
+  the neck pinches at the attachment point and the bulb swells, driven by the
+  `open` spring plus a `wobble` slosh spring.
+
+## Interaction
+
+Hit regions come from the same frame that was drawn (`Frame.hits`), so what you
+see is what you click. Hover-intent opens after 170 ms (collapses 450 ms after
+leaving unless pinned by a click); click, tray, hotkey or file drop pin it.
+Clicking away closes a pinned island. Text entry (new task) uses `WM_CHAR`.
+
+## Pages & services contract
+
+Each page is `core` state + a thin Windows sampler:
+
+- Music: SMTC snapshot → `media::Track`; lyrics via LRCLIB cache in
+  `%LOCALAPPDATA%\Teardrop\lyrics\`, `lyrics::line_at` + `line_progress`.
+- Focus: `pomodoro::Pomodoro` state machine; island shows countdown.
+- Water: `water::WaterLog` (+250 ml action, week history, `reminder_due`).
+- Shelf: `shelf::Shelf` (drop files → pin, click/drag out).
+- Tasks: `tasks::TaskList` tiny todos.
+- Clipboard: `clipboard::ClipboardRing` in-memory only; skips items flagged
+  `ExcludeClipboardContentFromMonitorProcessing`; click a row to copy it back.
+- Today: month calendar + `system::SystemSnapshot` (CPU/mem/disk/battery).
+- Settings: gear in the header (toggles, water goal, idle look).
+
+HUDs (`hud::Hud`) are transient collapsed-island notices: volume, charging,
+headset battery, water reminder with one-click action.
+
+## Data files
+
+- `%APPDATA%\Teardrop\`: `settings.json`, `water.json`, `tasks.json`,
+  `shelf.json` — kept on uninstall.
+- `%LOCALAPPDATA%\Teardrop\`: `teardrop.log`, `lyrics\` cache — safe to delete.
+
+## Testing without clicking around
+
+`teardrop.exe --selftest <dir>` renders ~26 states (collapsed activities, HUDs,
+morph frames, every page, hover/empty/toast variants) to PNG through the real
+painter, runs layout + logic checks and writes `report.json`. Non-zero exit on
+failure. (Write to a fresh dir if an image viewer still holds old PNGs open.)
+
+| Var | Effect |
+|---|---|
+| `TEARDROP_SELFTEST_DPI=144` | Render at 150% (default 192 = 2x) |
+| `TEARDROP_PERF=1` | Log fps + render ms to `teardrop.log` |
+| `TEARDROP_CPU=1` | Force the CPU renderer |

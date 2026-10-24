@@ -1,0 +1,1441 @@
+//! Win32 shell: a layered, per-pixel-alpha popup pinned to the top of the
+//! primary monitor. All drawing goes through `ui::build` + the Direct2D
+//! painter; this file only owns the window, timers, input and services.
+//!
+//! Timer model: one animation timer (16 ms while springs move, 40 ms for
+//! ambient motion such as the equalizer, off when nothing changes) plus a
+//! 1 s service tick. Collapsed + idle means zero wakeups besides the service tick.
+
+#[cfg(windows)]
+mod inner {
+    use crate::render_d2d::d2d::{render_offscreen, Presenter};
+    use crate::services_system::sys::{sample_all, CpuTracker};
+    use crate::state::{IslandMode, IslandState};
+    use crate::ui::layout::{build, hit_test, IslandView, CONTENT_TOP};
+    use crate::ui::scene::{Color, Fill, Scene};
+    use crate::ui::state::{Action, Hit, SettingKey, UiState};
+    use crate::ui::{self, icons};
+    use crate::viewmodel::{hud_volume, hud_water_due, hud_water_logged, ViewModel};
+    use crate::{lyrics_service, media_smtc, paths, startup, store, volume};
+    use chrono::Utc;
+    use std::cell::{Cell, RefCell};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
+    use std::time::Instant;
+    use teardrop_core::{line_at, Hud, HudKind, LyricLine, Page, Playback, Settings};
+    use windows::core::{w, PCWSTR};
+    use windows::Win32::Foundation::{HANDLE, HGLOBAL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+    use windows::Win32::Graphics::Dwm::DwmFlush;
+    use windows::Win32::Graphics::Gdi::{
+        CreateBitmap, DeleteObject, GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    };
+    use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
+    use windows::Win32::System::DataExchange::{
+        AddClipboardFormatListener, CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
+        RegisterClipboardFormatW, RemoveClipboardFormatListener, SetClipboardData,
+    };
+    use windows::Win32::System::Diagnostics::Debug::Beep;
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+    use windows::Win32::UI::HiDpi::{GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        keybd_event, RegisterHotKey, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, UnregisterHotKey, KEYBD_EVENT_FLAGS,
+        KEYEVENTF_KEYUP, MOD_SHIFT, MOD_WIN, TME_LEAVE, TRACKMOUSEEVENT, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE,
+        VK_MEDIA_PREV_TRACK,
+    };
+    use windows::Win32::UI::Shell::{
+        DragAcceptFiles, DragFinish, DragQueryFileW, ShellExecuteW, Shell_NotifyIconW, HDROP, NIF_ICON, NIF_MESSAGE, NIF_TIP,
+        NIM_ADD, NIM_DELETE, NOTIFYICONDATAW,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::*;
+
+    const TRAY_MSG: u32 = 0x8001;
+    const ID_QUIT: usize = 1000;
+    const ID_TOGGLE: usize = 1001;
+    const ID_SETTINGS: usize = 1002;
+    const HOTKEY_ID: i32 = 1;
+    const HOTKEY_VK: u32 = 0x54; // T
+    const CF_UNICODETEXT_U32: u32 = 13;
+    const WM_APPCOMMAND_U32: u32 = 793;
+    // windows 0.58 keeps WM_MOUSELEAVE under Controls; a bare pattern would
+    // bind as a catch-all variable. Match by value.
+    const WM_MOUSELEAVE_U32: u32 = 675;
+
+    const T_ANIM: usize = 1;
+    const T_SLOW: usize = 2;
+    const T_HOVER: usize = 3;
+    const T_LEAVE: usize = 4;
+
+    static FETCHING: AtomicBool = AtomicBool::new(false);
+    static LYRICS_RESULT: Mutex<Option<(String, Vec<LyricLine>)>> = Mutex::new(None);
+
+    thread_local! {
+        static ISLAND: RefCell<IslandState> = RefCell::new(IslandState::new());
+        static VIEW: RefCell<ViewModel> = RefCell::new(ViewModel::new(Utc::now()));
+        static SETTINGS: RefCell<Settings> = RefCell::new(Settings::default());
+        static UI: RefCell<UiState> = RefCell::new(UiState::new(Page::Music));
+        static HITS: RefCell<Vec<Hit>> = RefCell::new(Vec::new());
+        static PRESENTER: RefCell<Option<Presenter>> = RefCell::new(None);
+        static CPU: RefCell<CpuTracker> = RefCell::new(CpuTracker::default());
+        static LYR_KEY: RefCell<String> = RefCell::new(String::new());
+        static SCALE: Cell<f32> = Cell::new(1.0);
+        static LAST_TICK: Cell<Option<Instant>> = Cell::new(None);
+        static TIMER_MS: Cell<u32> = Cell::new(0);
+        static FAST: Cell<bool> = Cell::new(false);
+        static ACC: Cell<f32> = Cell::new(0.0);
+        static PINNED: Cell<bool> = Cell::new(false);
+        static MENU_OPEN: Cell<bool> = Cell::new(false);
+        static HIDDEN: Cell<bool> = Cell::new(false);
+        static HOVER_PENDING: Cell<bool> = Cell::new(false);
+        static LAST_MOUSE: Cell<(f32, f32)> = Cell::new((-1.0, -1.0));
+        static WIN_POS: Cell<(i32, i32)> = Cell::new((0, 0));
+        static LAST_TAB: Cell<Page> = Cell::new(Page::Music);
+        static TICKS: Cell<u32> = Cell::new(0);
+        static LYR_STABLE: Cell<u8> = Cell::new(0);
+        static LAST_VOL: Cell<Option<(u8, bool)>> = Cell::new(None);
+        static HIGH_SURR: Cell<u16> = Cell::new(0);
+    }
+
+    fn now_ms() -> u64 {
+        Utc::now().timestamp_millis() as u64
+    }
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    fn is_open() -> bool {
+        ISLAND.with(|s| matches!(s.borrow().mode, IslandMode::Open | IslandMode::Opening))
+    }
+
+    fn open_amount() -> f32 {
+        ISLAND.with(|s| s.borrow().open.value)
+    }
+
+    // ------------------------------------------------------------ timers
+
+    fn set_timer(hwnd: HWND, ms: u32) {
+        if TIMER_MS.get() != ms {
+            unsafe {
+                let _ = SetTimer(hwnd, T_ANIM, ms, None);
+            }
+            TIMER_MS.set(ms);
+        }
+    }
+
+    fn kill_timer(hwnd: HWND) {
+        if TIMER_MS.get() != 0 {
+            unsafe {
+                let _ = KillTimer(hwnd, T_ANIM);
+            }
+            TIMER_MS.set(0);
+        }
+    }
+
+    /// Something changed: run the vsync-locked frame loop until it settles.
+    fn wake(_hwnd: HWND) {
+        if !FAST.get() {
+            LAST_TICK.set(None);
+            FAST.set(true);
+        }
+    }
+
+    // ------------------------------------------------------------ rendering
+
+    fn render(hwnd: HWND) {
+        if HIDDEN.get() {
+            return;
+        }
+        let now = Utc::now();
+        let ms = now.timestamp_millis() as u64;
+        let scale = SCALE.get();
+
+        // Pointer in window-local logical px (drives the eyes).
+        let (wx, wy) = WIN_POS.get();
+        let mouse = unsafe {
+            let mut p = POINT::default();
+            if GetCursorPos(&mut p).is_ok() {
+                Some(((p.x - wx) as f32 / scale, (p.y - wy) as f32 / scale))
+            } else {
+                None
+            }
+        };
+        UI.with(|u| u.borrow_mut().mouse = mouse);
+
+        let frame = ISLAND.with(|isl| {
+            let mut st = isl.borrow_mut();
+            UI.with(|u| {
+                let ui = u.borrow();
+                st.geom.pill_w = ui.compact_w;
+                st.geom.pill_h = ui.compact_h;
+            });
+            let view = IslandView { geom: st.geom, open: st.open.value, wobble_px: st.wobble_px };
+            VIEW.with(|v| {
+                v.borrow_mut().now = now;
+                SETTINGS.with(|s| UI.with(|u| build(&v.borrow(), &s.borrow(), &u.borrow(), &view, ms)))
+            })
+        });
+
+        let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
+        let x = ((screen_w as f32 - frame.w * scale) / 2.0).round() as i32;
+        WIN_POS.set((x, 0));
+        let ok = PRESENTER.with(|p| {
+            let mut p = p.borrow_mut();
+            if p.is_none() {
+                let cap_w = ((480.0 + 2.0 * ui::theme::PAD + 24.0) * scale).ceil() as i32;
+                let cap_h = ((318.0 + ui::theme::PAD + 40.0) * scale).ceil() as i32;
+                *p = Presenter::new(cap_w, cap_h);
+                if let Some(pr) = p.as_ref() {
+                    let (_d, cache) = paths::ensure_dirs();
+                    store::log_line(&cache, if pr.is_gpu() { "renderer: GPU (D3D11 + Direct2D)" } else { "renderer: CPU fallback" });
+                }
+            }
+            match p.as_mut() {
+                Some(pr) => pr.present(hwnd, &frame.scene, (frame.w, frame.h), scale, (x, 0)),
+                None => false,
+            }
+        });
+        if ok {
+            unsafe {
+                if !IsWindowVisible(hwnd).as_bool() {
+                    let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+                }
+            }
+        }
+        HITS.with(|h| *h.borrow_mut() = frame.hits);
+    }
+
+    /// `TEARDROP_PERF=1` logs average render cost + achieved fps every 120 frames.
+    fn perf_note(render_ms: f32) {
+        thread_local! {
+            static ON: bool = std::env::var_os("TEARDROP_PERF").is_some();
+            static ST: Cell<(u32, f32, Option<Instant>)> = Cell::new((0, 0.0, None));
+        }
+        if !ON.with(|o| *o) {
+            return;
+        }
+        let (mut n, mut sum, start) = ST.get();
+        let start = start.unwrap_or_else(Instant::now);
+        n += 1;
+        sum += render_ms;
+        if n >= 120 {
+            let secs = start.elapsed().as_secs_f32().max(0.001);
+            let (_d, cache) = paths::ensure_dirs();
+            store::log_line(&cache, &format!("perf: {:.1} fps, render {:.2} ms avg (last d2d draw {:.2} ms)", n as f32 / secs, sum / n as f32, crate::render_d2d::d2d::PROF_DRAW.load(std::sync::atomic::Ordering::Relaxed) as f32 / 100.0));
+            ST.set((0, 0.0, None));
+        } else {
+            ST.set((n, sum, Some(start)));
+        }
+    }
+
+    /// One frame. Fast mode is driven by the vsync loop in `run`, so frame
+    /// pacing follows the display (60/120/144/240 Hz); ambient motion that
+    /// doesn't need full rate (equalizer, eyes) runs off a 30 fps timer.
+    fn tick(hwnd: HWND) {
+        let now = Instant::now();
+        let dt = LAST_TICK.get().map(|t| (now - t).as_secs_f32()).unwrap_or(1.0 / 60.0).clamp(0.0005, 0.1);
+        LAST_TICK.set(Some(now));
+        let ms = now_ms();
+        // Fixed 240 Hz physics with a carried remainder: motion speed is identical
+        // on every refresh rate and never aliases against the frame time.
+        const H: f32 = 1.0 / 240.0;
+        let mut acc = ACC.get() + dt;
+        let island_moving = ISLAND.with(|s| {
+            let mut st = s.borrow_mut();
+            let mut moving = false;
+            let mut n = 0;
+            while acc >= H && n < 48 {
+                moving |= st.tick(H);
+                acc -= H;
+                n += 1;
+            }
+            if n == 0 {
+                moving = true;
+            }
+            moving
+        });
+        ACC.set(acc.min(H));
+        let open = open_amount();
+        let (ui_moving, ambient) = UI.with(|u| {
+            VIEW.with(|v| {
+                SETTINGS.with(|s| {
+                    let mut ui = u.borrow_mut();
+                    let (vm, set) = (v.borrow(), s.borrow());
+                    let moving = ui.tick(dt, &vm, &set, ms);
+                    (moving, ui.ambient(&vm, &set, open, ms))
+                })
+            })
+        });
+        let t0 = Instant::now();
+        render(hwnd);
+        perf_note(t0.elapsed().as_secs_f32() * 1000.0);
+        let smooth_ambient = ambient && open > 0.6 && VIEW.with(|v| v.borrow().page) == Page::Water;
+        if island_moving || ui_moving || smooth_ambient {
+            FAST.set(true);
+        } else if ambient {
+            FAST.set(false);
+            set_timer(hwnd, 33);
+        } else {
+            FAST.set(false);
+            kill_timer(hwnd);
+            LAST_TICK.set(None);
+            ACC.set(0.0);
+        }
+    }
+
+    // ------------------------------------------------------- window state
+
+    fn set_interactive(hwnd: HWND, on: bool) {
+        unsafe {
+            let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+            let flag = WS_EX_NOACTIVATE.0 as isize;
+            let next = if on { ex & !flag } else { ex | flag };
+            if next != ex {
+                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, next);
+            }
+        }
+    }
+
+    fn activate(hwnd: HWND) {
+        set_interactive(hwnd, true);
+        unsafe {
+            let _ = SetForegroundWindow(hwnd);
+            let _ = SetFocus(hwnd);
+        }
+    }
+
+    fn open_island(hwnd: HWND, pinned: bool) {
+        ISLAND.with(|s| {
+            let mut st = s.borrow_mut();
+            if matches!(st.mode, IslandMode::Collapsed | IslandMode::Closing) {
+                st.toggle();
+            }
+        });
+        if pinned {
+            PINNED.set(true);
+            activate(hwnd);
+        }
+        wake(hwnd);
+    }
+
+    fn close_island(hwnd: HWND) {
+        ISLAND.with(|s| {
+            let mut st = s.borrow_mut();
+            if matches!(st.mode, IslandMode::Open | IslandMode::Opening) {
+                st.toggle();
+            }
+        });
+        PINNED.set(false);
+        UI.with(|u| u.borrow_mut().input = None);
+        unsafe {
+            let _ = KillTimer(hwnd, T_LEAVE);
+        }
+        set_interactive(hwnd, false);
+        wake(hwnd);
+    }
+
+    fn apply_fullscreen_hide(hwnd: HWND) -> bool {
+        if !SETTINGS.with(|s| s.borrow().hide_in_fullscreen) {
+            if HIDDEN.get() {
+                HIDDEN.set(false);
+            }
+            return false;
+        }
+        unsafe {
+            let fg = GetForegroundWindow();
+            let hide = (|| {
+                if fg.0.is_null() || fg == hwnd {
+                    return false;
+                }
+                let mut fr = RECT::default();
+                if GetWindowRect(fg, &mut fr).is_err() {
+                    return false;
+                }
+                let mon = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
+                if mon.0.is_null() {
+                    return false;
+                }
+                let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+                if !GetMonitorInfoW(mon, &mut mi).as_bool() {
+                    return false;
+                }
+                let m = mi.rcMonitor;
+                fr.left <= m.left && fr.top <= m.top && fr.right >= m.right && fr.bottom >= m.bottom
+            })();
+            if hide {
+                if !HIDDEN.get() {
+                    HIDDEN.set(true);
+                    let _ = ShowWindow(hwnd, SW_HIDE);
+                }
+            } else if HIDDEN.get() {
+                HIDDEN.set(false);
+                let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            }
+            hide
+        }
+    }
+
+    // ----------------------------------------------------------- persistence
+
+    fn save_all() {
+        let (data, _cache) = paths::ensure_dirs();
+        SETTINGS.with(|s| {
+            VIEW.with(|v| {
+                let vm = v.borrow();
+                let mut st = s.borrow_mut();
+                st.goal_ml = vm.water.goal_ml.max(500);
+                st.idle_look = vm.idle_look;
+                st.start_with_windows = startup::enabled();
+                store::save(&data, "settings", &*st);
+                store::save(&data, "page", &vm.page);
+                store::save(&data, "water", &vm.water);
+                store::save(&data, "tasks", &vm.tasks);
+                store::save(&data, "shelf", &vm.shelf);
+            });
+        });
+    }
+
+    fn load_all() {
+        let (data, _cache) = paths::ensure_dirs();
+        SETTINGS.with(|s| {
+            let mut st = s.borrow_mut();
+            *st = store::load(&data, "settings");
+            st.start_with_windows = startup::enabled();
+        });
+        VIEW.with(|v| {
+            let mut vm = v.borrow_mut();
+            let page: Page = store::load(&data, "page");
+            vm.page = if page == Page::Settings { Page::Music } else { page };
+            vm.water = store::load(&data, "water");
+            // First reminder comes one interval after launch, not instantly.
+            vm.water.last_reminder = Some(Utc::now());
+            vm.tasks = store::load(&data, "tasks");
+            vm.shelf = store::load(&data, "shelf");
+            SETTINGS.with(|s| {
+                let st = s.borrow();
+                vm.water.goal_ml = st.goal_ml.max(500);
+                vm.water.reminders_enabled = st.water_reminders;
+                vm.idle_look = st.idle_look;
+            });
+            CPU.with(|c| vm.system = sample_all(&mut c.borrow_mut(), &vm.system));
+            UI.with(|u| *u.borrow_mut() = UiState::new(vm.page));
+        });
+    }
+
+    // ------------------------------------------------------------- clipboard
+
+    fn clipboard_is_private() -> bool {
+        unsafe {
+            let fmt = RegisterClipboardFormatW(w!("ExcludeClipboardContentFromMonitorProcessing"));
+            fmt != 0 && IsClipboardFormatAvailable(fmt).is_ok()
+        }
+    }
+
+    fn read_clipboard_text(owner: HWND) -> Option<String> {
+        unsafe {
+            if OpenClipboard(owner).is_err() {
+                return None;
+            }
+            let text = (|| {
+                if clipboard_is_private() {
+                    return None;
+                }
+                let h: HANDLE = GetClipboardData(CF_UNICODETEXT_U32).ok()?;
+                let hg = HGLOBAL(h.0);
+                let ptr = GlobalLock(hg) as *const u16;
+                if ptr.is_null() {
+                    return None;
+                }
+                let mut len = 0usize;
+                while len < 8192 && *ptr.add(len) != 0 {
+                    len += 1;
+                }
+                let s = String::from_utf16_lossy(std::slice::from_raw_parts(ptr, len)).trim().to_string();
+                let _ = GlobalUnlock(hg);
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
+            })();
+            let _ = CloseClipboard();
+            text
+        }
+    }
+
+    fn write_clipboard_text(owner: HWND, text: &str) -> bool {
+        let data = wide(text);
+        unsafe {
+            if OpenClipboard(owner).is_err() {
+                return false;
+            }
+            let _ = EmptyClipboard();
+            let ok = (|| {
+                let h = GlobalAlloc(GMEM_MOVEABLE, data.len() * 2).ok()?;
+                let p = GlobalLock(h) as *mut u16;
+                if p.is_null() {
+                    return None;
+                }
+                std::ptr::copy_nonoverlapping(data.as_ptr(), p, data.len());
+                let _ = GlobalUnlock(h);
+                SetClipboardData(CF_UNICODETEXT_U32, HANDLE(h.0)).ok()?;
+                Some(())
+            })()
+            .is_some();
+            let _ = CloseClipboard();
+            ok
+        }
+    }
+
+    // ----------------------------------------------------------- actions
+
+    fn send_media_key(vk: u8) {
+        unsafe {
+            keybd_event(vk, 0, KEYBD_EVENT_FLAGS(0), 0);
+            keybd_event(vk, 0, KEYEVENTF_KEYUP, 0);
+        }
+    }
+
+    fn shell_open(hwnd: HWND, verb: &str, file: &str, params: Option<&str>) {
+        let (v, f) = (wide(verb), wide(file));
+        let p = params.map(wide);
+        unsafe {
+            ShellExecuteW(
+                hwnd,
+                PCWSTR::from_raw(v.as_ptr()),
+                PCWSTR::from_raw(f.as_ptr()),
+                p.as_ref().map(|p| PCWSTR::from_raw(p.as_ptr())).unwrap_or(PCWSTR::null()),
+                PCWSTR::null(),
+                SW_SHOWNORMAL,
+            );
+        }
+    }
+
+    fn chime(freq: u32, ms: u32) {
+        if SETTINGS.with(|s| s.borrow().sounds) {
+            unsafe {
+                let _ = Beep(freq, ms);
+            }
+        }
+    }
+
+    fn toast(msg: &str) {
+        UI.with(|u| u.borrow_mut().toast(msg, now_ms()));
+    }
+
+    fn add_water(ml: u32) {
+        let now = Utc::now();
+        let ms = now_ms();
+        let open = is_open();
+        let total = VIEW.with(|v| {
+            let mut vm = v.borrow_mut();
+            let day = vm.day();
+            let total = vm.water.add(day, ml);
+            vm.water.snooze(now);
+            if !open {
+                vm.hud = Some(hud_water_logged(ml, total, ms));
+            }
+            total
+        });
+        if open {
+            toast(&format!("+{ml} ml \u{00b7} {total} today"));
+        }
+    }
+
+    fn add_task_from_input() {
+        let text = UI.with(|u| u.borrow().input.clone()).unwrap_or_default();
+        let text = text.trim().to_string();
+        if text.is_empty() {
+            return;
+        }
+        VIEW.with(|v| {
+            v.borrow_mut().tasks.add(&text, Utc::now());
+        });
+        UI.with(|u| {
+            let mut ui = u.borrow_mut();
+            ui.input = Some(String::new());
+            // Keep the new row in view.
+            let n = VIEW.with(|v| v.borrow().tasks.tasks.len());
+            let max = ui::pages::tasks_max_scroll(n);
+            ui.scroll_by(Page::Tasks, max as i32, max);
+        });
+    }
+
+    fn perform(hwnd: HWND, a: Action) {
+        let now = Utc::now();
+        let ms = now_ms();
+        let mut save = true;
+        match a {
+            Action::Island => {
+                open_island(hwnd, true);
+                save = false;
+            }
+            Action::HudWater => add_water(250),
+            Action::Tab(p) => VIEW.with(|v| v.borrow_mut().page = p),
+            Action::Gear => VIEW.with(|v| {
+                let mut vm = v.borrow_mut();
+                if vm.page == Page::Settings {
+                    vm.page = LAST_TAB.get();
+                } else {
+                    LAST_TAB.set(vm.page);
+                    vm.page = Page::Settings;
+                }
+            }),
+            Action::MediaPrev => {
+                send_media_key(VK_MEDIA_PREV_TRACK.0 as u8);
+                VIEW.with(|v| v.borrow_mut().track.position_ms = 0);
+            }
+            Action::MediaNext => {
+                send_media_key(VK_MEDIA_NEXT_TRACK.0 as u8);
+                VIEW.with(|v| v.borrow_mut().track.position_ms = 0);
+            }
+            Action::MediaPlayPause => {
+                send_media_key(VK_MEDIA_PLAY_PAUSE.0 as u8);
+                VIEW.with(|v| {
+                    let mut vm = v.borrow_mut();
+                    vm.track.playback = if vm.track.playback == Playback::Playing { Playback::Paused } else { Playback::Playing };
+                });
+                save = false;
+            }
+            Action::FocusToggle => VIEW.with(|v| {
+                let mut vm = v.borrow_mut();
+                if vm.pomo.ends_at.is_some() {
+                    vm.pomo.pause(now);
+                } else if vm.pomo.remaining_ms_when_paused.is_some() {
+                    vm.pomo.resume(now);
+                } else {
+                    vm.pomo.start_focus(now);
+                }
+            }),
+            Action::FocusReset => VIEW.with(|v| v.borrow_mut().pomo.stop()),
+            Action::FocusMinus => VIEW.with(|v| {
+                let mut vm = v.borrow_mut();
+                vm.pomo.focus_min = vm.pomo.focus_min.saturating_sub(5).max(5);
+            }),
+            Action::FocusPlus => VIEW.with(|v| {
+                let mut vm = v.borrow_mut();
+                vm.pomo.focus_min = (vm.pomo.focus_min + 5).min(90);
+            }),
+            Action::WaterAdd(ml) => add_water(ml),
+            Action::WaterUndo => VIEW.with(|v| {
+                let mut vm = v.borrow_mut();
+                let day = vm.day();
+                vm.water.sub(day, 250);
+            }),
+            Action::ShelfOpen(i) | Action::ShelfReveal(i) | Action::ShelfRemove(i) => {
+                let path = VIEW.with(|v| {
+                    let vm = v.borrow();
+                    vm.shelf.items.len().checked_sub(1 + i as usize).and_then(|ix| vm.shelf.items.get(ix)).map(|it| it.path.clone())
+                });
+                if let Some(path) = path {
+                    match a {
+                        Action::ShelfOpen(_) => shell_open(hwnd, "open", &path, None),
+                        Action::ShelfReveal(_) => shell_open(hwnd, "open", "explorer.exe", Some(&format!("/select,\"{path}\""))),
+                        _ => VIEW.with(|v| {
+                            v.borrow_mut().shelf.remove(&path);
+                        }),
+                    }
+                }
+            }
+            Action::TaskToggle(i) => VIEW.with(|v| {
+                let mut vm = v.borrow_mut();
+                if let Some(id) = vm.tasks.tasks.get(i as usize).map(|t| t.id.clone()) {
+                    vm.tasks.toggle(&id);
+                }
+            }),
+            Action::TaskRemove(i) => VIEW.with(|v| {
+                let mut vm = v.borrow_mut();
+                if let Some(id) = vm.tasks.tasks.get(i as usize).map(|t| t.id.clone()) {
+                    vm.tasks.remove(&id);
+                }
+            }),
+            Action::TaskInput => {
+                UI.with(|u| {
+                    let mut ui = u.borrow_mut();
+                    if ui.input.is_none() {
+                        ui.input = Some(String::new());
+                    }
+                });
+                activate(hwnd);
+                save = false;
+            }
+            Action::TaskClearDone => VIEW.with(|v| v.borrow_mut().tasks.clear_done()),
+            Action::ClipCopy(i) => {
+                let text = VIEW.with(|v| v.borrow().clipboard.items().get(i as usize).cloned());
+                if let Some(t) = text {
+                    toast(if write_clipboard_text(hwnd, &t) { "Copied" } else { "Couldn't copy" });
+                }
+                save = false;
+            }
+            Action::ClipClear => {
+                VIEW.with(|v| v.borrow_mut().clipboard.clear());
+                save = false;
+            }
+            Action::Toggle(k) => {
+                SETTINGS.with(|s| k.flip(&mut s.borrow_mut()));
+                let on = SETTINGS.with(|s| k.get(&s.borrow()));
+                match k {
+                    SettingKey::StartWithWindows => {
+                        startup::set(on);
+                    }
+                    SettingKey::WaterReminders => VIEW.with(|v| v.borrow_mut().water.reminders_enabled = on),
+                    SettingKey::ClipboardHistory if !on => VIEW.with(|v| v.borrow_mut().clipboard.clear()),
+                    _ => {}
+                }
+            }
+            Action::Idle(look) => {
+                VIEW.with(|v| v.borrow_mut().idle_look = look);
+                SETTINGS.with(|s| s.borrow_mut().idle_look = look);
+            }
+            Action::GoalStep(d) => VIEW.with(|v| {
+                let mut vm = v.borrow_mut();
+                vm.water.goal_ml = (vm.water.goal_ml as i32 + 250 * d as i32).clamp(500, 6000) as u32;
+            }),
+            Action::Quit => unsafe {
+                let _ = DestroyWindow(hwnd);
+                return;
+            },
+        }
+        let _ = ms;
+        if save {
+            save_all();
+        }
+        wake(hwnd);
+    }
+
+    // ----------------------------------------------------------------- tray
+
+    fn make_tray_icon() -> Option<HICON> {
+        let mut s = Scene::new();
+        s.circle(16.0, 16.0, 15.0, Fill::DGrad(Color::rgb(61, 200, 245), Color::rgb(60, 90, 220)));
+        icons::draw(&mut s, icons::Icon::Drop, 16.0, 16.0, 20.0, Color::rgb(255, 255, 255));
+        let (pw, ph, mut px) = render_offscreen(&s, (32.0, 32.0), 1.0)?;
+        // Premultiplied -> straight alpha for the icon bitmap.
+        for p in px.chunks_exact_mut(4) {
+            let a = p[3] as f32 / 255.0;
+            if a > 0.0 {
+                for c in &mut p[..3] {
+                    *c = ((*c as f32 / a).min(255.0)) as u8;
+                }
+            }
+        }
+        unsafe {
+            let color = CreateBitmap(pw as i32, ph as i32, 1, 32, Some(px.as_ptr() as *const _));
+            let mask_bits = vec![0u8; (pw as usize / 8) * ph as usize];
+            let mask = CreateBitmap(pw as i32, ph as i32, 1, 1, Some(mask_bits.as_ptr() as *const _));
+            let info = ICONINFO { fIcon: true.into(), xHotspot: 0, yHotspot: 0, hbmMask: mask, hbmColor: color };
+            let icon = CreateIconIndirect(&info).ok();
+            let _ = DeleteObject(color);
+            let _ = DeleteObject(mask);
+            icon
+        }
+    }
+
+    fn add_tray(hwnd: HWND) {
+        unsafe {
+            let hicon = make_tray_icon().or_else(|| LoadIconW(None, IDI_APPLICATION).ok());
+            let Some(hicon) = hicon else { return };
+            let mut nid = NOTIFYICONDATAW { cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32, hWnd: hwnd, uID: 1, ..Default::default() };
+            nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+            nid.uCallbackMessage = TRAY_MSG;
+            nid.hIcon = hicon;
+            let tip = wide("Teardrop");
+            nid.szTip[..tip.len().min(127)].copy_from_slice(&tip[..tip.len().min(127)]);
+            let _ = Shell_NotifyIconW(NIM_ADD, &nid);
+        }
+    }
+
+    fn remove_tray(hwnd: HWND) {
+        unsafe {
+            let nid = NOTIFYICONDATAW { cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32, hWnd: hwnd, uID: 1, ..Default::default() };
+            let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
+        }
+    }
+
+    fn show_menu(hwnd: HWND) {
+        unsafe {
+            let Ok(menu) = CreatePopupMenu() else { return };
+            let items: [(usize, &str); 3] =
+                [(ID_TOGGLE, if is_open() { "Collapse island" } else { "Open island" }), (ID_SETTINGS, "Settings"), (ID_QUIT, "Quit Teardrop")];
+            for (id, label) in items {
+                let l = wide(label);
+                let _ = AppendMenuW(menu, MF_STRING, id, PCWSTR::from_raw(l.as_ptr()));
+            }
+            let mut pt = POINT::default();
+            let _ = GetCursorPos(&mut pt);
+            let _ = SetForegroundWindow(hwnd);
+            MENU_OPEN.set(true);
+            let cmd = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD, pt.x, pt.y, 0, hwnd, None);
+            MENU_OPEN.set(false);
+            let _ = DestroyMenu(menu);
+            match cmd.0 as usize {
+                ID_QUIT => {
+                    let _ = DestroyWindow(hwnd);
+                }
+                ID_TOGGLE => {
+                    if is_open() {
+                        close_island(hwnd)
+                    } else {
+                        open_island(hwnd, true)
+                    }
+                }
+                ID_SETTINGS => {
+                    VIEW.with(|v| {
+                        let mut vm = v.borrow_mut();
+                        if vm.page != Page::Settings {
+                            LAST_TAB.set(vm.page);
+                            vm.page = Page::Settings;
+                        }
+                    });
+                    open_island(hwnd, true);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // ------------------------------------------------------------- services
+
+    fn lyrics_tick() {
+        let cache_dir = paths::cache_dir();
+        let lyrics_on = SETTINGS.with(|s| s.borrow().lyrics_enabled);
+        VIEW.with(|v| {
+            let mut vm = v.borrow_mut();
+            if vm.track.playback == Playback::Playing && vm.track.duration_ms > 0 {
+                vm.track.position_ms = (vm.track.position_ms + 1000).min(vm.track.duration_ms);
+            }
+            if !lyrics_on || vm.track.title.trim().is_empty() {
+                vm.lyric_idx = None;
+                return;
+            }
+            let key = format!("{}\0{}\0{}", vm.track.artist, vm.track.title, vm.track.album);
+            if let Ok(mut slot) = LYRICS_RESULT.lock() {
+                if let Some((k, lines)) = slot.take() {
+                    if k == key {
+                        vm.lyric_lines = lines;
+                    }
+                }
+            }
+            let changed = LYR_KEY.with(|k| {
+                if *k.borrow() != key {
+                    *k.borrow_mut() = key.clone();
+                    true
+                } else {
+                    false
+                }
+            });
+            if changed {
+                LYR_STABLE.set(0);
+                vm.lyric_lines = lyrics_service::load_cached(&cache_dir, &vm.track.artist, &vm.track.title).unwrap_or_default();
+            } else if vm.lyric_lines.is_empty() {
+                let n = LYR_STABLE.get().saturating_add(1);
+                LYR_STABLE.set(n);
+                // One background attempt once the track proves stable; never blocks the UI.
+                if n == 2 && !FETCHING.swap(true, Ordering::SeqCst) {
+                    let (artist, title, album) = (vm.track.artist.clone(), vm.track.title.clone(), vm.track.album.clone());
+                    std::thread::spawn(move || {
+                        let lines = lyrics_service::get_lyrics(&cache_dir, &artist, &title, &album);
+                        if let Ok(mut slot) = LYRICS_RESULT.lock() {
+                            *slot = Some((key, lines));
+                        }
+                        FETCHING.store(false, Ordering::SeqCst);
+                    });
+                }
+            }
+            vm.lyric_idx = line_at(&vm.lyric_lines, vm.track.position_ms);
+        });
+    }
+
+    fn poll_smtc() {
+        let snap = media_smtc::latest(std::time::Duration::from_secs(15));
+        VIEW.with(|v| {
+            let mut vm = v.borrow_mut();
+            match snap {
+                Some(s) if !s.title.trim().is_empty() => {
+                    vm.track.title = s.title;
+                    vm.track.artist = s.artist;
+                    vm.track.album = s.album;
+                    vm.track.app = s.app;
+                    if s.duration_ms > 0 {
+                        vm.track.duration_ms = s.duration_ms;
+                        vm.track.position_ms = s.position_ms.min(s.duration_ms);
+                    }
+                    vm.track.playback = if s.playing { Playback::Playing } else { Playback::Paused };
+                }
+                // Player closed / no session: stop pretending something plays.
+                _ => {
+                    if vm.track.playback == Playback::Playing {
+                        vm.track.playback = Playback::Stopped;
+                    }
+                }
+            }
+        });
+    }
+
+    fn poll_volume() {
+        let Some(vs) = volume::try_read() else { return };
+        let cur = (vs.pct, vs.muted);
+        let prev = LAST_VOL.replace(Some(cur));
+        if prev.is_some() && prev != Some(cur) {
+            let ms = now_ms();
+            VIEW.with(|v| v.borrow_mut().hud = Some(hud_volume(vs.pct, vs.muted, ms)));
+        }
+    }
+
+    fn slow_tick(hwnd: HWND) {
+        let n = TICKS.get().wrapping_add(1);
+        TICKS.set(n);
+        if apply_fullscreen_hide(hwnd) {
+            return;
+        }
+        let now = Utc::now();
+        let ms = now.timestamp_millis() as u64;
+        let remind = SETTINGS.with(|s| s.borrow().water_reminders);
+        VIEW.with(|v| {
+            let mut vm = v.borrow_mut();
+            vm.now = now;
+            if n % 3 == 0 {
+                CPU.with(|c| vm.system = sample_all(&mut c.borrow_mut(), &vm.system));
+            }
+            if vm.pomo.ends_at.is_some() && vm.pomo.tick(now).is_some() {
+                vm.hud = Some(Hud::transient(HudKind::Timer, "Focus", "phase complete", ms, 5000));
+                chime(990, 150);
+            }
+            vm.water.reminders_enabled = remind;
+            let today_ml = vm.water.today(vm.day());
+            if vm.water.reminder_due(now, today_ml) && vm.live_hud(ms).is_none() {
+                vm.hud = Some(hud_water_due(ms));
+                vm.water.snooze(now);
+                chime(880, 120);
+            }
+        });
+        poll_volume();
+        if n % 5 == 0 {
+            poll_smtc();
+        }
+        lyrics_tick();
+        if n % 30 == 0 {
+            save_all();
+        }
+        wake(hwnd);
+    }
+
+    // ---------------------------------------------------------------- input
+
+    fn mouse_xy(lp: LPARAM) -> (f32, f32) {
+        let x = (lp.0 & 0xffff) as i16 as f32;
+        let y = ((lp.0 >> 16) & 0xffff) as i16 as f32;
+        let s = SCALE.get();
+        (x / s, y / s)
+    }
+
+    fn hit_at(x: f32, y: f32) -> Option<Hit> {
+        HITS.with(|h| hit_test(&h.borrow(), x, y))
+    }
+
+    fn on_mouse_move(hwnd: HWND, lp: LPARAM) {
+        let (x, y) = mouse_xy(lp);
+        LAST_MOUSE.set((x, y));
+        let act = hit_at(x, y).map(|h| h.action);
+        UI.with(|u| u.borrow_mut().set_hover(act));
+        let over_body = matches!(act, Some(Action::Island) | Some(Action::HudWater));
+        let collapsed = ISLAND.with(|s| s.borrow().mode == IslandMode::Collapsed);
+        ISLAND.with(|s| {
+            let mut st = s.borrow_mut();
+            if st.mode == IslandMode::Collapsed {
+                st.set_hover(over_body);
+            } else {
+                st.hover = true;
+            }
+        });
+        let hover_open = SETTINGS.with(|s| s.borrow().open_on_hover);
+        unsafe {
+            if over_body && collapsed && hover_open {
+                if !HOVER_PENDING.get() {
+                    HOVER_PENDING.set(true);
+                    let _ = SetTimer(hwnd, T_HOVER, 170, None);
+                }
+            } else if HOVER_PENDING.get() {
+                HOVER_PENDING.set(false);
+                let _ = KillTimer(hwnd, T_HOVER);
+            }
+            let _ = KillTimer(hwnd, T_LEAVE);
+            let mut tme = TRACKMOUSEEVENT { cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32, dwFlags: TME_LEAVE, hwndTrack: hwnd, dwHoverTime: 0 };
+            let _ = TrackMouseEvent(&mut tme);
+        }
+        wake(hwnd);
+    }
+
+    fn on_mouse_leave(hwnd: HWND) {
+        LAST_MOUSE.set((-1.0, -1.0));
+        UI.with(|u| u.borrow_mut().set_hover(None));
+        ISLAND.with(|s| s.borrow_mut().set_hover(false));
+        unsafe {
+            if HOVER_PENDING.get() {
+                HOVER_PENDING.set(false);
+                let _ = KillTimer(hwnd, T_HOVER);
+            }
+            if is_open() {
+                let _ = SetTimer(hwnd, T_LEAVE, 450, None);
+            }
+        }
+        wake(hwnd);
+    }
+
+    fn on_wheel(hwnd: HWND, wp: WPARAM) {
+        if !is_open() {
+            return;
+        }
+        let delta = ((wp.0 >> 16) & 0xffff) as u16 as i16;
+        let dir = if delta > 0 { -1 } else { 1 };
+        let (_, y) = LAST_MOUSE.get();
+        let page = VIEW.with(|v| v.borrow().page);
+        let in_content = y >= CONTENT_TOP;
+        let n = VIEW.with(|v| {
+            let vm = v.borrow();
+            match page {
+                Page::Shelf => ui::pages::shelf_max_scroll(vm.shelf.items.len()),
+                Page::Tasks => ui::pages::tasks_max_scroll(vm.tasks.tasks.len()),
+                Page::Clipboard => ui::pages::clip_max_scroll(vm.clipboard.items().len()),
+                _ => 0,
+            }
+        });
+        if in_content && n > 0 {
+            UI.with(|u| u.borrow_mut().scroll_by(page, dir, n));
+        } else {
+            VIEW.with(|v| {
+                let mut vm = v.borrow_mut();
+                vm.page = if vm.page == Page::Settings { LAST_TAB.get() } else { vm.page.step(dir) };
+            });
+            save_all();
+        }
+        wake(hwnd);
+    }
+
+    fn on_char(hwnd: HWND, code: u16) {
+        let typing = UI.with(|u| u.borrow().input.is_some());
+        if !typing {
+            return;
+        }
+        match code {
+            13 => add_task_from_input(),
+            27 => UI.with(|u| u.borrow_mut().input = None),
+            8 => UI.with(|u| {
+                if let Some(s) = u.borrow_mut().input.as_mut() {
+                    s.pop();
+                }
+            }),
+            c if c >= 32 && c != 127 => {
+                let ch = if (0xD800..0xDC00).contains(&c) {
+                    HIGH_SURR.set(c);
+                    None
+                } else if (0xDC00..0xE000).contains(&c) {
+                    let hi = HIGH_SURR.replace(0);
+                    char::decode_utf16([hi, c]).next().and_then(|r| r.ok())
+                } else {
+                    char::from_u32(c as u32)
+                };
+                if let Some(ch) = ch {
+                    UI.with(|u| {
+                        if let Some(s) = u.borrow_mut().input.as_mut() {
+                            if s.chars().count() < 120 {
+                                s.push(ch);
+                            }
+                        }
+                    });
+                }
+            }
+            _ => {}
+        }
+        save_all();
+        wake(hwnd);
+    }
+
+    fn on_key(hwnd: HWND, vk: u32) -> bool {
+        let typing = UI.with(|u| u.borrow().input.is_some());
+        if typing {
+            // Everything but Esc flows on to WM_CHAR via TranslateMessage.
+            if vk == 0x1B {
+                UI.with(|u| u.borrow_mut().input = None);
+                wake(hwnd);
+                return true;
+            }
+            return false;
+        }
+        if vk == 0x1B {
+            if is_open() {
+                close_island(hwnd);
+                return true;
+            }
+            return false;
+        }
+        if !is_open() {
+            return false;
+        }
+        let now = Utc::now();
+        let page = VIEW.with(|v| v.borrow().page);
+        let mut handled = true;
+        match vk {
+            0x25 | 0x27 => VIEW.with(|v| {
+                let mut vm = v.borrow_mut();
+                let d = if vk == 0x25 { -1 } else { 1 };
+                vm.page = if vm.page == Page::Settings { LAST_TAB.get() } else { vm.page.step(d) };
+            }),
+            0x20 if page == Page::Music => perform(hwnd, Action::MediaPlayPause),
+            0x20 if page == Page::Tasks => {
+                let first = VIEW.with(|v| v.borrow().tasks.tasks.iter().position(|t| !t.done));
+                if let Some(i) = first {
+                    perform(hwnd, Action::TaskToggle(i as u16));
+                }
+            }
+            0x4E if page == Page::Music => perform(hwnd, Action::MediaNext),
+            0x42 if page == Page::Music => perform(hwnd, Action::MediaPrev),
+            0x53 if page == Page::Focus => VIEW.with(|v| v.borrow_mut().pomo.start_focus(now)),
+            0x50 if page == Page::Focus => VIEW.with(|v| {
+                let mut vm = v.borrow_mut();
+                if vm.pomo.ends_at.is_some() {
+                    vm.pomo.pause(now);
+                } else {
+                    vm.pomo.resume(now);
+                }
+            }),
+            0x52 if page == Page::Focus => perform(hwnd, Action::FocusReset),
+            0x57 => perform(hwnd, Action::WaterAdd(250)),
+            0x41 => {
+                VIEW.with(|v| v.borrow_mut().page = Page::Tasks);
+                perform(hwnd, Action::TaskInput);
+            }
+            0x43 if page == Page::Tasks => perform(hwnd, Action::TaskClearDone),
+            0x43 if page == Page::Clipboard => perform(hwnd, Action::ClipClear),
+            0x2E if page == Page::Shelf => perform(hwnd, Action::ShelfRemove(0)),
+            0x31..=0x36 if page == Page::Shelf => {
+                let scroll = UI.with(|u| u.borrow().scroll_of(Page::Shelf));
+                perform(hwnd, Action::ShelfOpen((scroll * 2 + (vk - 0x31) as usize) as u16));
+            }
+            0x31..=0x35 if page == Page::Clipboard => {
+                let scroll = UI.with(|u| u.borrow().scroll_of(Page::Clipboard));
+                perform(hwnd, Action::ClipCopy((scroll + (vk - 0x31) as usize) as u16));
+            }
+            _ => handled = false,
+        }
+        if handled {
+            save_all();
+            wake(hwnd);
+        }
+        handled
+    }
+
+    fn on_drop(hwnd: HWND, wp: WPARAM) {
+        let mut list: Vec<String> = Vec::new();
+        unsafe {
+            let hdrop = HDROP(wp.0 as _);
+            let count = DragQueryFileW(hdrop, 0xFFFF_FFFF, None);
+            for i in 0..count.min(24) {
+                let mut buf = [0u16; 520];
+                let len = DragQueryFileW(hdrop, i, Some(&mut buf));
+                if len > 0 {
+                    list.push(String::from_utf16_lossy(&buf[..len as usize]));
+                }
+            }
+            DragFinish(hdrop);
+        }
+        if list.is_empty() {
+            return;
+        }
+        let now = Utc::now();
+        VIEW.with(|v| {
+            let mut vm = v.borrow_mut();
+            for p in &list {
+                vm.shelf.add(p, now);
+            }
+            vm.page = Page::Shelf;
+        });
+        toast(&format!("Added {} file{} to the shelf", list.len(), if list.len() == 1 { "" } else { "s" }));
+        save_all();
+        open_island(hwnd, false);
+    }
+
+    #[allow(non_snake_case)]
+    unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+        match msg {
+            WM_CREATE => {
+                load_all();
+                let (_data, cache) = paths::ensure_dirs();
+                store::log_line(&cache, "island created");
+                let dpi = GetDpiForWindow(hwnd);
+                if dpi >= 96 {
+                    SCALE.set(dpi as f32 / 96.0);
+                }
+                let _ = DragAcceptFiles(hwnd, true);
+                let _ = AddClipboardFormatListener(hwnd);
+                let _ = SetTimer(hwnd, T_SLOW, 1000, None);
+                let _ = RegisterHotKey(hwnd, HOTKEY_ID, MOD_WIN | MOD_SHIFT, HOTKEY_VK);
+                add_tray(hwnd);
+                LRESULT(0)
+            }
+            WM_SETCURSOR => {
+                if (lp.0 & 0xffff) as u32 == HTCLIENT {
+                    let (x, y) = LAST_MOUSE.get();
+                    let cursor = match hit_at(x, y) {
+                        Some(h) if h.text => IDC_IBEAM,
+                        Some(_) => IDC_HAND,
+                        None => IDC_ARROW,
+                    };
+                    if let Ok(c) = LoadCursorW(None, cursor) {
+                        SetCursor(c);
+                    }
+                    return LRESULT(1);
+                }
+                DefWindowProcW(hwnd, msg, wp, lp)
+            }
+            WM_MOUSEMOVE => {
+                on_mouse_move(hwnd, lp);
+                LRESULT(0)
+            }
+            _ if msg == WM_MOUSELEAVE_U32 => {
+                on_mouse_leave(hwnd);
+                LRESULT(0)
+            }
+            WM_LBUTTONDOWN => {
+                let (x, y) = mouse_xy(lp);
+                let act = hit_at(x, y).map(|h| h.action);
+                UI.with(|u| {
+                    let mut ui = u.borrow_mut();
+                    ui.pressed = act;
+                    // Clicking away from the field ends text entry.
+                    if act != Some(Action::TaskInput) {
+                        ui.input = None;
+                    }
+                });
+                if is_open() {
+                    // A click inside a hover-opened card pins it.
+                    PINNED.set(true);
+                    activate(hwnd);
+                }
+                SetCapture(hwnd);
+                wake(hwnd);
+                LRESULT(0)
+            }
+            WM_LBUTTONUP => {
+                let _ = ReleaseCapture();
+                let (x, y) = mouse_xy(lp);
+                let released = hit_at(x, y).map(|h| h.action);
+                let pressed = UI.with(|u| u.borrow_mut().pressed.take());
+                if let (Some(p), Some(r)) = (pressed, released) {
+                    if p == r {
+                        perform(hwnd, p);
+                    }
+                }
+                wake(hwnd);
+                LRESULT(0)
+            }
+            WM_RBUTTONUP => {
+                show_menu(hwnd);
+                LRESULT(0)
+            }
+            WM_MOUSEWHEEL => {
+                on_wheel(hwnd, wp);
+                LRESULT(0)
+            }
+            WM_CHAR => {
+                on_char(hwnd, wp.0 as u16);
+                LRESULT(0)
+            }
+            WM_KEYDOWN => {
+                if on_key(hwnd, (wp.0 & 0xffff) as u32) {
+                    LRESULT(0)
+                } else {
+                    DefWindowProcW(hwnd, msg, wp, lp)
+                }
+            }
+            WM_ACTIVATE => {
+                let inactive = (wp.0 & 0xffff) as u32 == 0;
+                if inactive && PINNED.get() && is_open() && !MENU_OPEN.get() {
+                    close_island(hwnd);
+                }
+                DefWindowProcW(hwnd, msg, wp, lp)
+            }
+            WM_DROPFILES => {
+                on_drop(hwnd, wp);
+                LRESULT(0)
+            }
+            WM_CLIPBOARDUPDATE => {
+                if SETTINGS.with(|s| s.borrow().clipboard_history) {
+                    if let Some(t) = read_clipboard_text(hwnd) {
+                        VIEW.with(|v| v.borrow_mut().clipboard.push(&t));
+                        wake(hwnd);
+                    }
+                }
+                LRESULT(0)
+            }
+            _ if msg == WM_APPCOMMAND_U32 => {
+                // Volume keys: the 1 s volume poll raises the HUD; just let Windows handle them.
+                DefWindowProcW(hwnd, msg, wp, lp)
+            }
+            _ if msg == WM_POWERBROADCAST => {
+                if wp.0 as u32 == 10 {
+                    let ms = now_ms();
+                    VIEW.with(|v| {
+                        let mut vm = v.borrow_mut();
+                        CPU.with(|c| vm.system = sample_all(&mut c.borrow_mut(), &vm.system));
+                        let pct = vm.system.battery_pct.map(|b| format!("{b}%")).unwrap_or_default();
+                        let (title, kind) = if vm.system.charging { ("Charging", HudKind::Charging) } else { ("On battery", HudKind::Charging) };
+                        vm.hud = Some(Hud::transient(kind, title, &pct, ms, 3500));
+                    });
+                    wake(hwnd);
+                }
+                DefWindowProcW(hwnd, msg, wp, lp)
+            }
+            _ if msg == WM_DEVICECHANGE => {
+                if wp.0 as u32 == 0x8000 {
+                    let ms = now_ms();
+                    VIEW.with(|v| v.borrow_mut().hud = Some(Hud::transient(HudKind::Bluetooth, "Device", "connected", ms, 3000)));
+                    wake(hwnd);
+                }
+                DefWindowProcW(hwnd, msg, wp, lp)
+            }
+            WM_HOTKEY => {
+                if is_open() {
+                    close_island(hwnd);
+                } else {
+                    open_island(hwnd, true);
+                }
+                LRESULT(0)
+            }
+            WM_DPICHANGED => {
+                let dpi = (wp.0 & 0xffff) as u32;
+                if dpi >= 96 {
+                    SCALE.set(dpi as f32 / 96.0);
+                }
+                wake(hwnd);
+                LRESULT(0)
+            }
+            WM_DISPLAYCHANGE => {
+                wake(hwnd);
+                LRESULT(0)
+            }
+            WM_TIMER => {
+                match wp.0 {
+                    T_ANIM => tick(hwnd),
+                    T_SLOW => slow_tick(hwnd),
+                    T_HOVER => {
+                        let _ = KillTimer(hwnd, T_HOVER);
+                        HOVER_PENDING.set(false);
+                        let (x, y) = LAST_MOUSE.get();
+                        let still = matches!(hit_at(x, y).map(|h| h.action), Some(Action::Island) | Some(Action::HudWater));
+                        if still && !is_open() {
+                            open_island(hwnd, false);
+                        }
+                    }
+                    T_LEAVE => {
+                        let _ = KillTimer(hwnd, T_LEAVE);
+                        let pinned = PINNED.get() && GetForegroundWindow() == hwnd;
+                        if is_open() && !pinned && !MENU_OPEN.get() {
+                            close_island(hwnd);
+                        }
+                    }
+                    _ => {}
+                }
+                LRESULT(0)
+            }
+            WM_COMMAND => LRESULT(0),
+            WM_DESTROY => {
+                let (_d, cache) = paths::ensure_dirs();
+                store::log_line(&cache, "island destroyed");
+                save_all();
+                let _ = RemoveClipboardFormatListener(hwnd);
+                let _ = UnregisterHotKey(hwnd, HOTKEY_ID);
+                remove_tray(hwnd);
+                PostQuitMessage(0);
+                LRESULT(0)
+            }
+            _ if msg == TRAY_MSG => {
+                let evt = (lp.0 & 0xffff) as u32;
+                if evt == WM_LBUTTONUP {
+                    if is_open() {
+                        close_island(hwnd);
+                    } else {
+                        open_island(hwnd, true);
+                    }
+                } else if evt == WM_RBUTTONUP {
+                    show_menu(hwnd);
+                }
+                LRESULT(0)
+            }
+            _ => DefWindowProcW(hwnd, msg, wp, lp),
+        }
+    }
+
+    pub fn run() -> i32 {
+        unsafe {
+            let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+            // STA for this UI thread so Core Audio COM reads work on demand.
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            let inst = GetModuleHandleW(None).unwrap_or_default();
+            let cls = w!("TeardropIsland");
+            let wc = WNDCLASSW {
+                lpfnWndProc: Some(wndproc),
+                hInstance: inst.into(),
+                lpszClassName: cls,
+                hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
+                ..Default::default()
+            };
+            let _ = RegisterClassW(&wc);
+            let hwnd = match CreateWindowExW(
+                WINDOW_EX_STYLE(WS_EX_TOPMOST.0 | WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0 | WS_EX_LAYERED.0),
+                cls,
+                w!("Teardrop"),
+                WS_POPUP,
+                0,
+                0,
+                16,
+                16,
+                None,
+                None,
+                inst,
+                None,
+            ) {
+                Ok(h) => h,
+                Err(_) => return 1,
+            };
+            crate::media_smtc::spawn_poller();
+            render(hwnd);
+            let mut msg = MSG::default();
+            'outer: loop {
+                if FAST.get() {
+                    // Animating: drain input, draw a frame, then wait for the
+                    // compositor's next vsync (DwmFlush follows the monitor's rate).
+                    while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+                        if msg.message == WM_QUIT {
+                            break 'outer;
+                        }
+                        let _ = TranslateMessage(&msg);
+                        DispatchMessageW(&msg);
+                    }
+                    if FAST.get() {
+                        tick(hwnd);
+                        if DwmFlush().is_err() {
+                            std::thread::sleep(std::time::Duration::from_millis(4));
+                        }
+                    }
+                } else {
+                    if !GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                        break;
+                    }
+                    let _ = TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+            }
+            msg.wParam.0 as i32
+        }
+    }
+}
+
+#[cfg(windows)]
+pub use inner::run;
+
+#[cfg(not(windows))]
+pub fn run() -> i32 {
+    eprintln!("teardrop: the island window runs on Windows 10/11. Try `--selftest <dir>` here.");
+    3
+}
