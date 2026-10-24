@@ -92,9 +92,11 @@ Your data is in `%APPDATA%\Teardrop\`; cache and log are in `%LOCALAPPDATA%\Tear
 
 ## Install
 
-Grab `teardrop-<version>.exe` (or the portable zip) from the [Releases](https://github.com/Alg0rix/teardrop/releases) page once a release is published. It's per-user and needs no admin rights. Builds are unsigned, so Windows SmartScreen warns on first run: choose **More info → Run anyway**.
+Download **`teardrop-setup-<version>.exe`** from the [Releases](https://github.com/Alg0rix/teardrop/releases) page once a release is published. It installs per-user (no admin rights), adds a Start menu shortcut and launches Teardrop. There's also a portable `.exe` and zip if you'd rather not install. Builds are unsigned, so Windows SmartScreen warns on first run: choose **More info → Run anyway**.
 
-No release yet? Build from source (below), or run `tools\package.ps1` for `dist	eardrop.exe` and a portable zip.
+Uninstall from *Settings → Apps*. It removes the app, cache and log and keeps your data.
+
+No release yet? Build from source (below), or run `tools\package.ps1` for `dist\teardrop.exe`, a portable zip and, if [NSIS](https://nsis.sourceforge.io) is installed, the installer.
 
 ## Build
 

@@ -19,15 +19,20 @@ jobs:
         run: cargo test --workspace
       - name: Build
         run: cargo build -p teardrop --release
+      - name: Install NSIS
+        run: choco install nsis -y --no-progress
       - name: Package
         shell: pwsh
         run: |
           $tag = "${{ github.event.release.tag_name }}"
+          $ver = $tag.TrimStart('v')
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/teardrop.exe dist/teardrop.exe
+          & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" "/DVERSION=$ver" tools/installer.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
           Compress-Archive -Path dist/teardrop.exe, README.md, LICENSE -DestinationPath "dist/teardrop-$tag-portable.zip" -Force
           Copy-Item dist/teardrop.exe "dist/teardrop-$tag.exe"
-          Get-FileHash "dist/teardrop-$tag.exe", "dist/teardrop-$tag-portable.zip" -Algorithm SHA256 |
+          Get-FileHash "dist/teardrop-setup-$ver.exe", "dist/teardrop-$tag.exe", "dist/teardrop-$tag-portable.zip" -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Set-Content dist/SHA256SUMS.txt
       - name: Attach to the release
         shell: pwsh
@@ -35,4 +40,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "${{ github.event.release.tag_name }}"
-          gh release upload $tag "dist/teardrop-$tag.exe" "dist/teardrop-$tag-portable.zip" dist/SHA256SUMS.txt --clobber
+          $ver = $tag.TrimStart('v')
+          gh release upload $tag "dist/teardrop-setup-$ver.exe" "dist/teardrop-$tag.exe" "dist/teardrop-$tag-portable.zip" dist/SHA256SUMS.txt --clobber

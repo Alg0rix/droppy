@@ -16,6 +16,15 @@ jobs:
         run: cargo test --workspace
       - name: Release build
         run: cargo build -p teardrop --release
+      - name: Installer builds (NSIS)
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/teardrop.exe dist/teardrop.exe
+          & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" /DVERSION=0.0.0-ci tools/installer.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
+          Get-Item dist/teardrop-setup-0.0.0-ci.exe | Select-Object Name, Length
       - name: Selftest (renders every state headless)
         run: ./target/release/teardrop.exe --selftest dist/selftest
         continue-on-error: true
