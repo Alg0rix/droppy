@@ -9,7 +9,7 @@ Unicode True
 !define VERSION "0.1.0"
 !endif
 
-!define ROOT "${__FILEDIR__}\.."
+!define ROOT ".."  ; makensis runs from this script's folder
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Teardrop"
 
 Name "Teardrop ${VERSION}"
