@@ -199,6 +199,8 @@ pub const TAB_W: f32 = 27.0;
 pub const HEADER_H: f32 = 34.0;
 pub const HEADER_Y: f32 = 14.0;
 pub const CONTENT_TOP: f32 = 64.0;
+/// Extra width a level HUD (volume, brightness) gets when the face rides along.
+pub const HUD_FACE_W: f32 = 40.0;
 
 /// Content area of the open card for a card whose left edge is `card_x`.
 pub fn content_rect(card_x: f32, geom: &DropletGeom) -> Rect {
@@ -381,19 +383,29 @@ fn face(c: &mut Ctx, r: Rect, spot: Spot, accent: Option<Color>) {
 fn hud(c: &mut Ctx, r: Rect, h: &teardrop_core::Hud, cy: f32) {
     let left = r.x + 15.0;
     match h.kind {
-        HudKind::Volume | HudKind::Muted => {
+        HudKind::Volume | HudKind::Muted | HudKind::Brightness => {
             let muted = h.kind == HudKind::Muted;
-            let icon = if muted { Icon::Muted } else { Icon::Speaker };
+            let icon = match h.kind {
+                HudKind::Muted => Icon::Muted,
+                HudKind::Brightness => Icon::Sun,
+                _ => Icon::Speaker,
+            };
             icons::draw(&mut c.s, icon, left + 8.0, cy, 17.0, TEXT);
+            // With Eyes the face rides along at the right end and watches the bar.
+            let eyes = c.set.idle_look == IdleLook::Eyes;
+            let tail = if eyes { 58.0 + HUD_FACE_W } else { 58.0 };
             let bx = r.x + 44.0;
-            let bw = r.w - 44.0 - 58.0;
+            let bw = r.w - 44.0 - tail;
             let track = Rect::new(bx, cy - 3.0, bw, 6.0);
             c.s.rect(track, 3.0, Color::rgba(255, 255, 255, 0.18));
             let p = if muted { 0.0 } else { h.progress.unwrap_or(0.0).clamp(0.0, 1.0) };
             if p > 0.0 {
                 c.s.rect(Rect::new(bx, cy - 3.0, (bw * p).max(6.0), 6.0), 3.0, TEXT);
             }
-            c.text(h.detail.clone(), Rect::new(r.right() - 56.0, cy - 10.0, 44.0, 20.0), 12.5, Weight::Semibold, TEXT, Align::Right);
+            c.text(h.detail.clone(), Rect::new(r.right() - tail + 2.0, cy - 10.0, 44.0, 20.0), 12.5, Weight::Semibold, TEXT, Align::Right);
+            if eyes {
+                face(c, r, Spot::Hud, None);
+            }
         }
         HudKind::Water => {
             let acc = accent(Page::Water);
@@ -429,8 +441,13 @@ fn hud(c: &mut Ctx, r: Rect, h: &teardrop_core::Hud, cy: f32) {
                 _ => (Icon::Note, TEXT),
             };
             icons::draw(&mut c.s, icon, left + 8.0, cy, 17.0, col);
+            let eyes = c.set.idle_look == IdleLook::Eyes;
+            let tail = if eyes { 14.0 + HUD_FACE_W } else { 14.0 };
             c.text(h.title.clone(), Rect::new(r.x + 42.0, cy - 10.0, 100.0, 20.0), 13.0, Weight::Medium, TEXT, Align::Left);
-            c.text(h.detail.clone(), Rect::new(r.right() - 14.0 - 120.0, cy - 10.0, 120.0, 20.0), 12.0, Weight::Regular, TEXT_2, Align::Right);
+            c.text(h.detail.clone(), Rect::new(r.right() - tail - 120.0, cy - 10.0, 120.0, 20.0), 12.0, Weight::Regular, TEXT_2, Align::Right);
+            if eyes {
+                face(c, r, Spot::Hud, None);
+            }
         }
     }
 }

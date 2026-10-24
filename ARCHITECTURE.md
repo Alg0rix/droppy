@@ -90,6 +90,31 @@ Each page is `core` state + a thin Windows sampler:
   volume, water, drops, pokes) queue them; they play once the face is visible.
 - **Pose**: numbers the painter draws (lids, gaze, brows, squash, glyphs,
   hats, particles). Lids are per-column spans so pupils clip without masks.
+- **Jiggle**: a small spring layered over the pose. Reactions, pokes, beats
+  and level changes kick it (hop, squish, wobble), so motion overshoots
+  and settles instead of easing in flat.
+- **Dance**: while music plays the dancer picks a `Move` per phrase (4 or 8
+  beats) from a pool per mood (Dance/Headbang/Vibe) weighted by energy;
+  beat strength from the peak meter scales each accent, notes fly on the beat.
+- **Gauge**: volume and brightness HUDs carry the face (`Spot::Hud`). It
+  acts out the level live: watches the bar, eyes grow with volume, winces
+  near max, clamps shut on mute; pupils dilate in the dark and squint (then
+  shades) in bright light. Queued reactions wait until the HUD is gone.
+  Volume changes arrive from an `IAudioEndpointVolumeCallback` (the 1 s poll
+  stays as fallback); brightness from `GUID_VIDEO_CURRENT_MONITOR_BRIGHTNESS`
+  power-setting notifications (built-in panels).
+- Things done while the island is open (a note saved, a task removed) queue
+  reactions that don't go stale while hidden, so they play on collapse.
+  Every action has one: skips/seeks/calendar steps swipe, +/- and setting
+  toggles nod or shake, undo looks sheepish (`Oops`), clearing sweeps,
+  goals (all tasks, water goal, a focus block) `Celebrate`, joining a
+  meeting salutes, the meeting alert gasps, a fast speed test zooms.
+- Live, while collapsed: keystrokes anywhere (input with a still pointer)
+  switch to `Typing`; a busy AI to `Thinking`; the last ten seconds of a
+  focus timer tick-tock; the wheel over the island spins the pupils; a
+  window switch (shell hook) makes the eyes glance toward it; CAPS LOCK
+  shouts; long hovers giggle and leaving pouts; unplugging gasps, 10%
+  battery faints. Pausing mid-dance is a record scratch.
 
 Signals come from `ViewModel.env` (`Ambient`), filled by `services_env.rs`
 (idle via `GetLastInputInfo`, consent-store registry for mic/camera,
@@ -98,7 +123,7 @@ peak meter in `volume.rs`, all only while the eyes are the idle look. Weather
 is opt-in (wttr.in, geolocated by IP). The face also replaces the equalizer
 next to the artwork and the label next to the focus ring.
 
-HUDs (`hud::Hud`) are transient collapsed-island notices: volume, charging,
+HUDs (`hud::Hud`) are transient collapsed-island notices: volume, brightness, charging,
 headset battery, water reminder with one-click action.
 
 ## Data files

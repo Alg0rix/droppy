@@ -95,6 +95,8 @@ pub struct Ambient {
     pub quiet: bool,
     pub locked: bool,
     pub weather: Weather,
+    /// CAPS LOCK is on.
+    pub caps: bool,
 }
 
 /// Wall-clock time in the user's zone.
@@ -362,6 +364,12 @@ impl ViewModel {
 pub fn hud_volume(pct: u8, muted: bool, now_ms: u64) -> Hud {
     let kind = if muted { HudKind::Muted } else { HudKind::Volume };
     let mut h = Hud::transient(kind, if muted { "Muted" } else { "Volume" }, &format!("{pct}%"), now_ms, 2200);
+    h.progress = Some(pct as f32 / 100.0);
+    h
+}
+
+pub fn hud_brightness(pct: u8, now_ms: u64) -> Hud {
+    let mut h = Hud::transient(HudKind::Brightness, "Brightness", &format!("{pct}%"), now_ms, 2200);
     h.progress = Some(pct as f32 / 100.0);
     h
 }

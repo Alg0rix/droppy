@@ -394,9 +394,11 @@ impl UiState {
         if let Some(h) = vm.live_hud(now_ms) {
             use teardrop_core::HudKind::*;
             let w = match h.kind {
-                Volume | Muted => 270.0,
+                Volume | Muted | Brightness if s.idle_look == IdleLook::Eyes => 270.0 + super::layout::HUD_FACE_W,
+                Volume | Muted | Brightness => 270.0,
                 Water => 310.0,
                 Meeting => 340.0,
+                _ if s.idle_look == IdleLook::Eyes => 290.0 + super::layout::HUD_FACE_W,
                 _ => 290.0,
             };
             return (w, 38.0);
@@ -448,7 +450,14 @@ impl UiState {
 
     /// Where the eyes sit on the collapsed island right now, if anywhere.
     pub fn face_spot(&self, vm: &ViewModel, s: &Settings, now_ms: u64) -> Option<Spot> {
-        if s.idle_look != IdleLook::Eyes || vm.live_hud(now_ms).is_some() || vm.meeting_soon().is_some() || vm.voice.phase == crate::voice::VoicePhase::Recording {
+        if s.idle_look != IdleLook::Eyes {
+            return None;
+        }
+        if let Some(h) = vm.live_hud(now_ms) {
+            use teardrop_core::HudKind::*;
+            return matches!(h.kind, Volume | Muted | Brightness | Charging | Bluetooth | Timer).then_some(Spot::Hud);
+        }
+        if vm.meeting_soon().is_some() || vm.voice.phase == crate::voice::VoicePhase::Recording {
             None
         } else if vm.focus_visible() {
             Some(Spot::Focus)
@@ -482,6 +491,8 @@ impl UiState {
             env: &vm.env,
             set: s,
             area: eyes::area(spot.unwrap_or(Spot::Idle), body),
+            thinking: vm.ai.busy,
+            focus_left: (spot == Some(Spot::Focus) && vm.focus_running()).then(|| vm.focus_remaining_ms() as f32 / 1000.0),
         };
         self.eyes.tick(dt, &senses);
     }

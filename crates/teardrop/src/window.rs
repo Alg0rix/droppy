@@ -12,12 +12,12 @@ mod inner {
     use crate::services_env::sys as env;
     use crate::services_system::sys::{sample_all, CpuTracker};
     use crate::state::{IslandMode, IslandState};
-    use crate::ui::eyes::{Eyes, React};
+    use crate::ui::eyes::{Eyes, Gauge, React};
     use crate::ui::layout::{build, hit_test, IslandView, CONTENT_TOP};
     use crate::ui::scene::{Color, Fill, Scene};
     use crate::ui::state::{Action, Hit, SettingKey, UiState};
     use crate::ui::{self, icons};
-    use crate::viewmodel::{hud_volume, hud_water_due, hud_water_logged, local_naive, shift_birthday, ViewModel, Weather};
+    use crate::viewmodel::{hud_brightness, hud_volume, hud_water_due, hud_water_logged, local_naive, shift_birthday, ViewModel, Weather};
     use crate::{lyrics_service, media_smtc, paths, shelf_drag, startup, store, volume};
     use chrono::{Datelike, Utc};
     use std::cell::{Cell, RefCell};
@@ -41,7 +41,8 @@ mod inner {
     use crate::drop_target::{DropEvent, DropTarget};
     use windows::Win32::System::Ole::{OleInitialize, RegisterDragDrop};
     use windows::Win32::System::RemoteDesktop::{WTSRegisterSessionNotification, WTSUnRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION};
-    use windows::Win32::System::SystemServices::MK_LBUTTON;
+    use windows::Win32::System::Power::{RegisterPowerSettingNotification, POWERBROADCAST_SETTING};
+    use windows::Win32::System::SystemServices::{GUID_VIDEO_CURRENT_MONITOR_BRIGHTNESS, MK_LBUTTON};
     use windows::Win32::UI::HiDpi::{GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         keybd_event, RegisterHotKey, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, UnregisterHotKey, KEYBD_EVENT_FLAGS,
@@ -72,8 +73,11 @@ mod inner {
     const WTS_SESSION_UNLOCK: u32 = 8;
     const WM_APP_DOWNLOAD: u32 = 0x8002;
     const WM_APP_SHARE: u32 = 0x8003;
+    const WM_APP_VOLUME: u32 = 0x8004;
     const HSHELL_WINDOWCREATED: u32 = 1;
     const HSHELL_FLASH: u32 = 0x8006;
+    const HSHELL_WINDOWACTIVATED: u32 = 4;
+    const HSHELL_RUDEAPPACTIVATED: u32 = 0x8004;
     const CF_BITMAP_U32: u32 = 2;
     const CF_DIB_U32: u32 = 8;
 
@@ -119,6 +123,9 @@ mod inner {
         static TICKS: Cell<u32> = Cell::new(0);
         static LYR_STABLE: Cell<u8> = Cell::new(0);
         static LAST_VOL: Cell<Option<(u8, bool)>> = Cell::new(None);
+        static LAST_BRIGHT: Cell<Option<u8>> = Cell::new(None);
+        /// Note text when the editor opened, to tell a real edit from a peek.
+        static NOTE_BEFORE: RefCell<Option<String>> = RefCell::new(None);
         static HIGH_SURR: Cell<u16> = Cell::new(0);
         static SHELL_MSG: Cell<u32> = Cell::new(0);
         static HOVER_ARM: Cell<(f32, f32)> = Cell::new((-1.0, -1.0));
@@ -204,6 +211,7 @@ mod inner {
             let mut vm = v.borrow_mut();
             vm.env.idle_ms = env::idle_ms();
             vm.env.lbutton = env::lbutton();
+            vm.env.caps = env::caps();
             vm.env.audio_peak = peak;
         });
 
@@ -319,7 +327,13 @@ mod inner {
             done
         });
         if speed_done {
-            with_eyes(|e| e.react(React::Happy));
+            // Fast line: zoomies. Crawling: defeated.
+            let r = match speed.down {
+                d if d >= 100.0 => React::Zoom,
+                d if d < 10.0 => React::Defeated,
+                _ => React::Happy,
+            };
+            with_eyes(|e| e.react(r));
         }
         let (ui_moving, ambient) = UI.with(|u| {
             VIEW.with(|v| {
@@ -393,6 +407,14 @@ mod inner {
             }
         });
         PINNED.set(false);
+        // Collapsing mid-note counts as finishing it (same as Esc).
+        let editing_note = UI.with(|u| {
+            let ui = u.borrow();
+            ui.note_edit.is_some() && ui.input.is_some()
+        });
+        if editing_note {
+            finish_note_edit();
+        }
         UI.with(|u| u.borrow_mut().input = None);
         with_eyes(|e| e.island_closed());
         unsafe {
@@ -649,7 +671,9 @@ mod inner {
         if open {
             toast(&format!("+{ml} ml \u{00b7} {total} today"));
         }
-        with_eyes(|e| e.react(React::Satisfied));
+        let goal = VIEW.with(|v| v.borrow().water.goal_ml);
+        let reached = total >= goal && total.saturating_sub(ml) < goal;
+        with_eyes(|e| e.react(if reached { React::Celebrate } else { React::Satisfied }));
     }
 
     fn add_task_from_input() {
@@ -708,6 +732,7 @@ mod inner {
             ui.note_selected_all = false;
             (ui.note_edit.take(), ui.input.take())
         });
+        let before = NOTE_BEFORE.take();
         let Some(id) = edit else { return };
         let text = text.unwrap_or_default();
         VIEW.with(|v| {
@@ -718,6 +743,10 @@ mod inner {
                 vm.notes.update(&id, &text, Utc::now());
             }
         });
+        // The face reads it over once the island collapses.
+        if !text.trim().is_empty() && before.as_deref() != Some(text.as_str()) {
+            with_eyes(|e| e.noted(text.chars().count()));
+        }
     }
 
     fn send_ai_prompt(prompt: String) {
@@ -783,6 +812,7 @@ mod inner {
             }
             Action::CalStep(d) => {
                 UI.with(|u| u.borrow_mut().cal_offset += d as i32);
+                with_eyes(|e| e.react(React::Swipe(d > 0)));
                 save = false;
             }
             Action::UpdateCheck => {
@@ -791,6 +821,7 @@ mod inner {
             }
             Action::UpdateInstall => {
                 crate::update::install();
+                with_eyes(|e| e.react(React::BarrelRoll));
                 save = false;
             }
             Action::CalendarPaste => {
@@ -812,6 +843,7 @@ mod inner {
                             VIEW.with(|v| v.borrow_mut().clipboard.remove(t));
                         }
                         refresh_calendar();
+                        with_eyes(|e| e.react(if added { React::Happy } else { React::Huh }));
                         toast(if added { "Calendar connected" } else { "That calendar is already connected" });
                     }
                     None => toast("Copy your calendar's iCal link first"),
@@ -820,6 +852,7 @@ mod inner {
             Action::CalendarClear => {
                 SETTINGS.with(|s| s.borrow_mut().calendar_urls.clear());
                 refresh_calendar();
+                with_eyes(|e| e.react(React::Poof));
                 toast("Calendars removed");
             }
             Action::Join(i) => {
@@ -830,6 +863,7 @@ mod inner {
                         .get(i as usize)
                         .and_then(|e| e.join.as_ref().map(|j| j.url.clone()))
                 });
+                with_eyes(|e| e.react(React::Salute));
                 open_meeting(hwnd, url);
             }
             Action::MeetingJoin => {
@@ -837,6 +871,7 @@ mod inner {
                     let vm = v.borrow();
                     vm.calendar.next(vm.now.timestamp()).and_then(|e| e.join.as_ref().map(|j| j.url.clone()))
                 });
+                with_eyes(|e| e.react(React::Salute));
                 open_meeting(hwnd, url);
             }
             Action::UsageRefresh => {
@@ -844,8 +879,9 @@ mod inner {
                 save = false;
             }
             Action::VoiceToggle => {
+                let was_recording = VIEW.with(|v| v.borrow().voice.phase == crate::voice::VoicePhase::Recording);
                 crate::voice::toggle();
-                with_eyes(|e| e.react(React::Perk));
+                with_eyes(|e| e.react(if was_recording { React::Satisfied } else { React::Perk }));
                 save = false;
             }
             Action::VoiceFolder => {
@@ -867,6 +903,7 @@ mod inner {
                     ui.cal_selected_event = None;
                     ui.scroll[ui::state::page_index(Page::Today)] = 0;
                 });
+                with_eyes(|e| e.react(React::ClockGlance));
                 save = false;
             }
             Action::CalDay(d) => {
@@ -887,6 +924,7 @@ mod inner {
             }
             Action::CalEvent(i) => {
                 UI.with(|u| u.borrow_mut().cal_selected_event = Some(i as usize));
+                with_eyes(|e| e.react(React::Perk));
                 save = false;
             }
             Action::CalCloseEvent => {
@@ -922,6 +960,7 @@ mod inner {
                 });
                 if let Some(t) = text {
                     toast(if write_clipboard_text(hwnd, &t) { "Event details copied" } else { "Couldn't copy" });
+                    with_eyes(|e| e.react(React::GotIt));
                 }
                 save = false;
             }
@@ -936,17 +975,24 @@ mod inner {
             }),
             Action::Pin => {
                 PINNED.set(!PINNED.get());
+                with_eyes(|e| e.react(if PINNED.get() { React::Wink } else { React::Nod }));
             }
             Action::MediaPrev => {
                 send_media_key(VK_MEDIA_PREV_TRACK.0 as u8);
                 VIEW.with(|v| v.borrow_mut().track.position_ms = 0);
+                with_eyes(|e| e.skip(false));
             }
             Action::MediaNext => {
                 send_media_key(VK_MEDIA_NEXT_TRACK.0 as u8);
                 VIEW.with(|v| v.borrow_mut().track.position_ms = 0);
+                with_eyes(|e| e.skip(true));
             }
             Action::Seek(p) => {
-                let target = VIEW.with(|v| media_smtc::seek_target_ms(v.borrow().track.duration_ms, p));
+                let (target, from) = VIEW.with(|v| {
+                    let vm = v.borrow();
+                    (media_smtc::seek_target_ms(vm.track.duration_ms, p), vm.track.position_ms)
+                });
+                with_eyes(|e| e.react(React::Swipe(target >= from)));
                 media_smtc::seek(target);
                 VIEW.with(|v| v.borrow_mut().track.position_ms = target);
                 // Hold off stale polled positions while the player catches up.
@@ -985,26 +1031,41 @@ mod inner {
                 VIEW.with(|v| v.borrow_mut().pomo.stop());
                 with_eyes(|e| e.react(React::Stretch));
             }
-            Action::FocusMinus => VIEW.with(|v| {
-                let mut vm = v.borrow_mut();
-                vm.pomo.focus_min = vm.pomo.focus_min.saturating_sub(5).max(5);
-            }),
-            Action::FocusPlus => VIEW.with(|v| {
-                let mut vm = v.borrow_mut();
-                vm.pomo.focus_min = (vm.pomo.focus_min + 5).min(90);
-            }),
+            Action::FocusMinus => {
+                VIEW.with(|v| {
+                    let mut vm = v.borrow_mut();
+                    vm.pomo.focus_min = vm.pomo.focus_min.saturating_sub(5).max(5);
+                });
+                with_eyes(|e| e.react(React::Shake));
+            }
+            Action::FocusPlus => {
+                VIEW.with(|v| {
+                    let mut vm = v.borrow_mut();
+                    vm.pomo.focus_min = (vm.pomo.focus_min + 5).min(90);
+                });
+                with_eyes(|e| e.react(React::Nod));
+            }
             Action::WaterAdd(ml) => add_water(ml),
-            Action::WaterUndo => VIEW.with(|v| {
-                let mut vm = v.borrow_mut();
-                let day = vm.day();
-                vm.water.sub(day, 250);
-            }),
+            Action::WaterUndo => {
+                VIEW.with(|v| {
+                    let mut vm = v.borrow_mut();
+                    let day = vm.day();
+                    vm.water.sub(day, 250);
+                });
+                with_eyes(|e| e.react(React::Oops));
+            }
             Action::ShelfOpen(i) | Action::ShelfReveal(i) | Action::ShelfRemove(i) => {
                 let path = VIEW.with(|v| {
                     let vm = v.borrow();
                     vm.shelf.items.len().checked_sub(1 + i as usize).and_then(|ix| vm.shelf.items.get(ix)).map(|it| it.path.clone())
                 });
                 if let Some(path) = path {
+                    let r = match a {
+                        Action::ShelfOpen(_) => React::Perk,
+                        Action::ShelfReveal(_) => React::Peek,
+                        _ => React::Poof,
+                    };
+                    with_eyes(|e| e.react(r));
                     match a {
                         Action::ShelfOpen(_) => shell_open(hwnd, "open", &path, None),
                         Action::ShelfReveal(_) => shell_open(hwnd, "open", "explorer.exe", Some(&format!("/select,\"{path}\""))),
@@ -1027,19 +1088,26 @@ mod inner {
                     }
                 });
                 if let Some((is_done, all_done)) = status {
-                    if all_done {
-                        with_eyes(|e| e.react(React::Satisfied));
+                    let r = if all_done {
+                        React::Celebrate
                     } else if is_done {
-                        with_eyes(|e| e.react(React::Happy));
-                    }
+                        React::Happy
+                    } else {
+                        React::Oops
+                    };
+                    with_eyes(|e| e.react(r));
                 }
             }
-            Action::TaskRemove(i) => VIEW.with(|v| {
-                let mut vm = v.borrow_mut();
-                if let Some(id) = vm.tasks.tasks.get(i as usize).map(|t| t.id.clone()) {
-                    vm.tasks.remove(&id);
+            Action::TaskRemove(i) => {
+                let removed = VIEW.with(|v| {
+                    let mut vm = v.borrow_mut();
+                    let id = vm.tasks.tasks.get(i as usize).map(|t| t.id.clone());
+                    id.is_some_and(|id| vm.tasks.remove(&id))
+                });
+                if removed {
+                    with_eyes(|e| e.react(React::Poof));
                 }
-            }),
+            }
             Action::TaskInput => {
                 UI.with(|u| {
                     let mut ui = u.borrow_mut();
@@ -1052,7 +1120,7 @@ mod inner {
             }
             Action::TaskClearDone => {
                 VIEW.with(|v| v.borrow_mut().tasks.clear_done());
-                with_eyes(|e| e.react(React::Satisfied));
+                with_eyes(|e| e.react(React::Sweep));
             }
             Action::NoteNew => {
                 UI.with(|u| {
@@ -1062,6 +1130,7 @@ mod inner {
                     ui.note_selected_all = false;
                     ui.note_search = None;
                 });
+                NOTE_BEFORE.set(Some(String::new()));
                 activate(hwnd);
                 with_eyes(|e| e.react(React::Perk));
                 save = false;
@@ -1071,6 +1140,7 @@ mod inner {
                     v.borrow().notes.notes.get(i as usize).map(|n| (n.id.clone(), n.text.clone()))
                 });
                 if let Some((id, text)) = note {
+                    NOTE_BEFORE.set(Some(text.clone()));
                     UI.with(|u| {
                         let mut ui = u.borrow_mut();
                         ui.input = Some(text);
@@ -1088,6 +1158,7 @@ mod inner {
                     VIEW.with(|v| {
                         v.borrow_mut().notes.remove(&id);
                     });
+                    with_eyes(|e| e.react(React::Poof));
                     let editing = UI.with(|u| u.borrow().note_edit.as_deref() == Some(id.as_str()));
                     if editing {
                         UI.with(|u| {
@@ -1136,16 +1207,19 @@ mod inner {
                 let text = VIEW.with(|v| v.borrow().clipboard.items().get(i as usize).cloned());
                 if let Some(t) = text {
                     toast(if write_clipboard_text(hwnd, &t) { "Copied" } else { "Couldn't copy" });
+                    with_eyes(|e| e.react(React::GotIt));
                 }
                 save = false;
             }
             Action::ClipClear => {
                 VIEW.with(|v| v.borrow_mut().clipboard.clear());
+                with_eyes(|e| e.react(React::Sweep));
                 save = false;
             }
             Action::Toggle(k) => {
                 SETTINGS.with(|s| k.flip(&mut s.borrow_mut()));
                 let on = SETTINGS.with(|s| k.get(&s.borrow()));
+                with_eyes(|e| e.react(if on { React::Nod } else { React::Shake }));
                 match k {
                     SettingKey::StartWithWindows => {
                         startup::set(on);
@@ -1183,10 +1257,13 @@ mod inner {
                     with_eyes(|e| e.react(React::Love));
                 }
             }
-            Action::GoalStep(d) => VIEW.with(|v| {
-                let mut vm = v.borrow_mut();
-                vm.water.goal_ml = (vm.water.goal_ml as i32 + 250 * d as i32).clamp(500, 6000) as u32;
-            }),
+            Action::GoalStep(d) => {
+                VIEW.with(|v| {
+                    let mut vm = v.borrow_mut();
+                    vm.water.goal_ml = (vm.water.goal_ml as i32 + 250 * d as i32).clamp(500, 6000) as u32;
+                });
+                with_eyes(|e| e.react(if d > 0 { React::Nod } else { React::Shake }));
+            }
             Action::AiInput => {
                 let prov = SETTINGS.with(|s| s.borrow().ai_provider);
                 crate::ai::set_focus_field(crate::ai::AiFocusField::Prompt);
@@ -1229,6 +1306,7 @@ mod inner {
             Action::AiNewChat => {
                 let prov = SETTINGS.with(|s| s.borrow().ai_provider);
                 crate::ai::new_chat(prov);
+                with_eyes(|e| e.react(React::Perk));
                 sync_ai();
                 save = false;
             }
@@ -1246,6 +1324,7 @@ mod inner {
             Action::AiDeleteChat(id) => {
                 let prov = SETTINGS.with(|s| s.borrow().ai_provider);
                 crate::ai::delete_chat(id, prov);
+                with_eyes(|e| e.react(React::Poof));
                 sync_ai();
                 save = false;
             }
@@ -1342,12 +1421,14 @@ mod inner {
                 let text = VIEW.with(|v| v.borrow().ai.messages.get(idx as usize).map(|m| m.text.clone()));
                 if let Some(t) = text {
                     toast(if write_clipboard_text(hwnd, &t) { "Reply copied" } else { "Couldn't copy" });
+                    with_eyes(|e| e.react(React::GotIt));
                 }
                 save = false;
             }
             Action::AiUndoAction(msg_idx, act_idx) => {
                 let prov = SETTINGS.with(|s| s.borrow().ai_provider);
                 if let Some(op) = crate::ai::mark_action_undone(msg_idx as usize, act_idx as usize, prov) {
+                    with_eyes(|e| e.react(React::Oops));
                     use crate::ai::UndoOp::*;
                     VIEW.with(|v| {
                         let mut vm = v.borrow_mut();
@@ -1622,6 +1703,7 @@ mod inner {
                 v.borrow_mut().hud = Some(hud);
             });
             chime(880, 180);
+            with_eyes(|e| e.react(React::Gasp));
             wake(hwnd);
         }
         let text = VIEW.with(|v| v.borrow().meeting_soon().map(|e| crate::calendar::countdown(e, now)).unwrap_or_default());
@@ -1751,6 +1833,7 @@ mod inner {
                             Note(text) => {
                                 let title = teardrop_core::title_of(&text);
                                 let id = vm.notes.add(&text, now).id.clone();
+                                with_eyes(|e| e.noted(text.chars().count()));
                                 badges.push(AiActionBadge {
                                     label: format!("Saved note: {title}"),
                                     undo: UndoOp::RemoveAddedNote(id),
@@ -1771,12 +1854,12 @@ mod inner {
         let snap = crate::ai::snapshot(prov);
         let ai_done = VIEW.with(|v| {
             let mut vm = v.borrow_mut();
-            let done = vm.ai.busy && !snap.busy;
+            let done = (vm.ai.busy && !snap.busy).then(|| snap.error.is_empty());
             vm.ai = snap;
             done
         });
-        if ai_done {
-            with_eyes(|e| e.react(React::Sparkle));
+        if let Some(ok) = ai_done {
+            with_eyes(|e| e.react(if ok { React::Sparkle } else { React::Confused }));
         }
     }
 
@@ -1797,6 +1880,7 @@ mod inner {
         });
         if announce {
             toast(&format!("Update {} available \u{2014} open Settings", snap.version));
+            with_eyes(|e| e.react(React::Sparkle));
         }
     }
 
@@ -1840,16 +1924,41 @@ mod inner {
     }
 
     fn poll_volume() {
-        let Some(vs) = volume::try_read() else { return };
-        let cur = (vs.pct, vs.muted);
-        let prev = LAST_VOL.replace(Some(cur));
-        if prev.is_some() && prev != Some(cur) {
-            if !vs.muted && vs.pct >= 80 && prev.is_some_and(|(p, _)| p < vs.pct) {
-                with_eyes(|e| e.react(React::Wince));
-            }
-            let ms = now_ms();
-            VIEW.with(|v| v.borrow_mut().hud = Some(hud_volume(vs.pct, vs.muted, ms)));
+        if let Some(vs) = volume::try_read() {
+            volume_changed(vs.pct, vs.muted);
         }
+    }
+
+    /// From the 1 s poll or the Core Audio callback: raise the HUD and let
+    /// the face act out the new level. Returns true when something changed.
+    fn volume_changed(pct: u8, muted: bool) -> bool {
+        let cur = (pct, muted);
+        let prev = LAST_VOL.replace(Some(cur));
+        if prev.is_none() || prev == Some(cur) {
+            return false;
+        }
+        let ms = now_ms();
+        VIEW.with(|v| v.borrow_mut().hud = Some(hud_volume(pct, muted, ms)));
+        if eyes_on() {
+            with_eyes(|e| e.gauge(Gauge::Volume, pct as f32 / 100.0, muted));
+        }
+        true
+    }
+
+    /// Display brightness moved (laptop panel, via the power-setting
+    /// notification). The first report after registering is just the
+    /// current level and stays quiet.
+    fn brightness_changed(pct: u8) -> bool {
+        let prev = LAST_BRIGHT.replace(Some(pct));
+        if prev.is_none() || prev == Some(pct) {
+            return false;
+        }
+        let ms = now_ms();
+        VIEW.with(|v| v.borrow_mut().hud = Some(hud_brightness(pct, ms)));
+        if eyes_on() {
+            with_eyes(|e| e.gauge(Gauge::Brightness, pct as f32 / 100.0, false));
+        }
+        true
     }
 
     /// Slower ambient signals, only sampled while the eyes are the idle look.
@@ -1893,9 +2002,14 @@ mod inner {
             if n % 3 == 0 {
                 CPU.with(|c| vm.system = sample_all(&mut c.borrow_mut(), &vm.system));
             }
-            if vm.pomo.ends_at.is_some() && vm.pomo.tick(now).is_some() {
-                vm.hud = Some(Hud::transient(HudKind::Timer, "Focus", "phase complete", ms, 5000));
-                chime(990, 150);
+            if vm.pomo.ends_at.is_some() {
+                if let Some(next) = vm.pomo.tick(now) {
+                    vm.hud = Some(Hud::transient(HudKind::Timer, "Focus", "phase complete", ms, 5000));
+                    chime(990, 150);
+                    // A focus block done is a win; a break over means back to it.
+                    let r = if next == teardrop_core::Phase::Focus { React::Perk } else { React::Celebrate };
+                    with_eyes(|e| e.react(r));
+                }
             }
             vm.water.reminders_enabled = remind;
             let today_ml = vm.water.today(vm.day());
@@ -2031,11 +2145,16 @@ mod inner {
     }
 
     fn on_wheel(hwnd: HWND, wp: WPARAM) {
-        if !is_open() {
-            return;
-        }
         let delta = ((wp.0 >> 16) & 0xffff) as u16 as i16;
         let dir = if delta > 0 { -1 } else { 1 };
+        if !is_open() {
+            // Collapsed: the eyes spin with the wheel.
+            if eyes_on() {
+                with_eyes(|e| e.scrolled(dir));
+                wake(hwnd);
+            }
+            return;
+        }
         let (_, y) = LAST_MOUSE.get();
         let page = VIEW.with(|v| v.borrow().page);
         let in_content = y >= CONTENT_TOP;
@@ -2591,6 +2710,9 @@ mod inner {
                     SHELL_MSG.set(RegisterWindowMessageW(w!("SHELLHOOK")));
                 }
                 env::spawn_downloads_watcher(hwnd, WM_APP_DOWNLOAD);
+                // Live level changes: volume keys and the brightness slider/keys.
+                volume::watch(hwnd.0 as isize, WM_APP_VOLUME);
+                let _ = RegisterPowerSettingNotification(HANDLE(hwnd.0), &GUID_VIDEO_CURRENT_MONITOR_BRIGHTNESS, DEVICE_NOTIFY_WINDOW_HANDLE);
                 if SETTINGS.with(|s| s.borrow().weather_mood) {
                     env::refresh_weather();
                 }
@@ -2721,6 +2843,18 @@ mod inner {
                 DefWindowProcW(hwnd, msg, wp, lp)
             }
             _ if msg == WM_POWERBROADCAST => {
+                if wp.0 as u32 == PBT_POWERSETTINGCHANGE {
+                    let ps = lp.0 as *const POWERBROADCAST_SETTING;
+                    if let Some(ps) = ps.as_ref() {
+                        if ps.PowerSetting == GUID_VIDEO_CURRENT_MONITOR_BRIGHTNESS && ps.DataLength >= 4 {
+                            let pct = std::ptr::read_unaligned(ps.Data.as_ptr() as *const u32).min(100) as u8;
+                            if brightness_changed(pct) {
+                                wake(hwnd);
+                            }
+                        }
+                    }
+                    return LRESULT(1);
+                }
                 if wp.0 as u32 == 10 {
                     let ms = now_ms();
                     VIEW.with(|v| {
@@ -2738,6 +2872,7 @@ mod inner {
                 if wp.0 as u32 == 0x8000 {
                     let ms = now_ms();
                     VIEW.with(|v| v.borrow_mut().hud = Some(Hud::transient(HudKind::Bluetooth, "Device", "connected", ms, 3000)));
+                    with_eyes(|e| e.react(React::Perk));
                     wake(hwnd);
                 }
                 DefWindowProcW(hwnd, msg, wp, lp)
@@ -2843,6 +2978,12 @@ mod inner {
                 }
                 LRESULT(0)
             }
+            _ if msg == WM_APP_VOLUME => {
+                if volume_changed(wp.0.min(100) as u8, lp.0 != 0) {
+                    wake(hwnd);
+                }
+                LRESULT(0)
+            }
             _ if msg == WM_APP_SHARE => {
                 on_share_ready(hwnd, wp.0, lp.0 as usize);
                 LRESULT(0)
@@ -2854,7 +2995,19 @@ mod inner {
             }
             _ if msg != 0 && msg == SHELL_MSG.get() => {
                 // Shell hook traffic is constant (every title change); only wake for ours.
-                let r = match wp.0 as u32 {
+                let code = wp.0 as u32;
+                if (code == HSHELL_WINDOWACTIVATED || code == HSHELL_RUDEAPPACTIVATED) && eyes_on() && lp.0 != 0 && lp.0 != hwnd.0 as isize {
+                    // Glance toward the window that just came forward.
+                    let mut rc = RECT::default();
+                    if GetWindowRect(HWND(lp.0 as _), &mut rc).is_ok() {
+                        let (sw, sh) = (GetSystemMetrics(SM_CXSCREEN).max(1) as f32, GetSystemMetrics(SM_CYSCREEN).max(1) as f32);
+                        let cx = (rc.left + rc.right) as f32 / 2.0;
+                        let cy = (rc.top + rc.bottom) as f32 / 2.0;
+                        with_eyes(|e| e.glance((cx - sw / 2.0) / (sw / 2.0), (cy / sh) * 1.6 - 0.3));
+                        wake(hwnd);
+                    }
+                }
+                let r = match code {
                     HSHELL_FLASH => Some(React::Perk),
                     HSHELL_WINDOWCREATED if env::is_crash_window(HWND(lp.0 as _)) => Some(React::Shocked),
                     _ => None,

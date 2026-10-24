@@ -71,6 +71,11 @@ pub mod sys {
     }
 
     /// Left mouse button held right now (anywhere on screen).
+    pub fn caps() -> bool {
+        use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CAPITAL};
+        unsafe { GetKeyState(VK_CAPITAL.0 as i32) & 1 != 0 }
+    }
+
     pub fn lbutton() -> bool {
         use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
         unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0 }

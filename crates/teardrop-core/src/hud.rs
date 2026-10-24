@@ -1,4 +1,4 @@
-//! Transient collapsed-island notices (volume, charging, headset, water).
+//! Transient collapsed-island notices (volume, brightness, charging, headset, water).
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,7 +13,7 @@ pub struct Hud {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum HudKind { Volume, Charging, Bluetooth, Water, Timer, Muted, Meeting }
+pub enum HudKind { Volume, Charging, Bluetooth, Water, Timer, Muted, Meeting, Brightness }
 
 impl Hud {
     pub fn transient(kind: HudKind, title: &str, detail: &str, now_ms: u64, ttl_ms: u64) -> Self {

@@ -31,6 +31,8 @@ pub enum Icon {
     Folder,
     Speaker,
     Muted,
+    /// Display brightness.
+    Sun,
     Bolt,
     Headphones,
     Undo,
@@ -174,6 +176,15 @@ pub fn draw(s: &mut Scene, icon: Icon, cx: f32, cy: f32, size: f32, c: Color) {
             s.poly(vec![p(2.0, 6.0), p(5.0, 6.0), p(8.6, 2.8), p(8.6, 13.2), p(5.0, 10.0), p(2.0, 10.0)], c);
             s.line(p(10.6, 5.6).0, p(10.6, 5.6).1, p(14.4, 10.4).0, p(14.4, 10.4).1, sw, c);
             s.line(p(14.4, 5.6).0, p(14.4, 5.6).1, p(10.6, 10.4).0, p(10.6, 10.4).1, sw, c);
+        }
+        Icon::Sun => {
+            s.circle(cx, cy, 2.9 * u, c);
+            for i in 0..8 {
+                let a = i as f32 / 8.0 * std::f32::consts::TAU;
+                let (x0, y0) = (cx + a.cos() * 4.9 * u, cy + a.sin() * 4.9 * u);
+                let (x1, y1) = (cx + a.cos() * 6.9 * u, cy + a.sin() * 6.9 * u);
+                s.line(x0, y0, x1, y1, sw, c);
+            }
         }
         Icon::Bolt => s.poly(vec![p(9.4, 1.4), p(3.6, 9.0), p(7.6, 9.0), p(6.6, 14.6), p(12.4, 6.6), p(8.4, 6.6)], c),
         Icon::Headphones => {
