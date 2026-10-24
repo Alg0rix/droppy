@@ -7,11 +7,14 @@
 
 #[cfg(windows)]
 mod demo;
+#[cfg(windows)]
+mod shelf_drag;
 mod lyrics_service;
 mod media_smtc;
 mod paths;
 mod render_d2d;
 mod selftest;
+mod services_env;
 mod services_system;
 mod startup;
 mod state;

@@ -22,7 +22,10 @@ Native Rust, no web view, no runtime. Zero CPU while nothing is moving.
   rate. Ambient motion (equalizer, eyes) uses a 30 fps timer; idle = no frames.
 - **1 s service tick**: system sample, Pomodoro, water reminder, volume poll,
   media position, SMTC adoption, lyric lookup.
-- **Workers**: SMTC poller (MTA, 5 s), lyric fetch (spawned per track, never blocks UI).
+- **Workers**: SMTC poller (MTA, 5 s). Seeks arrive over an `mpsc` channel:
+  the UI thread only posts a target, the worker calls WinRT and re-polls, so a
+  slow player never blocks animation. Lyric fetch runs per track, never on the
+  UI thread.
 
 ## Rendering model
 
@@ -50,13 +53,18 @@ Hit regions come from the same frame that was drawn (`Frame.hits`), so what you
 see is what you click. Hover-intent opens after 170 ms (collapses 450 ms after
 leaving unless pinned by a click); click, tray, hotkey or file drop pin it.
 Clicking away closes a pinned island. Text entry (new task) uses `WM_CHAR`.
+Shelf tiles are also OLE drag sources: after a 6 px press-and-move they call
+`DoDragDrop` with a `CF_HDROP` payload. Only copy/link effects are offered, so
+dragging never moves or deletes the original file; a click without movement
+still opens it.
 
 ## Pages & services contract
 
 Each page is `core` state + a thin Windows sampler:
 
-- Music: SMTC snapshot → `media::Track`; lyrics via LRCLIB cache in
-  `%LOCALAPPDATA%\Teardrop\lyrics\`, `lyrics::line_at` + `line_progress`.
+- Music: SMTC snapshot → `media::Track`; click the seek bar to post a
+  `TryChangePlaybackPositionAsync` seek to the media worker; lyrics via LRCLIB
+  cache in `%LOCALAPPDATA%\Teardrop\lyrics\`, `lyrics::line_at` + `line_progress`.
 - Focus: `pomodoro::Pomodoro` state machine; island shows countdown.
 - Water: `water::WaterLog` (+250 ml action, week history, `reminder_due`).
 - Shelf: `shelf::Shelf` (drop files → pin, click/drag out).
@@ -64,7 +72,28 @@ Each page is `core` state + a thin Windows sampler:
 - Clipboard: `clipboard::ClipboardRing` in-memory only; skips items flagged
   `ExcludeClipboardContentFromMonitorProcessing`; click a row to copy it back.
 - Today: month calendar + `system::SystemSnapshot` (CPU/mem/disk/battery).
-- Settings: gear in the header (toggles, water goal, idle look).
+- Settings: gear in the header (toggles, water goal, idle look; eye style,
+  mood ring, opt-in weather and birthday when the look is Eyes).
+
+## Eyes
+
+`ui/eyes.rs` is a small expression engine, pure like the rest of `ui`:
+
+- **Mood**: lasting state re-picked every frame from `Senses` (music + beat,
+  idle time, pointer, clock/calendar, battery, CPU, disk, network, mic/camera,
+  do-not-disturb, weather). Priority order lives in `pick_mood`.
+- **React**: short one-offs queued by events (`Eyes::react`). Window events
+  (lock, shell flash, WerFault window, Downloads watcher, clipboard image,
+  volume, water, drops, pokes) queue them; they play once the face is visible.
+- **Pose**: numbers the painter draws (lids, gaze, brows, squash, glyphs,
+  hats, particles). Lids are per-column spans so pupils clip without masks.
+
+Signals come from `ViewModel.env` (`Ambient`), filled by `services_env.rs`
+(idle via `GetLastInputInfo`, consent-store registry for mic/camera,
+`SHQueryUserNotificationState`, `InternetGetConnectedState`) and the output
+peak meter in `volume.rs`, all only while the eyes are the idle look. Weather
+is opt-in (wttr.in, geolocated by IP). The face also replaces the equalizer
+next to the artwork and the label next to the focus ring.
 
 HUDs (`hud::Hud`) are transient collapsed-island notices: volume, charging,
 headset battery, water reminder with one-click action.

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+<title>Droppy - Music</title>
+<defs>
+  <linearGradient id="body_grad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#38BDF8"/>
+    <stop offset="1" stop-color="#0284C7"/>
+  </linearGradient>
+</defs>
+<g transform="translate(17.5, 22.5) scale(1.25)">
+  <path d="M 50.00 12.00 C 55.00 12.00 86.00 44.00 86.00 70.00 C 86.00 86.00 70.00 92.00 50.00 92.00 C 30.00 92.00 14.00 86.00 14.00 70.00 C 14.00 44.00 45.00 12.00 50.00 12.00 Z" fill="url(#body_grad)"/>
+  <rect x="34.75" y="53.00" width="8.50" height="16.00" rx="4.25" fill="#FFFFFF"/>
+<rect x="58.75" y="53.00" width="8.50" height="16.00" rx="4.25" fill="#FFFFFF"/>
+</g>
+<!-- Headphones -->
+<path d="M 36 85 A 44 44 0 0 1 124 85" fill="none" stroke="#0F172A" stroke-width="6" stroke-linecap="round"/>
+<rect x="30" y="80" width="12" height="26" rx="6" fill="#0F172A"/>
+<rect x="118" y="80" width="12" height="26" rx="6" fill="#0F172A"/>
+<!-- Floating musical notes -->
+<path d="M 125 40 L 135 36 L 135 50 M 125 40 L 125 54 M 120 54 A 5 4 0 1 1 125 50 M 130 50 A 5 4 0 1 1 135 46" fill="#F43F5E" stroke="#F43F5E" stroke-width="2"/>
+
+</svg>

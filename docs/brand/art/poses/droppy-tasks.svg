@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+<title>Droppy - Tasks</title>
+<defs>
+  <linearGradient id="body_grad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#38BDF8"/>
+    <stop offset="1" stop-color="#0284C7"/>
+  </linearGradient>
+</defs>
+<g transform="translate(17.5, 22.5) scale(1.25)">
+  <path d="M 50.00 12.00 C 55.00 12.00 86.00 44.00 86.00 70.00 C 86.00 86.00 70.00 92.00 50.00 92.00 C 30.00 92.00 14.00 86.00 14.00 70.00 C 14.00 44.00 45.00 12.00 50.00 12.00 Z" fill="url(#body_grad)"/>
+  <rect x="35.75" y="56.00" width="8.50" height="16.00" rx="4.25" fill="#FFFFFF"/>
+<rect x="59.75" y="56.00" width="8.50" height="16.00" rx="4.25" fill="#FFFFFF"/>
+</g>
+<!-- Checklist Tile -->
+<g transform="translate(100, 95)">
+  <rect x="0" y="0" width="34" height="40" rx="4" fill="#FFFFFF" stroke="#22C55E" stroke-width="3"/>
+  <path d="M 6 12 L 10 16 L 18 8" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="22" y1="12" x2="28" y2="12" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M 6 24 L 10 28 L 18 20" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="22" y1="24" x2="28" y2="24" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round"/>
+</g>
+
+</svg>

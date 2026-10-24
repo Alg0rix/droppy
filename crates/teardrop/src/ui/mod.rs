@@ -4,6 +4,7 @@
 //! Windows types here, so every page is unit-testable on any OS.
 
 pub mod icons;
+pub mod eyes;
 pub mod layout;
 pub mod pages;
 pub mod scene;

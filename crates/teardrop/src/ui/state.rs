@@ -5,10 +5,12 @@
 //! compact width...). Everything eases with frame-rate independent
 //! exponential smoothing so a dropped frame never looks like a jump.
 
+use super::eyes::{self, Eyes, Senses, Spot};
 use super::scene::Rect;
-use crate::viewmodel::ViewModel;
+use super::theme::PAD;
+use crate::viewmodel::{local_naive, ViewModel};
 use std::collections::HashMap;
-use teardrop_core::{IdleLook, Page, Settings};
+use teardrop_core::{EyeStyle, IdleLook, Page, Settings};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SettingKey {
@@ -19,10 +21,12 @@ pub enum SettingKey {
     Sounds,
     HideFullscreen,
     StartWithWindows,
+    MoodRing,
+    WeatherMood,
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 7] = [
+    pub const ALL: [SettingKey; 9] = [
         SettingKey::OpenOnHover,
         SettingKey::Lyrics,
         SettingKey::WaterReminders,
@@ -30,6 +34,8 @@ impl SettingKey {
         SettingKey::Sounds,
         SettingKey::HideFullscreen,
         SettingKey::StartWithWindows,
+        SettingKey::MoodRing,
+        SettingKey::WeatherMood,
     ];
 
     pub fn get(self, s: &Settings) -> bool {
@@ -41,6 +47,8 @@ impl SettingKey {
             SettingKey::Sounds => s.sounds,
             SettingKey::HideFullscreen => s.hide_in_fullscreen,
             SettingKey::StartWithWindows => s.start_with_windows,
+            SettingKey::MoodRing => s.mood_ring,
+            SettingKey::WeatherMood => s.weather_mood,
         }
     }
 
@@ -54,6 +62,8 @@ impl SettingKey {
             SettingKey::Sounds => s.sounds = v,
             SettingKey::HideFullscreen => s.hide_in_fullscreen = v,
             SettingKey::StartWithWindows => s.start_with_windows = v,
+            SettingKey::MoodRing => s.mood_ring = v,
+            SettingKey::WeatherMood => s.weather_mood = v,
         }
     }
 
@@ -66,6 +76,8 @@ impl SettingKey {
             SettingKey::Sounds => "Sounds",
             SettingKey::HideFullscreen => "Hide in fullscreen",
             SettingKey::StartWithWindows => "Start with Windows",
+            SettingKey::MoodRing => "Mood ring",
+            SettingKey::WeatherMood => "Weather",
         }
     }
 }
@@ -79,6 +91,10 @@ pub enum Action {
     MediaPrev,
     MediaPlayPause,
     MediaNext,
+    /// Seek bar hover/click region; the click turns into `Seek`.
+    SeekBar,
+    /// Seek to a position in per-mille (0..=1000) of the track.
+    Seek(u16),
     FocusToggle,
     FocusReset,
     FocusMinus,
@@ -97,6 +113,9 @@ pub enum Action {
     ClipClear,
     Toggle(SettingKey),
     Idle(IdleLook),
+    EyeStyle(EyeStyle),
+    /// Set the birthday to today, or clear it (wheel nudges the day).
+    Birthday,
     GoalStep(i8),
     Quit,
 }
@@ -147,6 +166,9 @@ pub struct UiState {
     pub toast: Option<(String, u64)>,
     pub clock_s: f32,
     pub water_level: f32,
+    /// Island morph amount (0 collapsed .. 1 open), set by the shell each frame.
+    pub island_open: f32,
+    pub eyes: Eyes,
 }
 
 impl UiState {
@@ -174,6 +196,8 @@ impl UiState {
             toast: None,
             clock_s: 0.0,
             water_level: 0.0,
+            island_open: 0.0,
+            eyes: Eyes::new(0x7EA2_D20F),
         }
     }
 
@@ -235,7 +259,7 @@ impl UiState {
         }
         match s.idle_look {
             IdleLook::Clock => (116.0, 34.0),
-            IdleLook::Eyes => (104.0, 34.0),
+            IdleLook::Eyes => (128.0, 40.0),
             IdleLook::Minimal => (70.0, 28.0),
             IdleLook::Hidden => (132.0, 6.0),
         }
@@ -254,7 +278,47 @@ impl UiState {
         if vm.live_hud(now_ms).is_some() {
             return true;
         }
-        (vm.music_active() && vm.hud.is_none()) || (s.idle_look == IdleLook::Eyes && !vm.focus_visible())
+        (vm.music_active() && vm.hud.is_none()) || s.idle_look == IdleLook::Eyes
+    }
+
+    /// Where the eyes sit on the collapsed island right now, if anywhere.
+    pub fn face_spot(&self, vm: &ViewModel, s: &Settings, now_ms: u64) -> Option<Spot> {
+        if s.idle_look != IdleLook::Eyes || vm.live_hud(now_ms).is_some() {
+            None
+        } else if vm.focus_visible() {
+            Some(Spot::Focus)
+        } else if vm.music_active() {
+            Some(Spot::Music)
+        } else {
+            Some(Spot::Idle)
+        }
+    }
+
+    /// The collapsed body rect in window-local px (matches `layout::build`).
+    pub fn compact_body(&self) -> Rect {
+        Rect::new(PAD, 0.0, self.compact_w, self.compact_h)
+    }
+
+    fn tick_eyes(&mut self, dt: f32, vm: &ViewModel, s: &Settings, now_ms: u64) {
+        let spot = self.face_spot(vm, s, now_ms);
+        let body = self.compact_body();
+        let collapsed = self.island_open < 0.12;
+        let (fx, fy, k) = eyes::place(spot.unwrap_or(Spot::Idle), body);
+        let senses = Senses {
+            local: local_naive(vm.now),
+            visible: spot.is_some() && collapsed,
+            mouse: self.mouse.map(|(x, y)| ((x - fx) / k, (y - fy) / k)),
+            hovering: collapsed && self.hover == Some(Action::Island),
+            track: &vm.track,
+            music: vm.music_active(),
+            focus: (spot == Some(Spot::Focus)).then_some(vm.pomo.phase),
+            sys: &vm.system,
+            water: vm.water.progress(vm.day()),
+            env: &vm.env,
+            set: s,
+            area: eyes::area(spot.unwrap_or(Spot::Idle), body),
+        };
+        self.eyes.tick(dt, &senses);
     }
 
     /// Advance every animated value. Returns true while anything still moves.
@@ -327,6 +391,8 @@ impl UiState {
         // Water level eases to the logged amount.
         let level = vm.water.progress(vm.day());
         moving |= approach(&mut self.water_level, level, 5.0, dt);
+
+        self.tick_eyes(dt, vm, s, now_ms);
 
         if let Some((_, until)) = &self.toast {
             if now_ms >= *until {

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+<title>Droppy - Today</title>
+<defs>
+  <linearGradient id="body_grad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#38BDF8"/>
+    <stop offset="1" stop-color="#0284C7"/>
+  </linearGradient>
+</defs>
+<g transform="translate(17.5, 22.5) scale(1.25)">
+  <path d="M 50.00 12.00 C 55.00 12.00 86.00 44.00 86.00 70.00 C 86.00 86.00 70.00 92.00 50.00 92.00 C 30.00 92.00 14.00 86.00 14.00 70.00 C 14.00 44.00 45.00 12.00 50.00 12.00 Z" fill="url(#body_grad)"/>
+  <rect x="35.75" y="56.00" width="8.50" height="16.00" rx="4.25" fill="#FFFFFF"/>
+<rect x="59.75" y="56.00" width="8.50" height="16.00" rx="4.25" fill="#FFFFFF"/>
+</g>
+<!-- Calendar -->
+<g transform="translate(100, 95)">
+  <rect x="0" y="4" width="36" height="34" rx="4" fill="#FFFFFF" stroke="#3B82F6" stroke-width="3"/>
+  <rect x="0" y="4" width="36" height="10" rx="2" fill="#3B82F6"/>
+  <line x1="8" y1="0" x2="8" y2="6" stroke="#1D4ED8" stroke-width="3" stroke-linecap="round"/>
+  <line x1="28" y1="0" x2="28" y2="6" stroke="#1D4ED8" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="18" cy="24" r="5" fill="#EF4444"/>
+</g>
+
+</svg>

@@ -9,27 +9,28 @@
 #[cfg(windows)]
 mod inner {
     use crate::render_d2d::d2d::{render_offscreen, Presenter};
+    use crate::services_env::sys as env;
     use crate::services_system::sys::{sample_all, CpuTracker};
     use crate::state::{IslandMode, IslandState};
+    use crate::ui::eyes::{Eyes, React};
     use crate::ui::layout::{build, hit_test, IslandView, CONTENT_TOP};
     use crate::ui::scene::{Color, Fill, Scene};
     use crate::ui::state::{Action, Hit, SettingKey, UiState};
     use crate::ui::{self, icons};
-    use crate::viewmodel::{hud_volume, hud_water_due, hud_water_logged, ViewModel};
-    use crate::{lyrics_service, media_smtc, paths, startup, store, volume};
-    use chrono::Utc;
+    use crate::viewmodel::{hud_volume, hud_water_due, hud_water_logged, local_naive, shift_birthday, ViewModel, Weather};
+    use crate::{lyrics_service, media_smtc, paths, shelf_drag, startup, store, volume};
+    use chrono::{Datelike, Utc};
     use std::cell::{Cell, RefCell};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Mutex;
     use std::time::Instant;
-    use teardrop_core::{line_at, Hud, HudKind, LyricLine, Page, Playback, Settings};
+    use teardrop_core::{line_at, Hud, HudKind, IdleLook, LyricLine, Page, Playback, Settings};
     use windows::core::{w, PCWSTR};
     use windows::Win32::Foundation::{HANDLE, HGLOBAL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
     use windows::Win32::Graphics::Dwm::DwmFlush;
     use windows::Win32::Graphics::Gdi::{
         CreateBitmap, DeleteObject, GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     };
-    use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
     use windows::Win32::System::DataExchange::{
         AddClipboardFormatListener, CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
         RegisterClipboardFormatW, RemoveClipboardFormatListener, SetClipboardData,
@@ -37,6 +38,9 @@ mod inner {
     use windows::Win32::System::Diagnostics::Debug::Beep;
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+    use windows::Win32::System::Ole::OleInitialize;
+    use windows::Win32::System::RemoteDesktop::{WTSRegisterSessionNotification, WTSUnRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION};
+    use windows::Win32::System::SystemServices::MK_LBUTTON;
     use windows::Win32::UI::HiDpi::{GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         keybd_event, RegisterHotKey, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, UnregisterHotKey, KEYBD_EVENT_FLAGS,
@@ -60,6 +64,14 @@ mod inner {
     // windows 0.58 keeps WM_MOUSELEAVE under Controls; a bare pattern would
     // bind as a catch-all variable. Match by value.
     const WM_MOUSELEAVE_U32: u32 = 675;
+    const WM_WTSSESSION_CHANGE_U32: u32 = 0x02B1;
+    const WTS_SESSION_LOCK: u32 = 7;
+    const WTS_SESSION_UNLOCK: u32 = 8;
+    const WM_APP_DOWNLOAD: u32 = 0x8002;
+    const HSHELL_WINDOWCREATED: u32 = 1;
+    const HSHELL_FLASH: u32 = 0x8006;
+    const CF_BITMAP_U32: u32 = 2;
+    const CF_DIB_U32: u32 = 8;
 
     const T_ANIM: usize = 1;
     const T_SLOW: usize = 2;
@@ -88,12 +100,25 @@ mod inner {
         static HIDDEN: Cell<bool> = Cell::new(false);
         static HOVER_PENDING: Cell<bool> = Cell::new(false);
         static LAST_MOUSE: Cell<(f32, f32)> = Cell::new((-1.0, -1.0));
+        static PRESS_AT: Cell<Option<(f32, f32)>> = Cell::new(None);
+        static SEEK_AT: Cell<Option<u64>> = Cell::new(None);
         static WIN_POS: Cell<(i32, i32)> = Cell::new((0, 0));
         static LAST_TAB: Cell<Page> = Cell::new(Page::Music);
         static TICKS: Cell<u32> = Cell::new(0);
         static LYR_STABLE: Cell<u8> = Cell::new(0);
         static LAST_VOL: Cell<Option<(u8, bool)>> = Cell::new(None);
         static HIGH_SURR: Cell<u16> = Cell::new(0);
+        static SHELL_MSG: Cell<u32> = Cell::new(0);
+        static HOVER_ARM: Cell<(f32, f32)> = Cell::new((-1.0, -1.0));
+        static HIDE_AT: Cell<Option<u64>> = Cell::new(None);
+    }
+
+    fn with_eyes(f: impl FnOnce(&mut Eyes)) {
+        UI.with(|u| f(&mut u.borrow_mut().eyes));
+    }
+
+    fn eyes_on() -> bool {
+        SETTINGS.with(|s| s.borrow().idle_look == IdleLook::Eyes)
     }
 
     fn now_ms() -> u64 {
@@ -161,6 +186,14 @@ mod inner {
             }
         };
         UI.with(|u| u.borrow_mut().mouse = mouse);
+        // Cheap per-frame signals for the eyes (the meter only while it dances).
+        let peak = if eyes_on() && VIEW.with(|v| v.borrow().music_active()) { volume::peak() } else { None };
+        VIEW.with(|v| {
+            let mut vm = v.borrow_mut();
+            vm.env.idle_ms = env::idle_ms();
+            vm.env.lbutton = env::lbutton();
+            vm.env.audio_peak = peak;
+        });
 
         let frame = ISLAND.with(|isl| {
             let mut st = isl.borrow_mut();
@@ -261,6 +294,7 @@ mod inner {
                 SETTINGS.with(|s| {
                     let mut ui = u.borrow_mut();
                     let (vm, set) = (v.borrow(), s.borrow());
+                    ui.island_open = open;
                     let moving = ui.tick(dt, &vm, &set, ms);
                     (moving, ui.ambient(&vm, &set, open, ms))
                 })
@@ -314,6 +348,7 @@ mod inner {
         if pinned {
             PINNED.set(true);
             activate(hwnd);
+            with_eyes(|e| e.poke());
         }
         wake(hwnd);
     }
@@ -327,6 +362,7 @@ mod inner {
         });
         PINNED.set(false);
         UI.with(|u| u.borrow_mut().input = None);
+        with_eyes(|e| e.island_closed());
         unsafe {
             let _ = KillTimer(hwnd, T_LEAVE);
         }
@@ -364,10 +400,23 @@ mod inner {
             })();
             if hide {
                 if !HIDDEN.get() {
+                    // The eyes glance down at the game before ducking out.
+                    let now = now_ms();
+                    match HIDE_AT.get() {
+                        None if eyes_on() && !is_open() => {
+                            HIDE_AT.set(Some(now + 1500));
+                            with_eyes(|e| e.react(React::WatchGame));
+                            wake(hwnd);
+                            return false;
+                        }
+                        Some(at) if now < at => return false,
+                        _ => {}
+                    }
+                    HIDE_AT.set(None);
                     HIDDEN.set(true);
                     let _ = ShowWindow(hwnd, SW_HIDE);
                 }
-            } else if HIDDEN.get() {
+            } else if HIDE_AT.take().is_some() || HIDDEN.get() {
                 HIDDEN.set(false);
                 let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
             }
@@ -527,6 +576,7 @@ mod inner {
         let now = Utc::now();
         let ms = now_ms();
         let open = is_open();
+        with_eyes(|e| e.react(React::Gulp));
         let total = VIEW.with(|v| {
             let mut vm = v.borrow_mut();
             let day = vm.day();
@@ -546,6 +596,13 @@ mod inner {
         let text = UI.with(|u| u.borrow().input.clone()).unwrap_or_default();
         let text = text.trim().to_string();
         if text.is_empty() {
+            return;
+        }
+        // Easter egg.
+        if text.to_lowercase().contains("barrel roll") {
+            with_eyes(|e| e.react(React::BarrelRoll));
+            UI.with(|u| u.borrow_mut().input = Some(String::new()));
+            toast("Wheee! Watch the eyes");
             return;
         }
         VIEW.with(|v| {
@@ -589,6 +646,16 @@ mod inner {
                 send_media_key(VK_MEDIA_NEXT_TRACK.0 as u8);
                 VIEW.with(|v| v.borrow_mut().track.position_ms = 0);
             }
+            Action::Seek(p) => {
+                let target = VIEW.with(|v| media_smtc::seek_target_ms(v.borrow().track.duration_ms, p));
+                media_smtc::seek(target);
+                VIEW.with(|v| v.borrow_mut().track.position_ms = target);
+                // Hold off stale polled positions while the player catches up.
+                SEEK_AT.set(Some(ms));
+                save = false;
+            }
+            // Clicking the bar is turned into a concrete `Seek` in WM_LBUTTONUP.
+            Action::SeekBar => save = false,
             Action::MediaPlayPause => {
                 send_media_key(VK_MEDIA_PLAY_PAUSE.0 as u8);
                 VIEW.with(|v| {
@@ -680,6 +747,7 @@ mod inner {
                     }
                     SettingKey::WaterReminders => VIEW.with(|v| v.borrow_mut().water.reminders_enabled = on),
                     SettingKey::ClipboardHistory if !on => VIEW.with(|v| v.borrow_mut().clipboard.clear()),
+                    SettingKey::WeatherMood if on => env::refresh_weather(),
                     _ => {}
                 }
             }
@@ -687,6 +755,17 @@ mod inner {
                 VIEW.with(|v| v.borrow_mut().idle_look = look);
                 SETTINGS.with(|s| s.borrow_mut().idle_look = look);
             }
+            Action::EyeStyle(st) => SETTINGS.with(|s| s.borrow_mut().eye_style = st),
+            Action::Birthday => SETTINGS.with(|s| {
+                let mut st = s.borrow_mut();
+                st.birthday = match st.birthday {
+                    Some(_) => None,
+                    None => {
+                        let d = local_naive(now);
+                        Some((d.month() as u8, d.day() as u8))
+                    }
+                };
+            }),
             Action::GoalStep(d) => VIEW.with(|v| {
                 let mut vm = v.borrow_mut();
                 vm.water.goal_ml = (vm.water.goal_ml as i32 + 250 * d as i32).clamp(500, 6000) as u32;
@@ -848,17 +927,30 @@ mod inner {
 
     fn poll_smtc() {
         let snap = media_smtc::latest(std::time::Duration::from_secs(15));
+        let now = now_ms();
         VIEW.with(|v| {
             let mut vm = v.borrow_mut();
             match snap {
                 Some(s) if !s.title.trim().is_empty() => {
+                    let changed =
+                        vm.track.title != s.title || vm.track.artist != s.artist || vm.track.album != s.album;
+                    if changed {
+                        SEEK_AT.set(None);
+                    } else if SEEK_AT.get().map(|at| now.saturating_sub(at) >= 2_000).unwrap_or(false) {
+                        // The player has had time to apply the seek; trust polls again.
+                        SEEK_AT.set(None);
+                    }
                     vm.track.title = s.title;
                     vm.track.artist = s.artist;
                     vm.track.album = s.album;
                     vm.track.app = s.app;
                     if s.duration_ms > 0 {
                         vm.track.duration_ms = s.duration_ms;
-                        vm.track.position_ms = s.position_ms.min(s.duration_ms);
+                        // A snapshot taken just before a seek would yank the bar
+                        // back; keep the optimistically-updated position for a bit.
+                        if SEEK_AT.get().is_none() {
+                            vm.track.position_ms = s.position_ms.min(s.duration_ms);
+                        }
                     }
                     vm.track.playback = if s.playing { Playback::Playing } else { Playback::Paused };
                 }
@@ -877,8 +969,36 @@ mod inner {
         let cur = (vs.pct, vs.muted);
         let prev = LAST_VOL.replace(Some(cur));
         if prev.is_some() && prev != Some(cur) {
+            if !vs.muted && vs.pct >= 80 && prev.is_some_and(|(p, _)| p < vs.pct) {
+                with_eyes(|e| e.react(React::Wince));
+            }
             let ms = now_ms();
             VIEW.with(|v| v.borrow_mut().hud = Some(hud_volume(vs.pct, vs.muted, ms)));
+        }
+    }
+
+    /// Slower ambient signals, only sampled while the eyes are the idle look.
+    fn poll_env(n: u32) {
+        if n % 3 == 0 {
+            let (mic, cam) = env::mic_cam();
+            VIEW.with(|v| {
+                let mut vm = v.borrow_mut();
+                vm.env.mic = mic;
+                vm.env.camera = cam;
+            });
+        }
+        if n % 5 == 0 {
+            let weather_on = SETTINGS.with(|s| s.borrow().weather_mood);
+            let (online, quiet) = (env::online(), env::quiet());
+            VIEW.with(|v| {
+                let mut vm = v.borrow_mut();
+                vm.env.offline = !online;
+                vm.env.quiet = quiet;
+                vm.env.weather = if weather_on { env::weather() } else { Weather::Unknown };
+            });
+            if weather_on && n % 1800 == 0 {
+                env::refresh_weather();
+            }
         }
     }
 
@@ -907,8 +1027,12 @@ mod inner {
                 vm.hud = Some(hud_water_due(ms));
                 vm.water.snooze(now);
                 chime(880, 120);
+                UI.with(|u| u.borrow_mut().eyes.water_due());
             }
         });
+        if eyes_on() {
+            poll_env(n);
+        }
         poll_volume();
         if n % 5 == 0 {
             poll_smtc();
@@ -933,9 +1057,42 @@ mod inner {
         HITS.with(|h| hit_test(&h.borrow(), x, y))
     }
 
-    fn on_mouse_move(hwnd: HWND, lp: LPARAM) {
+    /// A shelf tile becomes an OLE drag once the pointer moves far enough with
+    /// the button held. A plain click still opens the file.
+    fn maybe_start_shelf_drag(hwnd: HWND, wp: WPARAM, x: f32, y: f32) {
+        if wp.0 & MK_LBUTTON.0 as usize == 0 {
+            return;
+        }
+        let Some((ox, oy)) = PRESS_AT.get() else { return };
+        let Some(Action::ShelfOpen(i)) = UI.with(|u| u.borrow().pressed) else { return };
+        let (dx, dy) = (x - ox, y - oy);
+        if dx * dx + dy * dy < 6.0 * 6.0 {
+            return;
+        }
+        // The OLE loop owns the mouse from here; never also fire the click.
+        PRESS_AT.set(None);
+        UI.with(|u| u.borrow_mut().pressed = None);
+
+        let path = VIEW.with(|v| {
+            let vm = v.borrow();
+            vm.shelf
+                .items
+                .len()
+                .checked_sub(1 + i as usize)
+                .and_then(|ix| vm.shelf.items.get(ix))
+                .map(|it| it.path.clone())
+        });
+        let Some(path) = path else { return };
+
+        let _ = unsafe { ReleaseCapture() };
+        let _ = shelf_drag::drag(&path);
+        wake(hwnd);
+    }
+
+    fn on_mouse_move(hwnd: HWND, wp: WPARAM, lp: LPARAM) {
         let (x, y) = mouse_xy(lp);
         LAST_MOUSE.set((x, y));
+        maybe_start_shelf_drag(hwnd, wp, x, y);
         let act = hit_at(x, y).map(|h| h.action);
         UI.with(|u| u.borrow_mut().set_hover(act));
         let over_body = matches!(act, Some(Action::Island) | Some(Action::HudWater));
@@ -953,6 +1110,7 @@ mod inner {
             if over_body && collapsed && hover_open {
                 if !HOVER_PENDING.get() {
                     HOVER_PENDING.set(true);
+                    HOVER_ARM.set((x, y));
                     let _ = SetTimer(hwnd, T_HOVER, 170, None);
                 }
             } else if HOVER_PENDING.get() {
@@ -991,6 +1149,17 @@ mod inner {
         let (_, y) = LAST_MOUSE.get();
         let page = VIEW.with(|v| v.borrow().page);
         let in_content = y >= CONTENT_TOP;
+        if hit_at(LAST_MOUSE.get().0, y).map(|h| h.action) == Some(Action::Birthday) {
+            SETTINGS.with(|s| {
+                let mut st = s.borrow_mut();
+                if let Some(b) = st.birthday {
+                    st.birthday = Some(shift_birthday(b, -dir as i64));
+                }
+            });
+            save_all();
+            wake(hwnd);
+            return;
+        }
         let n = VIEW.with(|v| {
             let vm = v.borrow();
             match page {
@@ -1151,6 +1320,7 @@ mod inner {
             vm.page = Page::Shelf;
         });
         toast(&format!("Added {} file{} to the shelf", list.len(), if list.len() == 1 { "" } else { "s" }));
+        with_eyes(|e| e.react(React::Satisfied));
         save_all();
         open_island(hwnd, false);
     }
@@ -1171,6 +1341,15 @@ mod inner {
                 let _ = SetTimer(hwnd, T_SLOW, 1000, None);
                 let _ = RegisterHotKey(hwnd, HOTKEY_ID, MOD_WIN | MOD_SHIFT, HOTKEY_VK);
                 add_tray(hwnd);
+                // Eye food: lock/unlock, apps asking for attention, crashes, downloads.
+                let _ = WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);
+                if RegisterShellHookWindow(hwnd).as_bool() {
+                    SHELL_MSG.set(RegisterWindowMessageW(w!("SHELLHOOK")));
+                }
+                env::spawn_downloads_watcher(hwnd, WM_APP_DOWNLOAD);
+                if SETTINGS.with(|s| s.borrow().weather_mood) {
+                    env::refresh_weather();
+                }
                 LRESULT(0)
             }
             WM_SETCURSOR => {
@@ -1189,7 +1368,7 @@ mod inner {
                 DefWindowProcW(hwnd, msg, wp, lp)
             }
             WM_MOUSEMOVE => {
-                on_mouse_move(hwnd, lp);
+                on_mouse_move(hwnd, wp, lp);
                 LRESULT(0)
             }
             _ if msg == WM_MOUSELEAVE_U32 => {
@@ -1199,6 +1378,7 @@ mod inner {
             WM_LBUTTONDOWN => {
                 let (x, y) = mouse_xy(lp);
                 let act = hit_at(x, y).map(|h| h.action);
+                PRESS_AT.set(Some((x, y)));
                 UI.with(|u| {
                     let mut ui = u.borrow_mut();
                     ui.pressed = act;
@@ -1218,12 +1398,18 @@ mod inner {
             }
             WM_LBUTTONUP => {
                 let _ = ReleaseCapture();
+                PRESS_AT.set(None);
                 let (x, y) = mouse_xy(lp);
-                let released = hit_at(x, y).map(|h| h.action);
+                let released = hit_at(x, y);
                 let pressed = UI.with(|u| u.borrow_mut().pressed.take());
                 if let (Some(p), Some(r)) = (pressed, released) {
-                    if p == r {
-                        perform(hwnd, p);
+                    if p == r.action {
+                        // The bar only knows "clicked"; turn that into a position.
+                        if p == Action::SeekBar {
+                            perform(hwnd, Action::Seek(ui::pages::seek_permille(r.rect, x)));
+                        } else {
+                            perform(hwnd, p);
+                        }
                     }
                 }
                 wake(hwnd);
@@ -1260,6 +1446,13 @@ mod inner {
                 LRESULT(0)
             }
             WM_CLIPBOARDUPDATE => {
+                if IsClipboardFormatAvailable(CF_DIB_U32).is_ok() || IsClipboardFormatAvailable(CF_BITMAP_U32).is_ok() {
+                    with_eyes(|e| e.react(React::Flash));
+                    wake(hwnd);
+                } else if IsClipboardFormatAvailable(CF_UNICODETEXT_U32).is_ok() {
+                    with_eyes(|e| e.react(React::GotIt));
+                    wake(hwnd);
+                }
                 if SETTINGS.with(|s| s.borrow().clipboard_history) {
                     if let Some(t) = read_clipboard_text(hwnd) {
                         VIEW.with(|v| v.borrow_mut().clipboard.push(&t));
@@ -1324,7 +1517,18 @@ mod inner {
                         let (x, y) = LAST_MOUSE.get();
                         let still = matches!(hit_at(x, y).map(|h| h.action), Some(Action::Island) | Some(Action::HudWater));
                         if still && !is_open() {
-                            open_island(hwnd, false);
+                            // Open only once the pointer rests; a pointer that keeps
+                            // moving (or is petting the eyes) re-arms instead.
+                            let (ax, ay) = HOVER_ARM.get();
+                            let moved = (x - ax).powi(2) + (y - ay).powi(2) > 10.0 * 10.0;
+                            let petting = UI.with(|u| u.borrow().eyes.petting());
+                            if moved || petting {
+                                HOVER_ARM.set((x, y));
+                                HOVER_PENDING.set(true);
+                                let _ = SetTimer(hwnd, T_HOVER, 170, None);
+                            } else {
+                                open_island(hwnd, false);
+                            }
                         }
                     }
                     T_LEAVE => {
@@ -1345,6 +1549,8 @@ mod inner {
                 save_all();
                 let _ = RemoveClipboardFormatListener(hwnd);
                 let _ = UnregisterHotKey(hwnd, HOTKEY_ID);
+                let _ = WTSUnRegisterSessionNotification(hwnd);
+                let _ = DeregisterShellHookWindow(hwnd);
                 remove_tray(hwnd);
                 PostQuitMessage(0);
                 LRESULT(0)
@@ -1362,6 +1568,30 @@ mod inner {
                 }
                 LRESULT(0)
             }
+            _ if msg == WM_WTSSESSION_CHANGE_U32 => {
+                let ev = wp.0 as u32;
+                if ev == WTS_SESSION_LOCK || ev == WTS_SESSION_UNLOCK {
+                    let locked = ev == WTS_SESSION_LOCK;
+                    VIEW.with(|v| v.borrow_mut().env.locked = locked);
+                    with_eyes(|e| e.react(if locked { React::Goodnight } else { React::WelcomeBack }));
+                    wake(hwnd);
+                }
+                LRESULT(0)
+            }
+            _ if msg == WM_APP_DOWNLOAD => {
+                with_eyes(|e| e.react(React::Happy));
+                wake(hwnd);
+                LRESULT(0)
+            }
+            _ if msg != 0 && msg == SHELL_MSG.get() => {
+                match wp.0 as u32 {
+                    HSHELL_FLASH => with_eyes(|e| e.react(React::Perk)),
+                    HSHELL_WINDOWCREATED if env::is_crash_window(HWND(lp.0 as _)) => with_eyes(|e| e.react(React::Shocked)),
+                    _ => {}
+                }
+                wake(hwnd);
+                LRESULT(0)
+            }
             _ => DefWindowProcW(hwnd, msg, wp, lp),
         }
     }
@@ -1369,8 +1599,9 @@ mod inner {
     pub fn run() -> i32 {
         unsafe {
             let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-            // STA for this UI thread so Core Audio COM reads work on demand.
-            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            // STA for this UI thread: Core Audio COM reads and the shelf's OLE
+            // drag source both need it.
+            let _ = OleInitialize(None);
             let inst = GetModuleHandleW(None).unwrap_or_default();
             let cls = w!("TeardropIsland");
             let wc = WNDCLASSW {

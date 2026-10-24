@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+<title>Teardrop</title>
+<defs>
+  <clipPath id="tile">
+    <rect x="48.1" y="48.1" width="927.7" height="927.7" rx="208.3"/>
+  </clipPath>
+  <linearGradient id="tile_bg" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#38BDF8"/>
+    <stop offset="0.3" stop-color="#0284C7"/>
+    <stop offset="1" stop-color="#0369A1"/>
+  </linearGradient>
+  <linearGradient id="cover" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#38BDF8"/><stop offset="0.5" stop-color="#6366F1"/><stop offset="1" stop-color="#1E1B4B"/></linearGradient>
+</defs>
+<g clip-path="url(#tile)">
+  <rect x="0" y="0" width="1024" height="1024" fill="url(#tile_bg)"/>
+  <path d="M170.1 44.1 Q208.2 44.1 208.2 82.2 L208.2 172.4 Q208.2 242.0 277.7 242.0 L746.3 242.0 Q815.8 242.0 815.8 172.4 L815.8 82.2 Q815.8 44.1 853.9 44.1 Z" fill="#0A0A0A"/>
+</g>
+<rect x="256.8" y="75.3" width="139.6" height="139.6" rx="33.5" fill="url(#cover)"/>
+<path d="M326.6 145.1 a22.3 22.3 0 0 1 44.7 0Z" fill="#FDE047"/>
+<path d="M290.3 187.0 L304.2 153.5 L315.4 187.0 Z" fill="#FFFFFF"/>
+<rect x="641.0" y="116.8" width="20.4" height="56.5" rx="10.2" fill="#38BDF8"/>
+<rect x="676.3" y="91.7" width="20.4" height="106.8" rx="10.2" fill="#38BDF8"/>
+<rect x="711.6" y="107.4" width="20.4" height="75.4" rx="10.2" fill="#38BDF8"/>
+<rect x="746.8" y="82.3" width="20.4" height="125.6" rx="10.2" fill="#38BDF8"/>
+<path d="M 512.00 468.21 C 532.41 468.21 658.95 598.84 658.95 704.97 C 658.95 770.28 593.64 794.78 512.00 794.78 C 430.36 794.78 365.05 770.28 365.05 704.97 C 365.05 598.84 491.59 468.21 512.00 468.21 Z M 445.67 657.01 A 17.35 17.35 0 0 1 480.36 657.01 L 480.36 687.62 A 17.35 17.35 0 0 1 445.67 687.62 Z M 543.64 657.01 A 17.35 17.35 0 0 1 578.33 657.01 L 578.33 687.62 A 17.35 17.35 0 0 1 543.64 687.62 Z" fill="#FFFFFF" fill-rule="evenodd"/>
+</svg>

@@ -47,6 +47,45 @@ pub fn try_read() -> Option<VolumeState> {
     None
 }
 
+/// Output peak level 0..1 of the default render endpoint (what is playing
+/// right now, after mixing). The meter is cached per thread and re-acquired
+/// every few seconds so a device switch is picked up.
+#[cfg(windows)]
+pub fn peak() -> Option<f32> {
+    use std::cell::RefCell;
+    use std::time::{Duration, Instant};
+    use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
+    use windows::Win32::Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
+    use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
+
+    thread_local! {
+        static METER: RefCell<Option<(IAudioMeterInformation, Instant)>> = const { RefCell::new(None) };
+    }
+    METER.with(|m| {
+        let mut m = m.borrow_mut();
+        if m.as_ref().map(|(_, at)| at.elapsed() > Duration::from_secs(8)).unwrap_or(true) {
+            *m = unsafe {
+                (|| {
+                    let en: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+                    let dev = en.GetDefaultAudioEndpoint(eRender, eConsole).ok()?;
+                    let meter: IAudioMeterInformation = dev.Activate(CLSCTX_ALL, None).ok()?;
+                    Some((meter, Instant::now()))
+                })()
+            };
+        }
+        let v = m.as_ref().and_then(|(meter, _)| unsafe { meter.GetPeakValue().ok() });
+        if v.is_none() {
+            *m = None;
+        }
+        v.map(|v| v.clamp(0.0, 1.0))
+    })
+}
+
+#[cfg(not(windows))]
+pub fn peak() -> Option<f32> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

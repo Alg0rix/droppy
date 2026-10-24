@@ -1,6 +1,7 @@
 //! Turns view-model + UI state + morph amount into one frame: a draw list and
 //! the clickable regions that match it.
 
+use super::eyes::{self, Paint, Spot};
 use super::icons::{self, Icon};
 use super::pages;
 use super::scene::{Align, Color, Fill, Rect, Scene, Weight};
@@ -252,7 +253,11 @@ fn collapsed(c: &mut Ctx, r: Rect, a: f32) {
             teardrop_core::Phase::ShortBreak => "Break",
             _ => "Long break",
         };
-        c.text(label, Rect::new(r.x + 42.0, cy - 10.0, 60.0, 20.0), 12.0, Weight::Medium, TEXT_2, Align::Left);
+        if c.set.idle_look == IdleLook::Eyes {
+            face(c, r, Spot::Focus, None);
+        } else {
+            c.text(label, Rect::new(r.x + 42.0, cy - 10.0, 60.0, 20.0), 12.0, Weight::Medium, TEXT_2, Align::Left);
+        }
         let t = mmss(vm.focus_remaining_ms());
         let col = if vm.focus_running() { TEXT } else { TEXT_2 };
         c.text(t, Rect::new(r.right() - 74.0, cy - 10.0, 60.0, 20.0), 14.0, Weight::Semibold, col, Align::Right);
@@ -260,13 +265,20 @@ fn collapsed(c: &mut Ctx, r: Rect, a: f32) {
         let (c1, c2) = art_colors(&vm.track.title);
         let art = Rect::new(r.x + 10.0, cy - 11.0, 22.0, 22.0);
         c.s.rect(art, 6.5, Fill::DGrad(c1, c2));
-        let bars = Track::eq_bars(c.now_ms);
-        let x0 = r.right() - 14.0 - 25.0;
         let acc = c1.mix(Color::rgb(255, 255, 255), 0.25);
-        for (i, b) in bars.iter().enumerate() {
-            let h = 4.0 + b * 12.0;
-            c.s.rect(Rect::new(x0 + i as f32 * 5.5, cy - h / 2.0, 3.0, h), 1.5, acc);
-        }
+        let x0 = if c.set.idle_look == IdleLook::Eyes {
+            // The eyes dance where the equalizer would be, tinted by the art.
+            face(c, r, Spot::Music, Some(acc));
+            r.right() - 50.0
+        } else {
+            let bars = Track::eq_bars(c.now_ms);
+            let x0 = r.right() - 14.0 - 25.0;
+            for (i, b) in bars.iter().enumerate() {
+                let h = 4.0 + b * 12.0;
+                c.s.rect(Rect::new(x0 + i as f32 * 5.5, cy - h / 2.0, 3.0, h), 1.5, acc);
+            }
+            x0
+        };
         let pk = c.ui.peek_amt;
         if pk > 0.02 {
             let tr = Rect::new(art.right() + 12.0, cy - 10.0, (x0 - 12.0) - (art.right() + 12.0), 20.0);
@@ -276,7 +288,7 @@ fn collapsed(c: &mut Ctx, r: Rect, a: f32) {
     } else {
         match c.set.idle_look {
             IdleLook::Clock => c.text(vm.clock_text(), r, 13.5, Weight::Semibold, TEXT, Align::Center),
-            IdleLook::Eyes => eyes(c, r),
+            IdleLook::Eyes => face(c, r, Spot::Idle, None),
             IdleLook::Minimal => c.s.circle(r.cx(), cy, 2.8, TEXT_3),
             IdleLook::Hidden => {}
         }
@@ -284,29 +296,11 @@ fn collapsed(c: &mut Ctx, r: Rect, a: f32) {
     c.s.reset_transform();
 }
 
-fn eyes(c: &mut Ctx, r: Rect) {
-    let cy = r.cy();
-    let t = c.ui.clock_s;
-    // Blink for ~140ms every ~4.6s.
-    let phase = t % 4.6;
-    let open = if phase < 0.14 { (phase / 0.07 - 1.0).abs().clamp(0.1, 1.0) } else { 1.0 };
-    let (look_x, look_y) = match c.ui.mouse {
-        Some((mx, my)) => {
-            let dx = (mx - r.cx()) / 60.0;
-            let dy = (my - cy) / 40.0;
-            (dx.clamp(-1.0, 1.0), dy.clamp(-1.0, 1.0))
-        }
-        None => ((t * 0.7).sin() * 0.4, 0.0),
-    };
-    for side in [-1.0f32, 1.0] {
-        let ex = r.cx() + side * 15.0;
-        let rw = 7.0;
-        let rh = 7.0 * open;
-        c.s.rect(Rect::new(ex - rw, cy - rh, rw * 2.0, rh * 2.0), rh.min(rw), Color::rgb(242, 242, 246));
-        if open > 0.5 {
-            c.s.circle(ex + look_x * 2.6, cy + look_y * 2.2, 3.1, Color::rgb(14, 14, 18));
-        }
-    }
+fn face(c: &mut Ctx, r: Rect, spot: Spot, accent: Option<Color>) {
+    let (cx, cy, scale) = eyes::place(spot, r);
+    c.s.clip(r);
+    c.ui.eyes.draw(&mut c.s, &Paint { cx, cy, scale, bounds: r, style: c.set.eye_style, tint: None, accent, props: spot == Spot::Idle });
+    c.s.pop_clip();
 }
 
 fn hud(c: &mut Ctx, r: Rect, h: &teardrop_core::Hud, cy: f32) {

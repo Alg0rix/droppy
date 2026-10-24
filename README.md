@@ -30,7 +30,7 @@
 | <img src="docs/img/05-hud-volume.png" width="310"> | **Volume.** A level bar that follows your volume keys and mute. |
 | <img src="docs/img/06-hud-water.png" width="350"> | **Reminders.** Click the island to log **+250 ml** (or press `W` anywhere). |
 | <img src="docs/img/07-hud-charging.png" width="330"> | **Power and devices.** Charging, battery level, a headset arriving. |
-| <img src="docs/img/04-collapsed-eyes.png" width="144"> | **Idle.** A clock, a dot, nothing at all, or eyes that follow your pointer and blink. |
+| <img src="docs/img/04-collapsed-eyes.png" width="144"> | **Idle.** A clock, a dot, nothing at all, or eyes with a life of their own: they dance to music (on the real beat), doze off when you step away, react to your pointer, track changes, lock/unlock, downloads, screenshots and more. Five styles: round, cat, pixel, anime, robot. |
 
 **Open it** by resting the pointer on it, clicking it, pressing `Win`+`Shift`+`T`, or dropping a file on it. It doesn't scale a rectangle: it necks in where it hangs from the screen edge, swells into a bulb, then settles into a card.
 
@@ -46,12 +46,12 @@ Scroll the mouse wheel over the header, or use `←` `→`, to switch. Everythin
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/img/20-page-music.png"><br><b>Music</b> &mdash; live info from any app that uses Windows media controls, real prev / play / next, time-synced lyrics with a karaoke highlight.</td>
+    <td width="50%"><img src="docs/img/20-page-music.png"><br><b>Music</b> &mdash; live info from any app that uses Windows media controls, real prev / play / next, click the progress bar to seek, time-synced lyrics with a karaoke highlight.</td>
     <td width="50%"><img src="docs/img/21-page-focus.png"><br><b>Focus</b> &mdash; a Pomodoro ring that keeps counting in the collapsed island. Adjustable length, cycle dots.</td>
   </tr>
   <tr>
     <td><img src="docs/img/22-page-water.png"><br><b>Water</b> &mdash; an animated glass, quick +150 / +250 / +500, undo, and a 7-day chart against your goal.</td>
-    <td><img src="docs/img/23-page-shelf.png"><br><b>Shelf</b> &mdash; drop files to keep them handy. Click to open, reveal in Explorer, or remove.</td>
+    <td><img src="docs/img/23-page-shelf.png"><br><b>Shelf</b> &mdash; drop files to keep them handy. Click to open, drag out to Explorer or another app, reveal in Explorer, or remove.</td>
   </tr>
   <tr>
     <td><img src="docs/img/24-page-tasks-typing.png"><br><b>Tasks</b> &mdash; type to add, click to tick off, hover to delete.</td>
@@ -128,7 +128,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for threads, the rendering model, page co
 
 ## Status
 
-Early. Developed and tested on Windows 11. Not yet done: dragging files back out of the Shelf, and seeking by clicking the progress bar.
+Early. Developed and tested on Windows 11. The Shelf drags files out with OLE `DoDragDrop`, and the music progress bar seeks through Windows media controls.
 
 ## License
 

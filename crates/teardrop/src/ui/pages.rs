@@ -7,7 +7,7 @@ use super::state::{Action, SettingKey};
 use super::theme::*;
 use crate::viewmodel::{local_naive, mmss, one_line};
 use chrono::{Datelike, NaiveDate};
-use teardrop_core::{IdleLook, Page, Phase, Playback};
+use teardrop_core::{EyeStyle, IdleLook, Page, Phase, Playback};
 
 pub fn draw(c: &mut Ctx, page: Page, a: Rect) {
     match page {
@@ -27,6 +27,12 @@ const ON_ACCENT: Color = Color::rgb(14, 14, 18);
 
 fn fmt_ms(ms: u64) -> String {
     format!("{}:{:02}", ms / 60_000, (ms / 1000) % 60)
+}
+
+/// Map a click at `x` inside the seek-bar hit rect to 0..=1000 per-mille.
+pub fn seek_permille(r: Rect, x: f32) -> u16 {
+    let f = ((x - r.x) / r.w.max(1.0)).clamp(0.0, 1.0);
+    (f * 1000.0).round() as u16
 }
 
 fn grouped(n: u32) -> String {
@@ -92,16 +98,25 @@ fn music(c: &mut Ctx, a: Rect) {
         c.text(msg, Rect::new(lr.x, lr.y + 9.0, lr.w, 18.0), 12.5, Weight::Regular, TEXT_3, Align::Left);
     }
 
-    // Seek bar.
+    // Seek bar. Click to seek once a track with a known length is showing.
     let sy = a.y + 130.0;
     c.text(fmt_ms(t.position_ms), Rect::new(a.x, sy - 9.0, 42.0, 18.0), 11.0, Weight::Medium, TEXT_3, Align::Left);
     c.text(fmt_ms(t.duration_ms), Rect::new(a.right() - 42.0, sy - 9.0, 42.0, 18.0), 11.0, Weight::Medium, TEXT_3, Align::Right);
     let bar = Rect::new(a.x + 50.0, sy - 2.5, a.w - 100.0, 5.0);
-    c.s.rect(bar, 2.5, Color::rgba(255, 255, 255, 0.12));
+    let seekable = has && t.duration_ms > 0;
+    let sh = if seekable { c.hov(Action::SeekBar) } else { 0.0 };
+    let bh = 5.0 + sh * 3.0;
+    let track = Rect::new(bar.x, sy - bh * 0.5, bar.w, bh);
+    c.s.rect(track, bh * 0.5, Color::rgba(255, 255, 255, 0.12 + 0.06 * sh));
     let p = t.progress();
     if p > 0.0 {
-        c.s.rect(Rect::new(bar.x, bar.y, (bar.w * p).max(5.0), 5.0), 2.5, Fill::DGrad(acc, acc.mix(WHITE, 0.35)));
-        c.s.circle(bar.x + bar.w * p, sy, 5.0, WHITE);
+        c.s.rect(Rect::new(track.x, track.y, (track.w * p).max(bh), bh), bh * 0.5, Fill::DGrad(acc, acc.mix(WHITE, 0.35)));
+    }
+    if p > 0.0 || sh > 0.01 {
+        c.s.circle(track.x + track.w * p, sy, 5.0 + sh * 1.5, WHITE);
+    }
+    if seekable {
+        c.hit(Rect::new(bar.x, sy - 12.0, bar.w, 24.0), Action::SeekBar);
     }
 
     // Transport.
@@ -568,44 +583,71 @@ fn settings(c: &mut Ctx, a: Rect) {
     let col_w = (a.w - 28.0) / 2.0;
     let left = [SettingKey::OpenOnHover, SettingKey::Lyrics, SettingKey::WaterReminders, SettingKey::ClipboardHistory];
     let right = [SettingKey::Sounds, SettingKey::HideFullscreen, SettingKey::StartWithWindows];
-    let ty = a.y + 38.0;
-    let row = 34.0;
+    let ty = a.y + 34.0;
+    let row = 30.0;
     for (ci, keys) in [&left[..], &right[..]].iter().enumerate() {
         let x = a.x + ci as f32 * (col_w + 28.0);
         for (i, k) in keys.iter().enumerate() {
             let y = ty + i as f32 * row;
             c.text(k.label(), Rect::new(x, y, col_w - 52.0, row - 4.0), 13.0, Weight::Regular, TEXT, Align::Left);
-            c.switch(Rect::new(x + col_w - 42.0, y + 5.0, 42.0, 22.0), *k, acc_on());
+            c.switch(Rect::new(x + col_w - 42.0, y + 2.0, 42.0, 22.0), *k, acc_on());
         }
     }
     // Daily goal stepper sits as the 4th row of the right column.
     let gx = a.x + col_w + 28.0;
     let gy = ty + 3.0 * row;
     c.text("Water goal", Rect::new(gx, gy, 90.0, row - 4.0), 13.0, Weight::Regular, TEXT, Align::Left);
-    c.icon_btn(Rect::new(gx + col_w - 118.0, gy + 2.0, 28.0, 28.0), Action::GoalStep(-1), Icon::Minus, 12.0, TEXT_2);
-    c.text(format!("{:.2} L", c.vm.water.goal_ml as f32 / 1000.0), Rect::new(gx + col_w - 88.0, gy + 2.0, 56.0, 28.0), 12.5, Weight::Semibold, TEXT, Align::Center);
-    c.icon_btn(Rect::new(gx + col_w - 30.0, gy + 2.0, 28.0, 28.0), Action::GoalStep(1), Icon::Plus, 12.0, TEXT_2);
+    c.icon_btn(Rect::new(gx + col_w - 118.0, gy, 26.0, 26.0), Action::GoalStep(-1), Icon::Minus, 12.0, TEXT_2);
+    c.text(format!("{:.2} L", c.vm.water.goal_ml as f32 / 1000.0), Rect::new(gx + col_w - 88.0, gy, 56.0, 26.0), 12.5, Weight::Semibold, TEXT, Align::Center);
+    c.icon_btn(Rect::new(gx + col_w - 28.0, gy, 26.0, 26.0), Action::GoalStep(1), Icon::Plus, 12.0, TEXT_2);
 
     // Idle look segmented control.
-    let sy = a.y + 38.0 + 4.0 * row + 10.0;
-    c.text("Idle look", Rect::new(a.x, sy, 90.0, 34.0), 13.0, Weight::Regular, TEXT, Align::Left);
-    let seg = Rect::new(a.x + 100.0, sy, a.w - 100.0, 34.0);
-    c.s.rect(seg, 17.0, SURFACE);
-    let looks = [(IdleLook::Clock, "Clock"), (IdleLook::Eyes, "Eyes"), (IdleLook::Minimal, "Dot"), (IdleLook::Hidden, "Hidden")];
-    let sw = seg.w / looks.len() as f32;
-    for (i, (look, label)) in looks.iter().enumerate() {
+    let sy = ty + 4.0 * row + 6.0;
+    c.text("Idle look", Rect::new(a.x, sy, 90.0, 30.0), 13.0, Weight::Regular, TEXT, Align::Left);
+    let look = c.vm.idle_look;
+    let looks = [(IdleLook::Clock, "Clock"), (IdleLook::Eyes, "Eyes"), (IdleLook::Minimal, "Dot"), (IdleLook::Hidden, "Hidden")].map(|(l, s)| (Action::Idle(l), s, look == l));
+    segmented(c, Rect::new(a.x + 100.0, sy, a.w - 100.0, 30.0), &looks, 12.5);
+
+    if look != IdleLook::Eyes {
+        c.text("Win+Shift+T toggles the island \u{00b7} Esc closes it", Rect::new(a.x, a.bottom() - 16.0, a.w, 16.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
+        return;
+    }
+    // Eyes: style + extras.
+    let ey = sy + 36.0;
+    let style = c.set.eye_style;
+    let styles = EyeStyle::ALL.map(|st| (Action::EyeStyle(st), st.label(), st == style));
+    let seg_w = 232.0;
+    segmented(c, Rect::new(a.x, ey, seg_w, 28.0), &styles, 11.5);
+    let chip_w = (a.w - seg_w - 8.0 - 2.0 * 6.0) / 3.0;
+    let mut x = a.x + seg_w + 8.0;
+    for k in [SettingKey::MoodRing, SettingKey::WeatherMood] {
+        let on = k.get(c.set);
+        c.pill(Rect::new(x, ey + 1.0, chip_w, 26.0), Action::Toggle(k), k.label(), on.then_some(acc_on()), 11.0);
+        x += chip_w + 6.0;
+    }
+    let bday = match c.set.birthday {
+        Some((m, d)) => format!("{} {d}", MONTHS[(m as usize).clamp(1, 12) - 1]),
+        None => "Birthday".to_string(),
+    };
+    c.pill(Rect::new(x, ey + 1.0, chip_w, 26.0), Action::Birthday, &bday, c.set.birthday.map(|_| accent(Page::Music)), 11.0);
+}
+
+const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/// Pill-shaped segmented control; `items` = (action, label, selected).
+fn segmented(c: &mut Ctx, seg: Rect, items: &[(Action, &str, bool)], size: f32) {
+    c.s.rect(seg, seg.h / 2.0, SURFACE);
+    let sw = seg.w / items.len() as f32;
+    for (i, &(act, label, on)) in items.iter().enumerate() {
         let r = Rect::new(seg.x + i as f32 * sw + 3.0, seg.y + 3.0, sw - 6.0, seg.h - 6.0);
-        let act = Action::Idle(*look);
-        let on = c.vm.idle_look == *look;
         if on {
-            c.s.rect(r, 14.0, SURFACE_PRESS.mix(WHITE.fade(0.22), 0.4));
+            c.s.rect(r, r.h / 2.0, SURFACE_PRESS.mix(WHITE.fade(0.22), 0.4));
         } else if c.hov(act) > 0.01 {
-            c.s.rect(r, 14.0, SURFACE_HOVER.fade(c.hov(act)));
+            c.s.rect(r, r.h / 2.0, SURFACE_HOVER.fade(c.hov(act)));
         }
-        c.text(*label, r, 12.5, if on { Weight::Semibold } else { Weight::Regular }, if on { TEXT } else { TEXT_2 }, Align::Center);
+        c.text(label, r, size, if on { Weight::Semibold } else { Weight::Regular }, if on { TEXT } else { TEXT_2 }, Align::Center);
         c.hit(r, act);
     }
-    c.text("Win+Shift+T toggles the island \u{00b7} Esc closes it", Rect::new(a.x, a.bottom() - 16.0, a.w, 16.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
 }
 
 fn acc_on() -> Color {
@@ -664,5 +706,15 @@ mod tests {
         assert_eq!(shelf_max_scroll(7), 1);
         assert_eq!(tasks_max_scroll(5), 0);
         assert_eq!(tasks_max_scroll(9), 4);
+    }
+
+    #[test]
+    fn seek_permille_maps_and_clamps() {
+        let r = Rect::new(100.0, 0.0, 200.0, 24.0);
+        assert_eq!(seek_permille(r, 100.0), 0);
+        assert_eq!(seek_permille(r, 200.0), 500);
+        assert_eq!(seek_permille(r, 300.0), 1000);
+        assert_eq!(seek_permille(r, 0.0), 0, "left of the bar clamps to the start");
+        assert_eq!(seek_permille(r, 999.0), 1000, "right of the bar clamps to the end");
     }
 }

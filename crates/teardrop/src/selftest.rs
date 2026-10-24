@@ -7,13 +7,14 @@
 //! `TEARDROP_SELFTEST_DPI=144` renders at 150%; default is 192 (2x) so
 //! screenshots are crisp.
 
+use super::ui::eyes::{Glyph, React};
 use super::ui::layout::{build, IslandView};
 use super::ui::state::{Action, UiState};
 use super::viewmodel::{hud_volume, hud_water_due, ViewModel};
 use chrono::Utc;
 use serde_json::json;
 use std::path::{Path, PathBuf};
-use teardrop_core::{DropletGeom, Hud, HudKind, IdleLook, Page, Settings};
+use teardrop_core::{DropletGeom, EyeStyle, Hud, HudKind, IdleLook, Page, Settings};
 
 /// Minimal PNG writer (stored deflate) so the harness needs no image crate.
 pub fn write_png(path: &Path, w: u32, h: u32, rgb: &[u8]) -> std::io::Result<()> {
@@ -95,12 +96,14 @@ struct Shot {
     page: Page,
     hover: Option<Action>,
     setup: fn(&mut ViewModel, &mut Settings, &mut UiState, u64),
+    /// Simulated 60 Hz frames before the screenshot.
+    ticks: u32,
 }
 
 fn nothing(_: &mut ViewModel, _: &mut Settings, _: &mut UiState, _: u64) {}
 
 fn shot(name: &'static str, open: f32, page: Page) -> Shot {
-    Shot { name, open, wobble: 0.0, page, hover: None, setup: nothing }
+    Shot { name, open, wobble: 0.0, page, hover: None, setup: nothing, ticks: 180 }
 }
 
 fn shots() -> Vec<Shot> {
@@ -160,7 +163,78 @@ fn shots() -> Vec<Shot> {
         Shot { setup: |vm, _, _, _| vm.shelf.items.clear(), ..shot("33-empty-shelf", 1.0, Page::Shelf) },
         Shot { setup: |vm, _, _, _| vm.tasks.tasks.clear(), ..shot("34-empty-tasks", 1.0, Page::Tasks) },
         Shot { setup: |_, _, ui, ms| ui.toast("Copied", ms), ..shot("35-toast-copied", 1.0, Page::Clipboard) },
+        Shot { hover: Some(Action::SeekBar), ..shot("36-hover-seek", 1.0, Page::Music) },
+        Shot { setup: |vm, set, _, _| eyes(vm, set, EyeStyle::Round, true), ..shot("40-eyes-dance", 0.0, Page::Music) },
+        Shot {
+            setup: |vm, set, _, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                vm.env.idle_ms = 600_000;
+            },
+            ..shot("41-eyes-asleep", 0.0, Page::Music)
+        },
+        Shot { setup: |vm, set, _, _| eyes(vm, set, EyeStyle::Cat, false), ..shot("42-eyes-cat", 0.0, Page::Music) },
+        Shot { setup: |vm, set, _, _| eyes(vm, set, EyeStyle::Pixel, false), ..shot("43-eyes-pixel", 0.0, Page::Music) },
+        Shot { setup: |vm, set, _, _| eyes(vm, set, EyeStyle::Anime, false), ..shot("44-eyes-anime", 0.0, Page::Music) },
+        Shot { setup: |vm, set, _, _| eyes(vm, set, EyeStyle::Robot, false), ..shot("45-eyes-robot", 0.0, Page::Music) },
+        Shot {
+            setup: |vm, set, ui, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                ui.eyes.react(React::Love);
+            },
+            ticks: 40,
+            ..shot("46-eyes-love", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, _, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                let now = vm.now;
+                vm.pomo.start_focus(now - chrono::Duration::minutes(6));
+            },
+            ..shot("47-eyes-focus", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, _, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                let d = super::viewmodel::local_naive(vm.now);
+                use chrono::Datelike;
+                set.birthday = Some((d.month() as u8, d.day() as u8));
+            },
+            ..shot("48-eyes-birthday", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, ui, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                ui.eyes.react(React::Dizzy);
+            },
+            ticks: 50,
+            ..shot("49-eyes-dizzy", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, ui, _| {
+                eyes(vm, set, EyeStyle::Anime, false);
+                ui.eyes.react(React::Emote(Glyph::Star));
+            },
+            ticks: 40,
+            ..shot("50-eyes-star", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, _, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                set.mood_ring = true;
+            },
+            ..shot("28-page-settings-eyes", 1.0, Page::Settings)
+        },
     ]
+}
+
+/// Eyes as the idle look; `music` keeps the demo track playing.
+fn eyes(vm: &mut ViewModel, set: &mut Settings, style: EyeStyle, music: bool) {
+    if !music {
+        vm.track.playback = teardrop_core::Playback::Stopped;
+    }
+    set.idle_look = IdleLook::Eyes;
+    set.eye_style = style;
+    vm.idle_look = IdleLook::Eyes;
 }
 
 pub fn run(dir: &str) -> i32 {
@@ -190,7 +264,7 @@ pub fn run(dir: &str) -> i32 {
         let mut ui = UiState::new(s.page);
         (s.setup)(&mut vm, &mut set, &mut ui, now_ms);
         ui.set_hover(s.hover);
-        for _ in 0..180 {
+        for _ in 0..s.ticks {
             ui.tick(1.0 / 60.0, &vm, &set, now_ms);
         }
         let mut g = geom;
@@ -210,6 +284,9 @@ pub fn run(dir: &str) -> i32 {
         }
         #[allow(unused_mut)]
         let mut entry = json!({"name": s.name, "open": s.open, "w": frame.w, "h": frame.h, "cmds": frame.scene.cmds.len(), "hits": frame.hits.len()});
+        if set.idle_look == IdleLook::Eyes {
+            entry["eyes"] = json!({"mood": format!("{:?}", ui.eyes.mood), "react": format!("{:?}", ui.eyes.current())});
+        }
         #[cfg(windows)]
         match crate::render_d2d::d2d::render_offscreen(&frame.scene, (frame.w, frame.h), scale) {
             Some((pw, ph, bgra)) => {
@@ -386,6 +463,7 @@ pub fn run(dir: &str) -> i32 {
         ("WM_DEVICECHANGE", 537),
         ("WM_HOTKEY", 786),
         ("WM_DPICHANGED", 736),
+        ("WM_WTSSESSION_CHANGE", 689),
     ];
     {
         use std::collections::HashSet;

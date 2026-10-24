@@ -21,7 +21,40 @@ pub struct ViewModel {
     pub system: SystemSnapshot,
     pub hud: Option<Hud>,
     pub idle_look: IdleLook,
+    pub env: Ambient,
     pub now: DateTime<Utc>,
+}
+
+/// Coarse local weather (opt-in fetch).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Weather {
+    #[default]
+    Unknown,
+    Clear,
+    Cloudy,
+    Rain,
+    Snow,
+    Storm,
+    Fog,
+}
+
+/// Ambient signals the idle eyes react to. Windows samplers fill it; the
+/// defaults mean "nothing going on".
+#[derive(Debug, Clone, Default)]
+pub struct Ambient {
+    /// Since the last keyboard/mouse input anywhere.
+    pub idle_ms: u64,
+    /// Output peak meter 0..1 (None = no meter).
+    pub audio_peak: Option<f32>,
+    /// Left button held anywhere (something is being dragged).
+    pub lbutton: bool,
+    pub mic: bool,
+    pub camera: bool,
+    pub offline: bool,
+    /// Do not disturb / presentation mode.
+    pub quiet: bool,
+    pub locked: bool,
+    pub weather: Weather,
 }
 
 /// Wall-clock time in the user's zone.
@@ -78,6 +111,7 @@ impl ViewModel {
             },
             hud: None,
             idle_look: IdleLook::Clock,
+            env: Ambient::default(),
             now,
         }
     }
@@ -97,6 +131,7 @@ impl ViewModel {
             system: SystemSnapshot::default(),
             hud: None,
             idle_look: IdleLook::Clock,
+            env: Ambient::default(),
             now,
         }
     }
@@ -173,6 +208,17 @@ pub fn hud_water_logged(ml: u32, total_ml: u32, now_ms: u64) -> Hud {
     Hud::transient(HudKind::Water, "Water", &format!("+{ml} ml \u{00b7} {total_ml} ml today"), now_ms, 3200)
 }
 
+/// Move a (month, day) birthday by whole days, wrapping through the year
+/// (a leap year, so Feb 29 is reachable).
+pub fn shift_birthday((m, d): (u8, u8), days: i64) -> (u8, u8) {
+    use chrono::{Datelike, NaiveDate};
+    let base = NaiveDate::from_ymd_opt(2000, m as u32, d as u32).unwrap_or(NaiveDate::from_ymd_opt(2000, 1, 1).unwrap());
+    let year_len = 366;
+    let n = (base.ordinal0() as i64 + days).rem_euclid(year_len);
+    let day = NaiveDate::from_yo_opt(2000, n as u32 + 1).unwrap_or(base);
+    (day.month() as u8, day.day() as u8)
+}
+
 pub fn mmss(ms: u64) -> String {
     let secs = (ms + 999) / 1000;
     format!("{:02}:{:02}", secs / 60, secs % 60)
@@ -201,6 +247,14 @@ mod tests {
         assert!(hud_water_logged(250, 500, 0).action_label.is_none());
         assert_eq!(hud_volume(40, false, 0).progress, Some(0.4));
         assert_eq!(hud_volume(0, true, 0).kind, HudKind::Muted);
+    }
+
+    #[test]
+    fn birthday_shifts_wrap_the_year() {
+        assert_eq!(shift_birthday((10, 24), 1), (10, 25));
+        assert_eq!(shift_birthday((12, 31), 1), (1, 1));
+        assert_eq!(shift_birthday((1, 1), -1), (12, 31));
+        assert_eq!(shift_birthday((2, 28), 1), (2, 29));
     }
 
     #[test]

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+<title>Droppy - Shelf</title>
+<defs>
+  <linearGradient id="body_grad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#38BDF8"/>
+    <stop offset="1" stop-color="#0284C7"/>
+  </linearGradient>
+</defs>
+<g transform="translate(17.5, 22.5) scale(1.25)">
+  <path d="M 50.00 12.00 C 55.00 12.00 86.00 44.00 86.00 70.00 C 86.00 86.00 70.00 92.00 50.00 92.00 C 30.00 92.00 14.00 86.00 14.00 70.00 C 14.00 44.00 45.00 12.00 50.00 12.00 Z" fill="url(#body_grad)"/>
+  <rect x="35.75" y="56.00" width="8.50" height="16.00" rx="4.25" fill="#FFFFFF"/>
+<rect x="59.75" y="56.00" width="8.50" height="16.00" rx="4.25" fill="#FFFFFF"/>
+</g>
+<!-- File Folder -->
+<g transform="translate(98, 98)">
+  <path d="M 2 8 L 14 8 L 18 12 L 36 12 Q 38 12 38 14 L 38 32 Q 38 34 36 34 L 2 34 Q 0 34 0 32 L 0 10 Q 0 8 2 8 Z" fill="#8B5CF6"/>
+  <rect x="6" y="4" width="22" height="14" rx="2" fill="#FFFFFF"/>
+  <path d="M 0 14 L 38 14 L 36 34 L 2 34 Z" fill="#A78BFA"/>
+</g>
+
+</svg>
