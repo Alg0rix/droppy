@@ -705,6 +705,7 @@ mod inner {
     fn finish_note_edit() {
         let (edit, text) = UI.with(|u| {
             let mut ui = u.borrow_mut();
+            ui.note_selected_all = false;
             (ui.note_edit.take(), ui.input.take())
         });
         let Some(id) = edit else { return };
@@ -1058,6 +1059,8 @@ mod inner {
                     let mut ui = u.borrow_mut();
                     ui.input = Some(String::new());
                     ui.note_edit = None;
+                    ui.note_selected_all = false;
+                    ui.note_search = None;
                 });
                 activate(hwnd);
                 with_eyes(|e| e.react(React::Perk));
@@ -1072,6 +1075,8 @@ mod inner {
                         let mut ui = u.borrow_mut();
                         ui.input = Some(text);
                         ui.note_edit = Some(id);
+                        ui.note_selected_all = false;
+                        ui.note_search = None;
                     });
                     activate(hwnd);
                 }
@@ -1089,12 +1094,42 @@ mod inner {
                             let mut ui = u.borrow_mut();
                             ui.input = None;
                             ui.note_edit = None;
+                            ui.note_selected_all = false;
                         });
                     }
                 }
             }
             Action::NoteClose => {
                 finish_note_edit();
+                save = false;
+            }
+            Action::NoteSelectAll => {
+                UI.with(|u| {
+                    let mut ui = u.borrow_mut();
+                    ui.note_selected_all = !ui.note_selected_all;
+                });
+                save = false;
+            }
+            Action::NoteSearchInput => {
+                UI.with(|u| {
+                    let mut ui = u.borrow_mut();
+                    if ui.note_search.is_none() {
+                        ui.note_search = Some(String::new());
+                    }
+                });
+                activate(hwnd);
+                save = false;
+            }
+            Action::NoteSearchClear => {
+                UI.with(|u| u.borrow_mut().note_search = None);
+                save = false;
+            }
+            Action::NoteDateFilter(f) => {
+                UI.with(|u| {
+                    let mut ui = u.borrow_mut();
+                    ui.note_date_filter = f;
+                    ui.scroll[Page::Notes as usize] = 0;
+                });
                 save = false;
             }
             Action::ClipCopy(i) => {
@@ -2072,19 +2107,65 @@ mod inner {
     }
 
     fn on_char(hwnd: HWND, code: u16) {
-        let typing = UI.with(|u| u.borrow().input.is_some());
+        let typing = UI.with(|u| u.borrow().input.is_some() || u.borrow().note_search.is_some());
         if !typing {
             return;
         }
         let page = VIEW.with(|v| v.borrow().page);
+        let editing_note = page == Page::Notes && UI.with(|u| u.borrow().input.is_some());
+        let searching_note = page == Page::Notes && UI.with(|u| u.borrow().note_search.is_some()) && !editing_note;
+
         match code {
+            1 => {
+                // Ctrl+A select all in note editor
+                if editing_note {
+                    UI.with(|u| u.borrow_mut().note_selected_all = true);
+                }
+            }
+            3 => {
+                // Ctrl+C copy note text
+                if editing_note {
+                    let text = UI.with(|u| u.borrow().input.clone()).unwrap_or_default();
+                    if !text.is_empty() {
+                        write_clipboard_text(hwnd, &text);
+                        toast("Note copied to clipboard");
+                        with_eyes(|e| e.react(React::GotIt));
+                    }
+                }
+            }
+            24 => {
+                // Ctrl+X cut note text
+                if editing_note {
+                    let text = UI.with(|u| u.borrow().input.clone()).unwrap_or_default();
+                    if !text.is_empty() {
+                        write_clipboard_text(hwnd, &text);
+                        UI.with(|u| {
+                            let mut ui = u.borrow_mut();
+                            ui.input = Some(String::new());
+                            ui.note_selected_all = false;
+                        });
+                        commit_note_input();
+                        toast("Note cut to clipboard");
+                        with_eyes(|e| e.react(React::GotIt));
+                    }
+                }
+            }
             13 => {
-                if page == Page::Ai {
+                if searching_note {
+                    // Enter while searching keeps current query
+                    save_all();
+                    wake(hwnd);
+                    return;
+                } else if page == Page::Ai {
                     commit_ai_field(true);
-                } else if page == Page::Notes {
+                } else if editing_note {
                     // Notes are multi-line: Enter adds a line, Esc finishes.
                     UI.with(|u| {
-                        if let Some(s) = u.borrow_mut().input.as_mut() {
+                        let mut ui = u.borrow_mut();
+                        if ui.note_selected_all {
+                            ui.input = Some("\n".to_string());
+                            ui.note_selected_all = false;
+                        } else if let Some(s) = ui.input.as_mut() {
                             if s.chars().count() < NOTE_MAX_CHARS {
                                 s.push('\n');
                             }
@@ -2096,8 +2177,21 @@ mod inner {
                 }
             }
             22 => {
-                // Ctrl+V paste into the active input field.
-                if let Some(clip) = read_clipboard_text(hwnd) {
+                // Ctrl+V paste into the active input or search field.
+                if searching_note {
+                    if let Some(clip) = read_clipboard_text(hwnd) {
+                        let clean = clip.lines().collect::<Vec<_>>().join(" ");
+                        UI.with(|u| {
+                            if let Some(s) = u.borrow_mut().note_search.as_mut() {
+                                for ch in clean.chars() {
+                                    if s.chars().count() < 60 {
+                                        s.push(ch);
+                                    }
+                                }
+                            }
+                        });
+                    }
+                } else if let Some(clip) = read_clipboard_text(hwnd) {
                     // Notes keep their paragraph breaks; other fields are single-line.
                     let clean = if page == Page::Notes {
                         clip.replace("\r\n", "\n").replace('\r', "\n")
@@ -2112,7 +2206,11 @@ mod inner {
                         120
                     };
                     UI.with(|u| {
-                        if let Some(s) = u.borrow_mut().input.as_mut() {
+                        let mut ui = u.borrow_mut();
+                        if editing_note && ui.note_selected_all {
+                            ui.input = Some(clean.chars().take(cap).collect());
+                            ui.note_selected_all = false;
+                        } else if let Some(s) = ui.input.as_mut() {
                             for ch in clean.chars() {
                                 if s.chars().count() < cap {
                                     s.push(ch);
@@ -2129,29 +2227,49 @@ mod inner {
                 }
             }
             27 => {
-                if page == Page::Ai {
+                if searching_note {
+                    UI.with(|u| u.borrow_mut().note_search = None);
+                } else if editing_note {
+                    if UI.with(|u| u.borrow().note_selected_all) {
+                        UI.with(|u| u.borrow_mut().note_selected_all = false);
+                    } else {
+                        finish_note_edit();
+                    }
+                } else if page == Page::Ai {
                     commit_ai_field(false);
-                }
-                if page == Page::Notes {
-                    finish_note_edit();
                 } else {
                     UI.with(|u| u.borrow_mut().input = None);
                 }
             }
             8 => {
-                UI.with(|u| {
-                    if let Some(s) = u.borrow_mut().input.as_mut() {
-                        s.pop();
-                    }
-                });
-                if page == Page::Notes {
+                if searching_note {
+                    UI.with(|u| {
+                        if let Some(s) = u.borrow_mut().note_search.as_mut() {
+                            s.pop();
+                        }
+                    });
+                } else if editing_note && UI.with(|u| u.borrow().note_selected_all) {
+                    UI.with(|u| {
+                        let mut ui = u.borrow_mut();
+                        ui.input = Some(String::new());
+                        ui.note_selected_all = false;
+                    });
                     commit_note_input();
-                } else if page == Page::Ai {
-                    let prov = SETTINGS.with(|s| s.borrow().ai_provider);
-                    if crate::ai::snapshot(prov).focus_field == crate::ai::AiFocusField::Prompt {
-                        if let Some(s) = UI.with(|u| u.borrow().input.clone()) {
-                            crate::ai::input_set(s);
-                            sync_ai();
+                } else {
+                    UI.with(|u| {
+                        if let Some(s) = u.borrow_mut().input.as_mut() {
+                            s.pop();
+                        }
+                    });
+                    if page == Page::Notes {
+                        commit_note_input();
+                    } else if page == Page::Ai {
+                        let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+                        if crate::ai::snapshot(prov).focus_field == crate::ai::AiFocusField::Prompt {
+                            if let Some(s) = UI.with(|u| u.borrow().input.clone()) {
+                                crate::ai::input_set(s);
+                                sync_ai();
+                            }
                         }
                     }
                 }
@@ -2167,30 +2285,47 @@ mod inner {
                     char::from_u32(c as u32)
                 };
                 if let Some(ch) = ch {
-                    let cap = if page == Page::Ai {
-                        400
-                    } else if page == Page::Notes {
-                        NOTE_MAX_CHARS
-                    } else {
-                        120
-                    };
-                    UI.with(|u| {
-                        if let Some(s) = u.borrow_mut().input.as_mut() {
-                            if s.chars().count() < cap {
-                                s.push(ch);
+                    if searching_note {
+                        UI.with(|u| {
+                            if let Some(s) = u.borrow_mut().note_search.as_mut() {
+                                if s.chars().count() < 60 {
+                                    s.push(ch);
+                                }
                             }
-                        }
-                    });
-                    if page == Page::Ai {
-                        let prov = SETTINGS.with(|s| s.borrow().ai_provider);
-                        if crate::ai::snapshot(prov).focus_field == crate::ai::AiFocusField::Prompt {
-                            if let Some(s) = UI.with(|u| u.borrow().input.clone()) {
-                                crate::ai::input_set(s);
-                                sync_ai();
-                            }
-                        }
-                    } else if page == Page::Notes {
+                        });
+                    } else if editing_note && UI.with(|u| u.borrow().note_selected_all) {
+                        UI.with(|u| {
+                            let mut ui = u.borrow_mut();
+                            ui.input = Some(ch.to_string());
+                            ui.note_selected_all = false;
+                        });
                         commit_note_input();
+                    } else {
+                        let cap = if page == Page::Ai {
+                            400
+                        } else if page == Page::Notes {
+                            NOTE_MAX_CHARS
+                        } else {
+                            120
+                        };
+                        UI.with(|u| {
+                            if let Some(s) = u.borrow_mut().input.as_mut() {
+                                if s.chars().count() < cap {
+                                    s.push(ch);
+                                }
+                            }
+                        });
+                        if page == Page::Ai {
+                            let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+                            if crate::ai::snapshot(prov).focus_field == crate::ai::AiFocusField::Prompt {
+                                if let Some(s) = UI.with(|u| u.borrow().input.clone()) {
+                                    crate::ai::input_set(s);
+                                    sync_ai();
+                                }
+                            }
+                        } else if page == Page::Notes {
+                            commit_note_input();
+                        }
                     }
                 }
             }
@@ -2201,12 +2336,71 @@ mod inner {
     }
 
     fn on_key(hwnd: HWND, vk: u32) -> bool {
-        let typing = UI.with(|u| u.borrow().input.is_some());
+        let page = VIEW.with(|v| v.borrow().page);
+        let ctrl = unsafe { windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState(windows::Win32::UI::Input::KeyboardAndMouse::VK_CONTROL.0 as i32) } < 0;
+
+        let typing = UI.with(|u| u.borrow().input.is_some() || u.borrow().note_search.is_some());
         if typing {
+            if ctrl && page == Page::Notes && UI.with(|u| u.borrow().input.is_some()) {
+                if vk == 0x41 {
+                    UI.with(|u| u.borrow_mut().note_selected_all = true);
+                    wake(hwnd);
+                    return true;
+                }
+                if vk == 0x43 {
+                    let text = UI.with(|u| u.borrow().input.clone()).unwrap_or_default();
+                    if !text.is_empty() {
+                        write_clipboard_text(hwnd, &text);
+                        toast("Note copied to clipboard");
+                        with_eyes(|e| e.react(React::GotIt));
+                    }
+                    return true;
+                }
+                if vk == 0x58 {
+                    let text = UI.with(|u| u.borrow().input.clone()).unwrap_or_default();
+                    if !text.is_empty() {
+                        write_clipboard_text(hwnd, &text);
+                        UI.with(|u| {
+                            let mut ui = u.borrow_mut();
+                            ui.input = Some(String::new());
+                            ui.note_selected_all = false;
+                        });
+                        commit_note_input();
+                        toast("Note cut to clipboard");
+                        with_eyes(|e| e.react(React::GotIt));
+                    }
+                    return true;
+                }
+            }
+
+            if vk == 0x2E && page == Page::Notes && UI.with(|u| u.borrow().note_selected_all && u.borrow().input.is_some()) {
+                UI.with(|u| {
+                    let mut ui = u.borrow_mut();
+                    ui.input = Some(String::new());
+                    ui.note_selected_all = false;
+                });
+                commit_note_input();
+                wake(hwnd);
+                return true;
+            }
+
             // Everything but Esc flows on to WM_CHAR via TranslateMessage.
             if vk == 0x1B {
-                let page = VIEW.with(|v| v.borrow().page);
                 if page == Page::Notes {
+                    let (selected_all, searching) = UI.with(|u| {
+                        let ui = u.borrow();
+                        (ui.note_selected_all, ui.note_search.is_some())
+                    });
+                    if selected_all {
+                        UI.with(|u| u.borrow_mut().note_selected_all = false);
+                        wake(hwnd);
+                        return true;
+                    }
+                    if searching && UI.with(|u| u.borrow().input.is_none()) {
+                        UI.with(|u| u.borrow_mut().note_search = None);
+                        wake(hwnd);
+                        return true;
+                    }
                     finish_note_edit();
                 } else {
                     UI.with(|u| u.borrow_mut().input = None);
@@ -2227,7 +2421,6 @@ mod inner {
             return false;
         }
         let now = Utc::now();
-        let page = VIEW.with(|v| v.borrow().page);
         let mut handled = true;
         match vk {
             0x25 | 0x27 => VIEW.with(|v| {
@@ -2244,6 +2437,7 @@ mod inner {
             }
             0x4E if page == Page::Music => perform(hwnd, Action::MediaNext),
             0x4E if page == Page::Notes => perform(hwnd, Action::NoteNew),
+            0xBF if page == Page::Notes => perform(hwnd, Action::NoteSearchInput),
             0x42 if page == Page::Music => perform(hwnd, Action::MediaPrev),
             0x53 if page == Page::Focus => VIEW.with(|v| v.borrow_mut().pomo.start_focus(now)),
             0x50 if page == Page::Focus => VIEW.with(|v| {
@@ -2431,17 +2625,21 @@ mod inner {
                 PRESS_AT.set(Some((x, y)));
                 let is_text_hit = matches!(
                     act,
-                    Some(Action::TaskInput) | Some(Action::AiInput) | Some(Action::AiFocusModel) | Some(Action::AiFocusBaseUrl)
+                    Some(Action::TaskInput) | Some(Action::AiInput) | Some(Action::AiFocusModel) | Some(Action::AiFocusBaseUrl) | Some(Action::NoteSearchInput)
                 );
-                if !is_text_hit && VIEW.with(|v| v.borrow().page) == Page::Ai {
+                let page = VIEW.with(|v| v.borrow().page);
+                if !is_text_hit && page == Page::Ai {
                     commit_ai_field(false);
                 }
                 UI.with(|u| {
                     let mut ui = u.borrow_mut();
                     ui.pressed = act;
                     // Clicking away from the field ends text entry.
-                    if !is_text_hit {
+                    if !is_text_hit && page != Page::Notes {
                         ui.input = None;
+                    }
+                    if act != Some(Action::NoteSearchInput) && ui.note_search.as_deref().is_some_and(|s| s.is_empty()) {
+                        ui.note_search = None;
                     }
                 });
                 if is_open() {

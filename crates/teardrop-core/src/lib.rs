@@ -24,7 +24,7 @@ pub use droplet::{DropletGeom, OutlinePt};
 pub use hud::{Hud, HudKind};
 pub use lyrics::{line_at, line_progress, parse_lrc, LyricLine};
 pub use media::{Playback, Track};
-pub use notes::{preview_of, title_of, Note, NoteList};
+pub use notes::{format_note_date, fuzzy_score, preview_of, title_of, Note, NoteDateFilter, NoteList};
 pub use pages::Page;
 pub use pomodoro::{Phase, Pomodoro};
 pub use settings::{AiProvider, EyeStyle, IdleLook, Settings};

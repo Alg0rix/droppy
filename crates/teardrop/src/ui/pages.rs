@@ -7,7 +7,7 @@ use super::state::{Action, SettingKey};
 use super::theme::*;
 use crate::viewmodel::{local_naive, mmss, one_line, SpeedPhase};
 use chrono::{Datelike, NaiveDate};
-use teardrop_core::{AiProvider, EyeStyle, IdleLook, Page, Phase, Playback};
+use teardrop_core::{format_note_date, AiProvider, EyeStyle, IdleLook, NoteDateFilter, Page, Phase, Playback};
 
 pub fn draw(c: &mut Ctx, page: Page, a: Rect) {
     match page {
@@ -640,25 +640,91 @@ fn notes(c: &mut Ctx, a: Rect) {
 
 fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
     let vm = c.vm;
-    let field = Rect::new(a.x, a.y, a.w, 40.0);
-    c.s.rect(field, 14.0, c.surface_fill(Action::NoteNew));
-    icons::draw(&mut c.s, Icon::Plus, field.x + 22.0, field.cy(), 15.0, TEXT_3);
-    c.text("Write a note", Rect::new(field.x + 42.0, field.y, field.w - 54.0, field.h), 14.0, Weight::Regular, TEXT_3, Align::Left);
-    c.hit(field, Action::NoteNew);
+    let new_w = 110.0;
+    let filter_w = 230.0;
+    let search_w = (a.w - new_w - filter_w - 20.0).max(180.0);
 
-    let n = vm.notes.notes.len();
-    let list_y = a.y + 50.0;
+    // Top Bar: [ + New Note ]  [ 🔍 Search... ]  [ Date Filters ]
+    let new_btn = Rect::new(a.x, a.y, new_w, 32.0);
+    c.s.rect(new_btn, 10.0, acc.fade(0.18));
+    icons::draw(&mut c.s, Icon::Plus, new_btn.x + 16.0, new_btn.cy(), 13.0, acc);
+    c.text("New note", Rect::new(new_btn.x + 28.0, new_btn.y, new_btn.w - 32.0, new_btn.h), 12.5, Weight::Semibold, acc, Align::Left);
+    c.hit(new_btn, Action::NoteNew);
+
+    let search_rect = Rect::new(new_btn.right() + 10.0, a.y, search_w, 32.0);
+    let searching = c.ui.note_search.is_some();
+    let query = c.ui.note_search.as_deref().unwrap_or("");
+    c.s.rect(search_rect, 10.0, if searching { SURFACE_HOVER } else { SURFACE });
+    if searching {
+        c.s.stroke(search_rect, 10.0, 1.2, acc.fade(0.85));
+    }
+    icons::draw(&mut c.s, Icon::Search, search_rect.x + 15.0, search_rect.cy(), 12.0, if searching { acc } else { TEXT_3 });
+    let tr = Rect::new(search_rect.x + 32.0, search_rect.y, search_rect.w - 56.0, search_rect.h);
+    if !query.is_empty() {
+        c.text(query.to_string(), tr, 13.0, Weight::Regular, TEXT, Align::Left);
+        if searching && (c.ui.clock_s * 1.8) % 2.0 < 1.0 {
+            let cx = (tr.x + est_w(query, 13.0)).min(tr.right() - 4.0);
+            c.s.rect(Rect::new(cx + 1.0, search_rect.cy() - 8.0, 1.6, 16.0), 0.8, acc);
+        }
+        // Clear search button
+        let clr_btn = Rect::new(search_rect.right() - 26.0, search_rect.cy() - 10.0, 20.0, 20.0);
+        c.ghost_icon(clr_btn, Action::NoteSearchClear, Icon::Close, 11.0, TEXT_3);
+    } else if searching {
+        c.text("Search notes...", tr, 13.0, Weight::Regular, TEXT_3, Align::Left);
+        if (c.ui.clock_s * 1.8) % 2.0 < 1.0 {
+            c.s.rect(Rect::new(tr.x, search_rect.cy() - 8.0, 1.6, 16.0), 0.8, acc);
+        }
+    } else {
+        c.text("Search notes...", tr, 13.0, Weight::Regular, TEXT_3, Align::Left);
+    }
+    c.hit_text(search_rect, Action::NoteSearchInput);
+
+    // Date filter segmented pills
+    let filter_rect = Rect::new(a.right() - filter_w, a.y, filter_w, 32.0);
+    let date_filter = c.ui.note_date_filter;
+    let filters = NoteDateFilter::ALL.map(|f| (Action::NoteDateFilter(f), f.label(), f == date_filter));
+    segmented(c, filter_rect, &filters, 11.0);
+
+    // Filter and score notes
+    let total_notes = vm.notes.notes.len();
+    let mut matched: Vec<(usize, &teardrop_core::Note, i32)> = Vec::new();
+    for (idx, note) in vm.notes.notes.iter().enumerate() {
+        if !date_filter.matches(note.updated_at, vm.now) {
+            continue;
+        }
+        if !query.is_empty() {
+            if let Some(score) = note.match_query(query) {
+                matched.push((idx, note, score));
+            }
+        } else {
+            matched.push((idx, note, 0));
+        }
+    }
+    if !query.is_empty() {
+        matched.sort_by(|a, b| b.2.cmp(&a.2));
+    }
+
+    let n = matched.len();
+    let list_y = a.y + 42.0;
     if n == 0 {
-        c.empty_state(Rect::new(a.x, list_y, a.w, a.h - 50.0), Icon::Notes, acc, "No notes yet", "Click above or press N");
+        let (title, sub) = if total_notes == 0 {
+            ("No notes yet", "Click 'New note' above or press N")
+        } else if !query.is_empty() {
+            ("No matching notes", "Try a different search keyword or clear the search")
+        } else {
+            ("No notes in this date range", "Switch date filter to 'All' or write a new note")
+        };
+        c.empty_state(Rect::new(a.x, list_y, a.w, a.h - 60.0), Icon::Notes, acc, title, sub);
         return;
     }
+
     let scroll = c.ui.scroll_of(Page::Notes).min(notes_max_scroll(n));
     for slot in 0..NOTE_ROWS {
-        let idx = scroll + slot;
-        let Some(note) = vm.notes.notes.get(idx) else { break };
+        let match_idx = scroll + slot;
+        let Some(&(orig_idx, note, _)) = matched.get(match_idx) else { break };
         let r = Rect::new(a.x, list_y + slot as f32 * NOTE_ROW_H, a.w, NOTE_ROW_H - 4.0);
-        let open = Action::NoteOpen(idx as u16);
-        let del = Action::NoteRemove(idx as u16);
+        let open = Action::NoteOpen(orig_idx as u16);
+        let del = Action::NoteRemove(orig_idx as u16);
         let hv = c.hov(open).max(c.hov(del));
         if hv > 0.01 {
             c.s.rect(r, 10.0, SURFACE.fade(hv));
@@ -666,10 +732,14 @@ fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
         let title = teardrop_core::title_of(&note.text);
         let title = if title.is_empty() { "Untitled".to_string() } else { title };
         let preview = teardrop_core::preview_of(&note.text);
-        let right = if hv > 0.05 { 60.0 } else { 48.0 };
+
+        // Date layout on right: Full Date (e.g. "Today, 14:30") + Age ("15m")
+        let full_date = format_note_date(note.updated_at, vm.now);
+        let right_reserved = if hv > 0.05 { 190.0 } else { 160.0 };
+
         c.text(
             one_line(&title),
-            Rect::new(r.x + 10.0, r.y + 3.0, r.w - 20.0 - right, 18.0),
+            Rect::new(r.x + 12.0, r.y + 3.0, (r.w - right_reserved - 16.0).max(60.0), 18.0),
             13.5,
             Weight::Semibold,
             TEXT,
@@ -678,35 +748,69 @@ fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
         if !preview.is_empty() {
             c.text(
                 one_line(&preview),
-                Rect::new(r.x + 10.0, r.y + 20.0, r.w - 20.0 - right, 14.0),
+                Rect::new(r.x + 12.0, r.y + 20.0, (r.w - right_reserved - 16.0).max(60.0), 14.0),
                 11.0,
                 Weight::Regular,
                 TEXT_3,
                 Align::Left,
             );
         }
+
+        // Full formatted date badge
+        let date_w = 110.0;
+        let date_x = r.right() - (if hv > 0.05 { 40.0 + date_w } else { 12.0 + date_w });
+        c.text(
+            full_date,
+            Rect::new(date_x, r.y + 4.0, date_w, 15.0),
+            11.0,
+            Weight::Medium,
+            TEXT_2,
+            Align::Right,
+        );
+        // Relative age tag underneath
         c.text(
             note_age(note.updated_at, vm.now),
-            Rect::new(r.right() - 48.0, r.y, 38.0, r.h),
-            10.5,
+            Rect::new(date_x, r.y + 19.0, date_w, 13.0),
+            10.0,
             Weight::Regular,
             TEXT_3,
             Align::Right,
         );
-        c.hit(Rect::new(r.x, r.y, r.w - 32.0, r.h), open);
+
+        c.hit(Rect::new(r.x, r.y, r.w - 36.0, r.h), open);
         if hv > 0.05 {
-            c.ghost_icon(Rect::new(r.right() - 30.0, r.cy() - 12.0, 24.0, 24.0), del, Icon::Close, 12.0, TEXT_2);
+            c.ghost_icon(Rect::new(r.right() - 32.0, r.cy() - 12.0, 24.0, 24.0), del, Icon::Close, 12.0, TEXT_2);
         }
     }
-    let count = if n == 1 { "1 note".to_string() } else { format!("{n} notes") };
-    c.text(count, Rect::new(a.x + 2.0, a.bottom() - 20.0, 120.0, 18.0), 11.5, Weight::Medium, TEXT_3, Align::Left);
+
+    let count_text = if n == total_notes {
+        if n == 1 { "1 note".to_string() } else { format!("{n} notes") }
+    } else {
+        format!("{n} of {total_notes} notes ({})", date_filter.label())
+    };
+    c.text(count_text, Rect::new(a.x + 2.0, a.bottom() - 18.0, 200.0, 16.0), 11.0, Weight::Medium, TEXT_3, Align::Left);
+    c.text(
+        "N new note \u{00b7} Click search or / to filter \u{00b7} Esc clear",
+        Rect::new(a.right() - 320.0, a.bottom() - 18.0, 320.0, 16.0),
+        10.5,
+        Weight::Regular,
+        TEXT_3,
+        Align::Right,
+    );
 }
 
 fn note_editor(c: &mut Ctx, a: Rect, acc: Color) {
     let text = c.ui.input.clone().unwrap_or_default();
     let idx = c.ui.note_edit.as_ref().and_then(|id| c.vm.notes.notes.iter().position(|n| &n.id == id));
+    let selected_all = c.ui.note_selected_all;
 
-    c.text("Note", Rect::new(a.x, a.y, 60.0, 24.0), 12.0, Weight::Medium, TEXT_2, Align::Left);
+    c.text("Note Editor", Rect::new(a.x, a.y + 2.0, 100.0, 24.0), 13.0, Weight::Semibold, TEXT, Align::Left);
+
+    // Block selection pill action
+    let sel_label = if selected_all { "Deselect" } else { "Select All" };
+    let sel_fill = if selected_all { Some(acc) } else { None };
+    c.pill(Rect::new(a.right() - 212.0, a.y, 74.0, 24.0), Action::NoteSelectAll, sel_label, sel_fill, 11.0);
+
     if let Some(i) = idx {
         c.pill(Rect::new(a.right() - 132.0, a.y, 64.0, 24.0), Action::NoteRemove(i as u16), "Delete", None, 11.0);
     }
@@ -714,6 +818,10 @@ fn note_editor(c: &mut Ctx, a: Rect, acc: Color) {
 
     let body = Rect::new(a.x, a.y + 32.0, a.w, a.h - 60.0);
     c.s.rect(body, 14.0, SURFACE);
+    if selected_all {
+        c.s.stroke(body, 14.0, 1.5, acc.fade(0.85));
+    }
+
     let inner_w = body.w - 24.0;
     let line_h = 19.0;
     let lines = wrap_note_lines(&text, inner_w, 13.5);
@@ -723,10 +831,11 @@ fn note_editor(c: &mut Ctx, a: Rect, acc: Color) {
     let mut y = body.y + 10.0;
     for (i, line) in lines.iter().skip(start).enumerate() {
         let last = i + 1 == lines.len() - start;
+        if selected_all {
+            c.s.rect(Rect::new(body.x + 8.0, y - 1.0, inner_w + 8.0, line_h), 4.0, acc.fade(0.28));
+        }
         if !line.is_empty() {
-            // The live field: let the renderer put the caret right after the
-            // last glyph instead of guessing a width.
-            if last && blink {
+            if last && blink && !selected_all {
                 c.s.text_caret(
                     line.clone(),
                     Rect::new(body.x + 12.0, y, inner_w, line_h),
@@ -752,22 +861,18 @@ fn note_editor(c: &mut Ctx, a: Rect, acc: Color) {
             Align::Left,
         );
     }
-    // Caret on an empty line (new note, or a trailing newline) has no glyph
-    // to measure, so draw it at the line start.
     let last_line = lines.last().cloned().unwrap_or_default();
-    if blink && last_line.is_empty() {
+    if blink && last_line.is_empty() && !selected_all {
         let row = (lines.len() - start).saturating_sub(1) as f32;
         let cy = body.y + 10.0 + row * line_h;
         c.s.rect(Rect::new(body.x + 12.0, cy + 2.0, 1.6, 16.0), 0.8, acc);
     }
-    c.text(
-        "Enter adds a line \u{00b7} Esc when done",
-        Rect::new(a.x + 2.0, a.bottom() - 18.0, a.w, 16.0),
-        11.0,
-        Weight::Regular,
-        TEXT_3,
-        Align::Left,
-    );
+    let hint = if selected_all {
+        "Block selected \u{00b7} Ctrl+C copy \u{00b7} Del clear \u{00b7} Type replaces \u{00b7} Esc deselect"
+    } else {
+        "Enter adds a line \u{00b7} Ctrl+A select all \u{00b7} Esc when done"
+    };
+    c.text(hint, Rect::new(a.x + 2.0, a.bottom() - 18.0, a.w, 16.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
 }
 
 // ---------------------------------------------------------------- clipboard
@@ -2050,5 +2155,20 @@ mod tests {
         assert_eq!(ago(3 * 3600 + 120), "3h");
         assert_eq!(ago(2 * 86_400 + 60), "2d");
         assert_eq!(note_age(now, now), "now");
+    }
+
+    #[test]
+    fn note_full_date_and_fuzzy_search() {
+        use chrono::{TimeZone, Utc};
+        let now = Utc.timestamp_opt(1_800_000_000, 0).unwrap();
+        let formatted = format_note_date(now, now);
+        assert!(formatted.starts_with("Today, "));
+
+        let past = now - chrono::Duration::days(1);
+        let formatted_past = format_note_date(past, now);
+        assert!(formatted_past.starts_with("Yesterday, "));
+
+        assert!(teardrop_core::fuzzy_score("meet", "Team Meeting Notes").is_some());
+        assert!(teardrop_core::fuzzy_score("plan", "Team Meeting Notes").is_none());
     }
 }
