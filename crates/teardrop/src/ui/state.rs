@@ -86,7 +86,7 @@ impl SettingKey {
             SettingKey::StartWithWindows => "Start with Windows",
             SettingKey::MoodRing => "Mood ring",
             SettingKey::WeatherMood => "Weather",
-            SettingKey::FocusApps => "Focus apps",
+            SettingKey::FocusApps => "App eyes",
             SettingKey::AiShareDay => "Share my day",
         }
     }
@@ -504,7 +504,7 @@ impl UiState {
             area: eyes::area(spot.unwrap_or(Spot::Idle), body),
             thinking: vm.ai.busy,
             focus_left: (spot == Some(Spot::Focus) && vm.focus_running()).then(|| vm.focus_remaining_ms() as f32 / 1000.0),
-            app: vm.focus_app(s).and_then(|a| a.theme).filter(|_| spot == Some(Spot::Focus)),
+            app: vm.focus_app(s).and_then(|a| a.theme),
             recording: (vm.voice.phase == crate::voice::VoicePhase::Recording).then_some(vm.voice.level.clamp(0.0, 1.0)),
         };
         self.eyes.tick(dt, &senses);

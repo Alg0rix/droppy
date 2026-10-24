@@ -1992,16 +1992,13 @@ mod inner {
         }
     }
 
-    /// During a Focus block, what kind of app is in front (the eyes act it
-    /// out). Our own window, menus and the desktop keep the last app.
+    /// What kind of app is in front (the eyes act it out). Our own window,
+    /// menus and the desktop keep the last app.
     fn poll_focus_app(hwnd: HWND) {
         let enabled = SETTINGS.with(|s| s.borrow().focus_app_eyes);
-        let working = VIEW.with(|v| v.borrow().focus_working());
-        if !(eyes_on() && enabled && working) {
+        if !(eyes_on() && enabled) {
             VIEW.with(|v| v.borrow_mut().env.app = None);
-            let why = if !working {
-                "off (no focus phase running)"
-            } else if !eyes_on() {
+            let why = if !eyes_on() {
                 "off (idle look is not Eyes)"
             } else {
                 "off (Focus apps is turned off in Settings)"

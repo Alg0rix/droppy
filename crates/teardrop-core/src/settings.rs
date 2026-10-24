@@ -151,8 +151,8 @@ pub struct Settings {
     /// (month, day) for the birthday party.
     #[serde(default)]
     pub birthday: Option<(u8, u8)>,
-    /// During a Focus block the eyes act out the kind of app in front
-    /// (coding, writing, design...).
+    /// The eyes act out the kind of app in front (coding, writing,
+    /// design...).
     #[serde(default = "yes")]
     pub focus_app_eyes: bool,
     /// App -> theme overrides. Key: exe name (`code`, `figma.exe`) or
