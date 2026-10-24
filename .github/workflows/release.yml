@@ -1,0 +1,38 @@
+name: Release
+
+# Runs only when you publish a release on GitHub. Nothing is released automatically.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  assets:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --workspace
+      - name: Build
+        run: cargo build -p teardrop --release
+      - name: Package
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.release.tag_name }}"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/teardrop.exe dist/teardrop.exe
+          Compress-Archive -Path dist/teardrop.exe, README.md, LICENSE -DestinationPath "dist/teardrop-$tag-portable.zip" -Force
+          Copy-Item dist/teardrop.exe "dist/teardrop-$tag.exe"
+          Get-FileHash "dist/teardrop-$tag.exe", "dist/teardrop-$tag-portable.zip" -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Set-Content dist/SHA256SUMS.txt
+      - name: Attach to the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.event.release.tag_name }}"
+          gh release upload $tag "dist/teardrop-$tag.exe" "dist/teardrop-$tag-portable.zip" dist/SHA256SUMS.txt --clobber

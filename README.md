@@ -92,7 +92,9 @@ Your data is in `%APPDATA%\Teardrop\`; cache and log are in `%LOCALAPPDATA%\Tear
 
 ## Install
 
-Builds aren't published yet, so for now build from source (below) or run `tools\package.ps1` to get `dist\teardrop.exe` and a portable zip. It's per-user and needs no admin rights. Unsigned builds trigger a SmartScreen warning on first run: choose **More info → Run anyway**.
+Grab `teardrop-<version>.exe` (or the portable zip) from the [Releases](https://github.com/Alg0rix/teardrop/releases) page once a release is published. It's per-user and needs no admin rights. Builds are unsigned, so Windows SmartScreen warns on first run: choose **More info → Run anyway**.
+
+No release yet? Build from source (below), or run `tools\package.ps1` for `dist	eardrop.exe` and a portable zip.
 
 ## Build
 
