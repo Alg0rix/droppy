@@ -310,12 +310,17 @@ mod inner {
         sync_usage();
         sync_ai();
         let speed = crate::speedtest::snapshot();
-        VIEW.with(|v| {
+        let speed_done = VIEW.with(|v| {
             let mut vm = v.borrow_mut();
+            let done = vm.speed.phase.running() && speed.phase == crate::viewmodel::SpeedPhase::Done;
             if vm.speed != speed {
                 vm.speed = speed;
             }
+            done
         });
+        if speed_done {
+            with_eyes(|e| e.react(React::Happy));
+        }
         let (ui_moving, ambient) = UI.with(|u| {
             VIEW.with(|v| {
                 SETTINGS.with(|s| {
@@ -644,6 +649,7 @@ mod inner {
         if open {
             toast(&format!("+{ml} ml \u{00b7} {total} today"));
         }
+        with_eyes(|e| e.react(React::Satisfied));
     }
 
     fn add_task_from_input() {
@@ -670,6 +676,7 @@ mod inner {
             let max = ui::pages::tasks_max_scroll(n);
             ui.scroll_by(Page::Tasks, max as i32, max);
         });
+        with_eyes(|e| e.react(React::GotIt));
     }
 
     /// Write the note editor buffer through to the view-model. Called on every
@@ -725,6 +732,7 @@ mod inner {
         };
         UI.with(|u| u.borrow_mut().input = None);
         crate::ai::send_prompt(prompt, set, day_ctx);
+        with_eyes(|e| e.react(React::GotIt));
         sync_ai();
     }
 
@@ -836,6 +844,7 @@ mod inner {
             }
             Action::VoiceToggle => {
                 crate::voice::toggle();
+                with_eyes(|e| e.react(React::Perk));
                 save = false;
             }
             Action::VoiceFolder => {
@@ -846,6 +855,7 @@ mod inner {
             }
             Action::SpeedTest => {
                 crate::speedtest::start();
+                with_eyes(|e| e.react(React::Perk));
                 save = false;
             }
             Action::CalToday => {
@@ -946,23 +956,34 @@ mod inner {
             Action::SeekBar => save = false,
             Action::MediaPlayPause => {
                 send_media_key(VK_MEDIA_PLAY_PAUSE.0 as u8);
-                VIEW.with(|v| {
+                let playing = VIEW.with(|v| {
                     let mut vm = v.borrow_mut();
                     vm.track.playback = if vm.track.playback == Playback::Playing { Playback::Paused } else { Playback::Playing };
+                    vm.track.playback == Playback::Playing
                 });
+                with_eyes(|e| e.react(if playing { React::Perk } else { React::Huh }));
                 save = false;
             }
-            Action::FocusToggle => VIEW.with(|v| {
-                let mut vm = v.borrow_mut();
-                if vm.pomo.ends_at.is_some() {
-                    vm.pomo.pause(now);
-                } else if vm.pomo.remaining_ms_when_paused.is_some() {
-                    vm.pomo.resume(now);
-                } else {
-                    vm.pomo.start_focus(now);
-                }
-            }),
-            Action::FocusReset => VIEW.with(|v| v.borrow_mut().pomo.stop()),
+            Action::FocusToggle => {
+                let running = VIEW.with(|v| {
+                    let mut vm = v.borrow_mut();
+                    if vm.pomo.ends_at.is_some() {
+                        vm.pomo.pause(now);
+                        false
+                    } else if vm.pomo.remaining_ms_when_paused.is_some() {
+                        vm.pomo.resume(now);
+                        true
+                    } else {
+                        vm.pomo.start_focus(now);
+                        true
+                    }
+                });
+                with_eyes(|e| e.react(if running { React::Perk } else { React::Huh }));
+            }
+            Action::FocusReset => {
+                VIEW.with(|v| v.borrow_mut().pomo.stop());
+                with_eyes(|e| e.react(React::Stretch));
+            }
             Action::FocusMinus => VIEW.with(|v| {
                 let mut vm = v.borrow_mut();
                 vm.pomo.focus_min = vm.pomo.focus_min.saturating_sub(5).max(5);
@@ -992,12 +1013,26 @@ mod inner {
                     }
                 }
             }
-            Action::TaskToggle(i) => VIEW.with(|v| {
-                let mut vm = v.borrow_mut();
-                if let Some(id) = vm.tasks.tasks.get(i as usize).map(|t| t.id.clone()) {
-                    vm.tasks.toggle(&id);
+            Action::TaskToggle(i) => {
+                let status = VIEW.with(|v| {
+                    let mut vm = v.borrow_mut();
+                    if let Some(id) = vm.tasks.tasks.get(i as usize).map(|t| t.id.clone()) {
+                        vm.tasks.toggle(&id);
+                        let is_done = vm.tasks.tasks.iter().find(|t| t.id == id).map(|t| t.done).unwrap_or(false);
+                        let all_done = is_done && vm.tasks.tasks.iter().all(|t| t.done);
+                        Some((is_done, all_done))
+                    } else {
+                        None
+                    }
+                });
+                if let Some((is_done, all_done)) = status {
+                    if all_done {
+                        with_eyes(|e| e.react(React::Satisfied));
+                    } else if is_done {
+                        with_eyes(|e| e.react(React::Happy));
+                    }
                 }
-            }),
+            }
             Action::TaskRemove(i) => VIEW.with(|v| {
                 let mut vm = v.borrow_mut();
                 if let Some(id) = vm.tasks.tasks.get(i as usize).map(|t| t.id.clone()) {
@@ -1014,7 +1049,10 @@ mod inner {
                 activate(hwnd);
                 save = false;
             }
-            Action::TaskClearDone => VIEW.with(|v| v.borrow_mut().tasks.clear_done()),
+            Action::TaskClearDone => {
+                VIEW.with(|v| v.borrow_mut().tasks.clear_done());
+                with_eyes(|e| e.react(React::Satisfied));
+            }
             Action::NoteNew => {
                 UI.with(|u| {
                     let mut ui = u.borrow_mut();
@@ -1022,6 +1060,7 @@ mod inner {
                     ui.note_edit = None;
                 });
                 activate(hwnd);
+                with_eyes(|e| e.react(React::Perk));
                 save = false;
             }
             Action::NoteOpen(i) => {
@@ -1085,18 +1124,30 @@ mod inner {
             Action::Idle(look) => {
                 VIEW.with(|v| v.borrow_mut().idle_look = look);
                 SETTINGS.with(|s| s.borrow_mut().idle_look = look);
+                if look == IdleLook::Eyes {
+                    with_eyes(|e| e.react(React::Wake));
+                }
             }
-            Action::EyeStyle(st) => SETTINGS.with(|s| s.borrow_mut().eye_style = st),
-            Action::Birthday => SETTINGS.with(|s| {
-                let mut st = s.borrow_mut();
-                st.birthday = match st.birthday {
-                    Some(_) => None,
-                    None => {
-                        let d = local_naive(now);
-                        Some((d.month() as u8, d.day() as u8))
-                    }
-                };
-            }),
+            Action::EyeStyle(st) => {
+                SETTINGS.with(|s| s.borrow_mut().eye_style = st);
+                with_eyes(|e| e.react(React::Sparkle));
+            }
+            Action::Birthday => {
+                let has_bday = SETTINGS.with(|s| {
+                    let mut st = s.borrow_mut();
+                    st.birthday = match st.birthday {
+                        Some(_) => None,
+                        None => {
+                            let d = local_naive(now);
+                            Some((d.month() as u8, d.day() as u8))
+                        }
+                    };
+                    st.birthday.is_some()
+                });
+                if has_bday {
+                    with_eyes(|e| e.react(React::Love));
+                }
+            }
             Action::GoalStep(d) => VIEW.with(|v| {
                 let mut vm = v.borrow_mut();
                 vm.water.goal_ml = (vm.water.goal_ml as i32 + 250 * d as i32).clamp(500, 6000) as u32;
@@ -1683,7 +1734,15 @@ mod inner {
             AI_REV.set(crate::ai::revision());
         }
         let snap = crate::ai::snapshot(prov);
-        VIEW.with(|v| v.borrow_mut().ai = snap);
+        let ai_done = VIEW.with(|v| {
+            let mut vm = v.borrow_mut();
+            let done = vm.ai.busy && !snap.busy;
+            vm.ai = snap;
+            done
+        });
+        if ai_done {
+            with_eyes(|e| e.react(React::Sparkle));
+        }
     }
 
     /// Copy the updater's state into the view model when it changes and

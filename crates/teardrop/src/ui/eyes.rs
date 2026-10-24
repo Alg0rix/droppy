@@ -543,7 +543,7 @@ impl Eyes {
             was_locked: false,
             last_day: None,
             glanced_hour: None,
-            next_bit: 20.0,
+            next_bit: 10.0,
             pokes: VecDeque::new(),
             last_mouse: None,
             speed: 0.0,
@@ -603,8 +603,14 @@ impl Eyes {
 
     /// The island just collapsed again: sometimes a cheeky wink.
     pub fn island_closed(&mut self) {
-        if self.rand() < 0.3 {
-            self.react(React::Wink);
+        if self.rand() < 0.65 {
+            let pick = match (self.rand() * 4.0) as u32 {
+                0 => React::Wink,
+                1 => React::Peek,
+                2 => React::Satisfied,
+                _ => React::Goodnight,
+            };
+            self.react(pick);
         }
     }
 
@@ -648,6 +654,26 @@ impl Eyes {
                 for i in 0..3 {
                     let x = -12.0 + 12.0 * i as f32;
                     self.spawn(Kind::Heart, x, 3.0, 0.0, -8.0, 1.2 + 0.2 * i as f32, 3.0);
+                }
+                if r == React::Happy {
+                    for _ in 0..3 {
+                        let x = self.range(-20.0, 20.0);
+                        let vx = self.range(-2.0, 2.0);
+                        let vy = self.range(6.0, 10.0);
+                        self.spawn(Kind::Confetti, x, -10.0, vx, vy, 1.2, 1.0);
+                    }
+                }
+            }
+            React::Satisfied => {
+                for i in 0..3 {
+                    let x = -10.0 + 10.0 * i as f32;
+                    self.spawn(Kind::Heart, x, 2.0, 0.0, -6.0, 1.1 + 0.2 * i as f32, 2.6);
+                }
+            }
+            React::BarrelRoll => {
+                for _ in 0..4 {
+                    let (x, y, life) = (self.range(-22.0, 22.0), self.range(-8.0, 6.0), self.range(0.5, 0.9));
+                    self.spawn(Kind::Spark, x, y, 0.0, 0.0, life, 2.2);
                 }
             }
             React::GotIt => self.spawn(Kind::Spark, 22.0, -6.0, 0.0, 0.0, 0.6, 2.6),
@@ -986,13 +1012,36 @@ impl Eyes {
         }
         use Mood::*;
         let mood = self.mood;
-        let calm = matches!(mood, Neutral | Bored | Sleepy | Tired | Drowsy | Hungry | Grumpy | Foggy | Gloomy | Sunny | Party | Spooky);
+        let calm = matches!(mood, Neutral | Bored | Sleepy | Tired | Drowsy | Hungry | Grumpy | Foggy | Gloomy | Sunny | Party | Spooky | Delight | Dance | Headbang | Vibe);
         if !calm {
             self.next_bit = self.t + 5.0;
             return;
         }
         let r = self.rand();
         match mood {
+            Delight => {
+                let pick = match (r * 100.0) as u32 {
+                    0..=22 => React::Wink,
+                    23..=42 => React::Happy,
+                    43..=60 => React::Perk,
+                    61..=75 => React::Love,
+                    76..=88 => React::Sparkle,
+                    _ => React::Huh,
+                };
+                self.start(pick);
+                self.next_bit = self.t + self.range(3.5, 7.5);
+            }
+            Dance | Headbang | Vibe => {
+                let pick = match (r * 100.0) as u32 {
+                    0..=30 => React::Happy,
+                    31..=55 => React::Love,
+                    56..=75 => React::BarrelRoll,
+                    76..=90 => React::Sparkle,
+                    _ => React::Wink,
+                };
+                self.start(pick);
+                self.next_bit = self.t + self.range(8.0, 16.0);
+            }
             Bored => {
                 if r < 0.3 {
                     self.start(React::EyeRoll);
@@ -1005,7 +1054,7 @@ impl Eyes {
                 } else {
                     self.start(React::Yawn);
                 }
-                self.next_bit = self.t + self.range(6.0, 12.0);
+                self.next_bit = self.t + self.range(5.0, 10.0);
             }
             Drowsy | Sleepy | Tired => {
                 if r < 0.6 {
@@ -1013,25 +1062,34 @@ impl Eyes {
                 } else {
                     self.start(React::DoubleBlink);
                 }
-                self.next_bit = self.t + self.range(12.0, 24.0);
+                self.next_bit = self.t + self.range(8.0, 18.0);
             }
             _ => {
                 let pick = match (r * 100.0) as u32 {
-                    0..=17 => React::Wink,
-                    18..=29 => React::Peek,
-                    30..=39 => React::ClockGlance,
-                    40..=53 => {
+                    0..=7 => React::Wink,
+                    8..=14 => React::Peek,
+                    15..=21 => React::ClockGlance,
+                    22..=29 => {
                         let g = [Glyph::Heart, Glyph::Star, Glyph::Squeeze, Glyph::Ring, Glyph::Cross, Glyph::Question];
                         React::Emote(g[(self.rand() * g.len() as f32) as usize % g.len()])
                     }
-                    54..=69 => React::DoubleBlink,
-                    70..=74 => React::Sneeze,
-                    75..=79 => React::Hiccups,
-                    80..=89 => React::LookUp,
-                    _ => React::EyeRoll,
+                    30..=36 => React::DoubleBlink,
+                    37..=42 => React::Sneeze,
+                    43..=48 => React::Hiccups,
+                    49..=55 => React::LookUp,
+                    56..=61 => React::EyeRoll,
+                    62..=67 => React::Sparkle,
+                    68..=73 => React::Happy,
+                    74..=79 => React::Perk,
+                    80..=85 => React::Sigh,
+                    86..=89 => React::Huh,
+                    90..=93 => React::Surprised,
+                    94..=96 => React::Stretch,
+                    97..=98 => React::Satisfied,
+                    _ => React::BarrelRoll,
                 };
                 self.start(pick);
-                self.next_bit = self.t + self.range(18.0, 50.0);
+                self.next_bit = self.t + self.range(6.0, 15.0);
             }
         }
     }
