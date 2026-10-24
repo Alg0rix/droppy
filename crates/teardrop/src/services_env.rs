@@ -161,21 +161,36 @@ pub mod sys {
 
     /// The window belongs to the Windows crash reporter.
     pub fn is_crash_window(hwnd: HWND) -> bool {
+        exe_path(hwnd).is_some_and(|p| is_crash_reporter(&p))
+    }
+
+    /// Full path of the executable that owns `hwnd`.
+    fn exe_path(hwnd: HWND) -> Option<String> {
         use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
         use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
         unsafe {
             let mut pid = 0u32;
             GetWindowThreadProcessId(hwnd, Some(&mut pid));
-            if pid == 0 {
-                return false;
+            if pid == 0 || pid == windows::Win32::System::Threading::GetCurrentProcessId() {
+                return None;
             }
-            let Ok(h) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else { return false };
+            let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
             let mut buf = [0u16; 520];
             let mut len = buf.len() as u32;
             let ok = QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, PWSTR::from_raw(buf.as_mut_ptr()), &mut len).is_ok();
             let _ = CloseHandle(h);
-            ok && is_crash_reporter(&String::from_utf16_lossy(&buf[..len as usize]))
+            ok.then(|| String::from_utf16_lossy(&buf[..len as usize]))
         }
+    }
+
+    /// (exe path, window title) of another process's window. The title is
+    /// only for classifying it; callers must not keep or log it.
+    pub fn window_app(hwnd: HWND) -> Option<(String, String)> {
+        use windows::Win32::UI::WindowsAndMessaging::GetWindowTextW;
+        let exe = exe_path(hwnd)?;
+        let mut buf = [0u16; 512];
+        let n = unsafe { GetWindowTextW(hwnd, &mut buf) };
+        Some((exe, String::from_utf16_lossy(&buf[..n.max(0) as usize])))
     }
 
     fn downloads_dir() -> Option<std::path::PathBuf> {

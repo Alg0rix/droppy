@@ -97,6 +97,18 @@ pub struct Ambient {
     pub weather: Weather,
     /// CAPS LOCK is on.
     pub caps: bool,
+    /// The app in front, sampled only while a Focus block runs.
+    pub app: Option<FocusApp>,
+}
+
+/// The app in front during Focus. Only the exe name is kept; the window
+/// title is read to classify browser tabs and then dropped.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FocusApp {
+    /// Executable name, lowercase, no `.exe` (`code`, `chrome`).
+    pub exe: String,
+    pub theme: Option<teardrop_core::AppTheme>,
+    pub source: teardrop_core::apps::Source,
 }
 
 /// Wall-clock time in the user's zone.
@@ -355,6 +367,16 @@ impl ViewModel {
         self.pomo.ends_at.is_some()
     }
 
+    /// A focus phase (not a break) is counting down: the eyes follow the app in front.
+    pub fn focus_working(&self) -> bool {
+        self.focus_running() && self.pomo.phase == Phase::Focus
+    }
+
+    /// The app in front, while the eyes theme it (Focus running, eyes on, enabled).
+    pub fn focus_app(&self, s: &teardrop_core::Settings) -> Option<&FocusApp> {
+        (self.focus_working() && s.focus_app_eyes && self.idle_look == IdleLook::Eyes).then_some(self.env.app.as_ref()).flatten()
+    }
+
     pub fn clock_text(&self) -> String {
         local_naive(self.now).format("%H:%M").to_string()
     }
@@ -416,6 +438,24 @@ mod tests {
         assert_eq!(mmss(1), "00:01");
         assert_eq!(mmss(25 * 60_000), "25:00");
         assert_eq!(mmss(61_000), "01:01");
+    }
+
+    #[test]
+    fn focus_app_only_while_a_focus_block_runs_with_the_eyes() {
+        let now = Utc::now();
+        let mut vm = ViewModel::demo(now);
+        let mut set = teardrop_core::Settings::default();
+        vm.idle_look = IdleLook::Eyes;
+        vm.env.app = Some(FocusApp { exe: "code".into(), theme: None, source: teardrop_core::apps::Source::Auto });
+        vm.pomo = Pomodoro::default();
+        assert!(vm.focus_app(&set).is_none(), "no timer");
+        vm.pomo.start_focus(now);
+        assert!(vm.focus_app(&set).is_some());
+        set.focus_app_eyes = false;
+        assert!(vm.focus_app(&set).is_none(), "turned off");
+        set.focus_app_eyes = true;
+        vm.idle_look = IdleLook::Clock;
+        assert!(vm.focus_app(&set).is_none(), "no eyes");
     }
 
     #[test]

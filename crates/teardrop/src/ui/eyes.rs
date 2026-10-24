@@ -7,6 +7,9 @@
 //! - [`React`]: a short one-off played over the mood (surprise, wink,
 //!   sneeze...). Window events queue them with [`Eyes::react`]; anything
 //!   queued while the face is hidden plays once it shows again.
+//! - [`Mood::Work`]: during a running Focus block the face acts out the kind
+//!   of app in front (`teardrop_core::apps`): one pose and one ambient
+//!   effect per [`AppCategory`], in `work_pose` / `work_parts`.
 //! - [`Pose`]: plain numbers the painter draws. Moods and reactions only
 //!   produce a target pose; the brain eases toward it and layers blinks,
 //!   gaze and particles on top.
@@ -20,7 +23,7 @@ use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike, Weekday};
 use std::collections::VecDeque;
 use std::f32::consts::{PI, TAU};
 use teardrop_core::pomodoro::Phase;
-use teardrop_core::{EyeStyle, Playback, Settings, SystemSnapshot, Track};
+use teardrop_core::{AppCategory, AppTheme, EyeStyle, Playback, Settings, SystemSnapshot, Track};
 
 const SCLERA: Color = Color::rgb(242, 242, 246);
 const PUPIL: Color = Color::rgb(14, 14, 18);
@@ -91,6 +94,8 @@ pub struct Senses<'a> {
     pub thinking: bool,
     /// Seconds left on a running focus/break timer.
     pub focus_left: Option<f32>,
+    /// What the app in front is themed as, while a Focus block runs.
+    pub app: Option<AppTheme>,
     /// Mic level 0..1 while voice recording runs.
     pub recording: Option<f32>,
 }
@@ -132,6 +137,8 @@ pub enum Mood {
     Typing,
     /// Waiting on the AI: eyes up and to the side, dots drifting.
     Thinking,
+    /// Focus block running: acting out the kind of app in front.
+    Work(AppCategory),
     /// Recording: ear cocked toward the mic, eyes pulse with your voice.
     Listening,
 }
@@ -522,11 +529,13 @@ pub struct Extras {
     pub dream: bool,
     pub caption: Option<&'static str>,
     pub rec: Option<Color>,
+    /// Soft light on the face (a screen being watched).
+    pub screen: Option<Color>,
 }
 
 impl Default for Extras {
     fn default() -> Self {
-        Self { glyph: Glyph::None, hat: Hat::None, shades: false, pumpkin: false, glow: None, slit: false, shine: false, dream: false, caption: None, rec: None }
+        Self { glyph: Glyph::None, hat: Hat::None, shades: false, pumpkin: false, glow: None, slit: false, shine: false, dream: false, caption: None, rec: None, screen: None }
     }
 }
 
@@ -555,6 +564,8 @@ enum Kind {
     Dash,
     /// `!` mark.
     Bang,
+    /// A short symbol (`{}`, `>_`, `@`...) in the work theme's colour.
+    Sym(&'static str),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -683,6 +694,7 @@ const T_SNOW: usize = 9;
 const T_FIREWORK: usize = 10;
 const T_LIGHTNING: usize = 11;
 const T_SEASON_HEART: usize = 12;
+const T_WORK: usize = 13;
 
 pub struct Eyes {
     t: f32,
@@ -756,6 +768,8 @@ pub struct Eyes {
     tick_sec: i32,
     /// A skip button was pressed: the track change that follows is ours.
     skip_until: f32,
+    /// The work theme playing (Focus block + known app).
+    work: Option<AppTheme>,
     /// Eased mic level while recording.
     listen_lvl: f32,
 }
@@ -831,6 +845,7 @@ impl Eyes {
             was_caps: None,
             tick_sec: -1,
             skip_until: -1.0,
+            work: None,
             listen_lvl: 0.0,
         }
     }
@@ -1186,6 +1201,16 @@ impl Eyes {
         self.listen_lvl += (lvl - self.listen_lvl) * (1.0 - (-12.0 * dt).exp());
         self.edges(s);
         self.mood = self.pick_mood(s);
+        let work = match self.mood {
+            Mood::Work(_) => s.app,
+            _ => None,
+        };
+        if work.is_some() && work.map(|w| w.cat) != self.work.map(|w| w.cat) && s.visible {
+            // Switched apps: a little hop into the new role, its effect right after.
+            self.jig.hop(18.0);
+            self.timers[T_WORK] = t + 0.3;
+        }
+        self.work = work;
 
         self.choreo(s);
 
@@ -1245,8 +1270,8 @@ impl Eyes {
         };
         if input && still && !s.env.lbutton {
             self.keys.push_back(t);
-            if self.mood == Mood::Typing && s.visible {
-                self.jig.hop(5.0);
+            if s.visible && (self.mood == Mood::Typing || matches!(self.mood, Mood::Work(c) if types(c))) {
+                self.jig.hop(if self.mood == Mood::Typing { 5.0 } else { 3.0 });
                 self.key_x = self.range(-0.5, 0.5);
             }
         }
@@ -1502,7 +1527,11 @@ impl Eyes {
             return Mood::Thinking;
         }
         if let Some(p) = s.focus {
-            return if p == Phase::Focus { Mood::Determined } else { Mood::Relaxed };
+            return match (p, s.app) {
+                (Phase::Focus, Some(a)) => Mood::Work(a.cat),
+                (Phase::Focus, None) => Mood::Determined,
+                _ => Mood::Relaxed,
+            };
         }
         if s.music {
             return match self.genre {
@@ -1747,6 +1776,7 @@ impl Eyes {
                     self.spawn(Kind::Heart, x, 4.0, 0.0, -7.0, 1.4, 2.6);
                 }
             }
+            Work(c) => self.work_parts(c, s),
             Thinking => {
                 if self.due(T_THINK, 0.45) {
                     let i = (self.t * 2.2) as i32 % 3;
@@ -1834,6 +1864,113 @@ impl Eyes {
             let x = self.range(-ax, ax);
             let vy = self.range(8.0, 12.0);
             self.spawn(Kind::Confetti, x, -ay, 0.0, vy, 2.0 * ay / vy, 1.0);
+        }
+    }
+
+    /// Particles for the work theme, on one shared timer.
+    fn work_parts(&mut self, c: AppCategory, s: &Senses) {
+        use AppCategory::*;
+        let (ax, ay) = s.area;
+        let edge = (ax - 6.0).min(24.0);
+        let side = if self.rand() < 0.5 { -1.0 } else { 1.0 };
+        let pick = |r: f32, xs: &[&'static str]| xs[((r * xs.len() as f32) as usize).min(xs.len() - 1)];
+        let period = match c {
+            Terminal => 0.35,
+            Design => 0.9,
+            Meeting => 1.1,
+            Studio => 0.8,
+            Chat => 1.3,
+            Spreadsheet => 1.4,
+            Data => 1.6,
+            Writing => 1.8,
+            Coding => 2.2,
+            Planning => 2.4,
+            Learning => 2.5,
+            Research => 2.6,
+            Email => 2.8,
+            Reading => 3.2,
+            Slides => 4.0,
+            Media => 2.0,
+        };
+        if !self.due(T_WORK, period) {
+            return;
+        }
+        let r = self.rand();
+        match c {
+            Coding => self.spawn(Kind::Sym(pick(r, &["{ }", "</>", ";", "( )", "=>"])), side * edge, -4.0, side * 1.5, -6.0, 1.6, 6.0),
+            Terminal => {
+                // Output lines scrolling up the right edge; now and then a prompt.
+                self.spawn(Kind::Dot, edge, ay * 0.5, 0.0, -16.0, 1.3, 1.0);
+                if r < 0.12 {
+                    self.spawn(Kind::Sym(">_"), -edge, ay * 0.35, 0.0, -4.0, 1.4, 6.0);
+                }
+            }
+            Writing => self.spawn(Kind::Sym(pick(r, &["Aa", "\u{00B6}", "\u{201C}\u{201D}", "abc"])), side * edge, -2.0, 0.0, -6.0, 1.6, 5.5),
+            Spreadsheet => {
+                let y = self.range(-8.0, 4.0);
+                self.spawn(Kind::Sym(pick(r, &["#", "\u{03A3}", "%", "=", "+"])), side * edge, y, 0.0, -5.0, 1.3, 6.0);
+            }
+            Slides => {
+                // Next slide: whoosh and a wobble.
+                self.jig.wobble(3.0);
+                for i in 0..3 {
+                    let y = -6.0 + 6.0 * i as f32;
+                    self.spawn(Kind::Dash, -18.0, y, -30.0, 0.0, 0.35 + 0.05 * i as f32, 1.0);
+                }
+            }
+            Planning => {
+                // Tick an item off with a nod.
+                self.jig.hop(14.0);
+                self.spawn(Kind::Sym("\u{2713}"), edge, -2.0, 0.0, -8.0, 1.4, 7.0);
+            }
+            Data => {
+                let y = self.range(-4.0, 6.0);
+                self.spawn(Kind::Sym(pick(r, &["\u{2197}", "%", "\u{03C0}", "\u{03BC}", "\u{0078}\u{0304}"])), side * edge, y, 1.0, -7.0, 1.5, 6.0);
+            }
+            Research => {
+                if r < 0.6 {
+                    self.spawn(Kind::Question, side * 24.0, -5.0, 0.0, -2.5, 1.3, 1.0);
+                } else {
+                    // Found it.
+                    self.jig.hop(16.0);
+                    self.spawn(Kind::Spark, side * 22.0, -7.0, 0.0, 0.0, 0.7, 2.6);
+                }
+            }
+            Reading => {
+                // Page turn.
+                self.spawn(Kind::Page, edge * 0.8, 6.0, -10.0, -6.0, 1.8, 1.0);
+            }
+            Design => {
+                // Paint flecks.
+                let (x, vx, vy) = (self.range(-ax, ax), self.range(-3.0, 3.0), self.range(-10.0, -4.0));
+                self.spawn(Kind::Firework, x, ay * 0.4, vx, vy, 1.6, 1.0);
+            }
+            Chat => {
+                let side = if (self.t / 1.3) as u32 % 2 == 0 { -1.0 } else { 1.0 };
+                self.jig.hop(8.0);
+                self.spawn(Kind::Sym("\u{2026}"), side * edge, -6.0, 0.0, -5.0, 1.2, 7.0);
+            }
+            Email => self.spawn(Kind::Sym(pick(r, &["@", "\u{2709}"])), side * edge, -2.0, 0.0, -6.0, 1.6, 6.5),
+            Meeting => {
+                // Someone is talking on one side.
+                let side = if (self.t / 6.0) as u32 % 2 == 0 { -1.0 } else { 1.0 };
+                self.spawn(Kind::Wave, side * 20.0, 0.0, side, 0.0, 0.6, 1.0);
+            }
+            Learning => {
+                if r < 0.5 {
+                    // A lightbulb moment.
+                    self.jig.hop(14.0);
+                    self.spawn(Kind::Spark, 0.0, -ay * 0.7, 0.0, 0.0, 0.8, 2.8);
+                } else {
+                    self.spawn(Kind::Sym(pick(r * 2.0 - 1.0, &["A+", "?", "\u{2605}", "1+1"])), side * edge, -3.0, 0.0, -6.0, 1.5, 6.0);
+                }
+            }
+            Media => {
+                if r < 0.5 {
+                    self.spawn(Kind::Note, side * edge, ay * 0.3, side * 2.0, -7.0, 1.6, 7.5);
+                }
+            }
+            Studio => self.wave_burst(1),
         }
     }
 
@@ -1943,6 +2080,7 @@ impl Eyes {
                 lv.dx = (t * 45.0).sin() * 0.35;
             }
             Dance | Headbang | Vibe => self.dance_pose(&mut p, &mut x, &mut lv, &mut look),
+            Work(c) => self.work_pose(c, &mut p, &mut x, &mut lv, &mut look),
             Determined => {
                 p.angry = 0.5;
                 p.open = 0.7;
@@ -2298,6 +2436,159 @@ impl Eyes {
 
     /// Act out the level in a volume or brightness HUD. Runs last so it wins
     /// over the mood; the face sits right of the bar and watches it fill.
+    /// Acting out the app in front during a Focus block. Each category gets
+    /// a gaze pattern that reads as the job (reading code line by line,
+    /// hopping spreadsheet cells, scrubbing a timeline...) plus a few lid
+    /// and brow settings; `work_parts` adds the matching particles.
+    fn work_pose(&self, c: AppCategory, p: &mut Pose, x: &mut Extras, lv: &mut Live, look: &mut Option<(f32, f32)>) {
+        use AppCategory::*;
+        let t = self.t;
+        // How hard the keys are flying right now, 0..1.
+        let busy = (self.keys.len() as f32 / 14.0).min(1.0);
+        // Progress through a repeating cycle of `period` seconds, and which cycle.
+        let cyc = |period: f32| ((t / period).fract(), (t / period) as u32);
+        match c {
+            Coding => {
+                // Read a line left to right, carriage-return to the next.
+                let (f, n) = cyc(1.6);
+                let row = (n % 4) as f32 / 3.0;
+                *look = Some((-0.7 + 1.4 * (f / 0.85).min(1.0), -0.3 + 0.6 * row));
+                p.open = 0.82;
+                p.brow = -0.6;
+                p.angry = 0.12 + 0.25 * busy;
+                if busy > 0.3 {
+                    // Hammering keys: eyes on the keyboard.
+                    *look = Some((self.key_x * 0.6, 0.8));
+                }
+            }
+            Terminal => {
+                // Watch the prompt at the bottom left; output scrolls the gaze up.
+                let (f, _) = cyc(0.9);
+                *look = Some((-0.6 + 0.15 * (t * 0.5).sin(), 0.6 - 0.35 * f));
+                p.open = 0.62;
+                p.angry = 0.1;
+                p.pupil = 0.85;
+            }
+            Writing => {
+                // A pen tracing cursive across the page.
+                let (f, _) = cyc(3.0);
+                *look = Some((-0.75 + 1.5 * f, 0.35 + 0.15 * (t * 9.0).sin()));
+                p.happy = 0.25;
+                p.open = 0.88;
+                lv.rot = 0.04 * (t * 0.7).sin();
+            }
+            Spreadsheet => {
+                // Hop from cell to cell on a 3x3 grid.
+                let (_, n) = cyc(0.55);
+                let h = n.wrapping_mul(2_654_435_761) >> 13;
+                *look = Some(((h % 3) as f32 * 0.7 - 0.7, ((h / 3) % 3) as f32 * 0.5 - 0.5));
+                p.open = 0.85;
+                p.size = 0.95;
+                p.pupil = 0.85;
+            }
+            Slides => {
+                // Presenting: look at the slide, then turn to the audience and beam.
+                let (f, _) = cyc(4.0);
+                if f < 0.55 {
+                    *look = Some((0.8, -0.15));
+                    p.brow = 0.6;
+                } else {
+                    *look = Some((0.0, 0.0));
+                    p.happy = 0.4;
+                    p.brow = 1.2;
+                    p.size = 1.08;
+                }
+            }
+            Planning => {
+                // Scan down a list, one item at a time.
+                let (f, n) = cyc(2.4);
+                let item = (n % 3) as f32;
+                *look = Some((-0.45 + 0.35 * (f * 2.0).min(1.0), -0.6 + 0.6 * item));
+                p.open = 0.86;
+                p.happy = if f > 0.8 { 0.45 } else { 0.1 };
+            }
+            Data => {
+                // Ride a chart up and to the right, wide-eyed at the peak.
+                let (f, _) = cyc(2.8);
+                *look = Some((-0.8 + 1.6 * f, 0.6 - 1.2 * f + 0.15 * (f * TAU * 3.0).sin()));
+                p.pupil = 1.0 + 0.3 * f;
+                p.brow = 1.4 * f;
+            }
+            Research => {
+                // Fast skim: zigzag across the page, brows up.
+                let (f, n) = cyc(0.9);
+                *look = Some((-0.8 + 1.6 * f, -0.4 + 0.4 * (n % 3) as f32));
+                p.brow = 1.2;
+                p.size = 1.05;
+            }
+            Reading => {
+                // Slow, calm lines; a gentle breathing bob.
+                let (f, n) = cyc(3.2);
+                *look = Some((-0.6 + 1.2 * f, 0.1 + 0.5 * (n % 5) as f32 / 4.0));
+                p.open = 0.62;
+                p.happy = 0.2;
+                lv.dy = 0.4 * (t * 0.8).sin();
+            }
+            Design => {
+                // Artist's squint: one eye half shut, measuring, gaze orbiting.
+                let a = t * 0.9;
+                *look = Some((a.cos() * 0.7, a.sin() * 0.45));
+                p.wink_l = 0.45 + 0.15 * (t * 0.5).sin();
+                p.brow = 0.6;
+                lv.rot = 0.06 * (t * 0.45).sin();
+            }
+            Chat => {
+                // Back and forth between two people, a bounce on each turn.
+                let (f, n) = cyc(1.3);
+                let side = if n % 2 == 0 { -0.75 } else { 0.75 };
+                *look = Some((side, 0.1));
+                p.happy = 0.35;
+                p.size = 1.05;
+                lv.dy = -(1.0 - f).powi(4) * 1.4;
+            }
+            Email => {
+                // Read down a message; the inbox weighs a little.
+                let (f, _) = cyc(3.5);
+                *look = Some((0.3 * (t * 2.2).sin(), -0.5 + 1.2 * f));
+                p.open = 0.75;
+                p.sad = 0.12;
+            }
+            Meeting => {
+                // Attentive, nodding along; a green "on air" dot.
+                *look = Some((0.15 * (t * 0.4).sin(), -0.05));
+                p.size = 1.06;
+                p.brow = 0.6;
+                lv.dy = (t * TAU / 1.8).sin().max(0.0) * 1.2;
+                x.rec = Some(Color::rgb(74, 222, 128));
+            }
+            Learning => {
+                // Eager student: board up there, notes down here.
+                let (f, _) = cyc(3.0);
+                *look = Some((0.2 * t.sin(), if f < 0.6 { -0.65 } else { 0.7 }));
+                p.pupil = 1.3;
+                p.size = 1.1;
+                p.brow = 1.5;
+            }
+            Media => {
+                // Watching: wide, still, lit by the screen.
+                *look = Some((0.05 * (t * 0.3).sin(), 0.05));
+                p.size = 1.1;
+                p.pupil = 1.2;
+                p.happy = 0.2;
+                x.screen = Some(hsl((t * 25.0) % 360.0, 0.7, 0.6));
+            }
+            Studio => {
+                // Scrub the timeline: sweep right, snap back; recording light on.
+                let (f, _) = cyc(2.2);
+                let k = if f < 0.8 { f / 0.8 } else { 1.0 - (f - 0.8) / 0.2 };
+                *look = Some((-0.85 + 1.7 * k, 0.55));
+                p.open = 0.8;
+                p.angry = 0.15;
+                x.rec = Some(Color::rgb(248, 113, 113));
+            }
+        }
+    }
+
     fn gauge_pose(&self, g: GaugeState, p: &mut Pose, x: &mut Extras, lv: &mut Live, look: &mut Option<(f32, f32)>) {
         let t = self.t;
         p.happy = 0.0;
@@ -2869,7 +3160,7 @@ impl Eyes {
         let lv = &self.live;
         let j = &self.jig;
         let xf = Xf::new(pt.cx, pt.cy, pt.scale, p.dx + lv.dx, p.dy + lv.dy + j.y, p.rot + lv.rot + j.rot, p.squash + lv.squash + j.sq);
-        let tint = pt.tint.or(self.ring);
+        let tint = pt.tint.or(self.work.and_then(|w| w.tint).map(|[r, g, b]| Color::rgb(r, g, b))).or(self.ring);
         for side in [-1.0f32, 1.0] {
             self.eye(sc, &xf, side, pt.style, tint, pt.accent);
         }
@@ -2927,7 +3218,7 @@ impl Eyes {
         let open = (p.open * (1.0 - self.blink) * (1.0 - wink.clamp(0.0, 1.0))).clamp(0.0, 1.0);
         let lid = Lid { rx, ry, open, angry: p.angry, sad: p.sad, happy: p.happy.clamp(0.0, 1.0), side, style };
 
-        let glow = x.glow.or(if style == EyeStyle::Robot { Some(tint.unwrap_or(Color::rgb(61, 230, 255))) } else { None }).or(accent);
+        let glow = x.glow.or(if style == EyeStyle::Robot { Some(tint.unwrap_or(Color::rgb(61, 230, 255))) } else { None }).or(x.screen).or(accent);
         let sclera: Fill = match (x.glow, style) {
             (Some(g), _) => g.into(),
             (_, EyeStyle::Cat) => {
@@ -3251,6 +3542,11 @@ impl Eyes {
                     sc.circle(x + 3.8 * k, y - 0.6 * k, 1.3 * k, Color::rgb(120, 120, 130));
                 }
                 Kind::Dot => sc.circle(x, y, 0.9 * k, TEXT.fade(a)),
+                Kind::Sym(txt) => {
+                    let sz = p.size * k;
+                    let col = self.work.map(|w| w.tint.map(|[r, g, b]| Color::rgb(r, g, b)).unwrap_or(work_color(w.cat))).unwrap_or(TEXT);
+                    sc.text(txt, Rect::new(x - 2.0 * sz, y - sz, 4.0 * sz, 2.0 * sz), sz, Weight::Bold, col.fade(a * 0.9), Align::Center);
+                }
             }
         }
     }
@@ -3270,6 +3566,35 @@ pub struct Paint {
     pub accent: Option<Color>,
     /// Room for side props (the pumpkin).
     pub props: bool,
+}
+
+/// Keyboard-heavy categories: keystrokes bob the face while they play.
+fn types(c: AppCategory) -> bool {
+    use AppCategory::*;
+    matches!(c, Coding | Terminal | Writing | Spreadsheet | Data | Chat | Email)
+}
+
+/// Colour of a work theme's symbols.
+fn work_color(c: AppCategory) -> Color {
+    use AppCategory::*;
+    match c {
+        Coding => Color::rgb(125, 211, 252),
+        Terminal => Color::rgb(74, 222, 128),
+        Writing => Color::rgb(251, 191, 36),
+        Spreadsheet => Color::rgb(34, 197, 94),
+        Slides => Color::rgb(251, 146, 60),
+        Planning => Color::rgb(45, 212, 191),
+        Data => Color::rgb(167, 139, 250),
+        Research => Color::rgb(56, 189, 248),
+        Reading => Color::rgb(253, 230, 138),
+        Design => Color::rgb(244, 114, 182),
+        Chat => Color::rgb(96, 165, 250),
+        Email => Color::rgb(147, 197, 253),
+        Meeting => Color::rgb(74, 222, 128),
+        Learning => Color::rgb(250, 204, 21),
+        Media => Color::rgb(248, 113, 113),
+        Studio => Color::rgb(251, 113, 133),
+    }
 }
 
 fn is_birthday(s: &Senses) -> bool {
@@ -3550,6 +3875,7 @@ mod tests {
                 area: (52.0, 20.0),
                 thinking: false,
                 focus_left: None,
+                app: None,
                 recording: None,
             }
         }
@@ -4037,6 +4363,99 @@ mod tests {
         assert_eq!(e.mood, Mood::Thinking);
         assert!(e.pose().look.1 < -0.4, "looking up while it thinks");
         assert!(e.parts.iter().any(|p| p.kind == Kind::Dot));
+    }
+
+    fn work_senses(w: &World, cat: AppCategory) -> Senses<'_> {
+        let mut s = w.senses();
+        s.focus = Some(Phase::Focus);
+        s.app = Some(AppTheme { cat, tint: None });
+        s
+    }
+
+    #[test]
+    fn focus_acts_out_the_app_in_front() {
+        let (mut e, w) = settled();
+        let bounds = Rect::new(20.0, 0.0, 128.0, 40.0);
+        let mut looks = Vec::new();
+        for cat in AppCategory::ALL {
+            let s = work_senses(&w, cat);
+            e.parts.clear();
+            let mut effect = false;
+            for _ in 0..(6.0 * 60.0) as usize {
+                e.tick(1.0 / 60.0, &s);
+                // Every theme puts something on screen besides the eyes.
+                effect |= !e.parts.is_empty() || e.extras().rec.is_some() || e.extras().screen.is_some();
+            }
+            assert_eq!(e.mood, Mood::Work(cat));
+            assert!(effect, "{cat:?} has no effect");
+            assert!(e.parts.len() <= 48);
+            looks.push((cat, e.pose().look));
+            for style in EyeStyle::ALL {
+                let mut sc = Scene::new();
+                e.draw(&mut sc, &Paint { cx: bounds.cx(), cy: bounds.cy(), scale: 1.0, bounds, style, tint: None, accent: None, props: true });
+                assert!(!sc.cmds.is_empty(), "{cat:?} {style:?} drew nothing");
+            }
+        }
+        // A pause or a break drops the theme; no app keeps the old look.
+        let mut s = work_senses(&w, AppCategory::Coding);
+        s.focus = Some(Phase::ShortBreak);
+        e.tick(1.0 / 60.0, &s);
+        assert_eq!(e.mood, Mood::Relaxed);
+        s.focus = Some(Phase::Focus);
+        s.app = None;
+        e.tick(1.0 / 60.0, &s);
+        assert_eq!(e.mood, Mood::Determined);
+    }
+
+    #[test]
+    fn work_themes_move_the_gaze_differently() {
+        // Sample each theme's gaze over a few seconds: the paths must differ.
+        let w = World::new();
+        let trace = |cat: AppCategory| {
+            let mut e = Eyes::new(3);
+            let s = work_senses(&w, cat);
+            let mut pts = Vec::new();
+            for i in 0..(8.0 * 60.0) as usize {
+                e.tick(1.0 / 60.0, &s);
+                if i % 30 == 0 {
+                    pts.push(e.pose().look);
+                }
+            }
+            pts
+        };
+        let a = trace(AppCategory::Coding);
+        let b = trace(AppCategory::Media);
+        let moved = |p: &[(f32, f32)]| p.windows(2).map(|w| (w[1].0 - w[0].0).abs() + (w[1].1 - w[0].1).abs()).sum::<f32>();
+        assert!(moved(&a) > moved(&b) * 3.0, "reading code roams more than watching a video");
+        let d = trace(AppCategory::Data);
+        assert_ne!(a, d);
+    }
+
+    #[test]
+    fn switching_apps_hops_and_tints() {
+        let (mut e, w) = settled();
+        let s = work_senses(&w, AppCategory::Writing);
+        for _ in 0..60 {
+            e.tick(1.0 / 60.0, &s);
+        }
+        let mut s = work_senses(&w, AppCategory::Planning);
+        s.app = Some(AppTheme { cat: AppCategory::Planning, tint: Some([34, 197, 94]) });
+        e.tick(1.0 / 60.0, &s);
+        assert!(e.jig.vy < 0.0, "hops into the new role");
+        assert_eq!(e.work.and_then(|w| w.tint), Some([34, 197, 94]));
+        for _ in 0..(3.0 * 60.0) as usize {
+            e.tick(1.0 / 60.0, &s);
+        }
+        assert!(e.parts.iter().any(|p| p.kind == Kind::Sym("\u{2713}")), "ticks items off");
+        // Typing in a keyboard-heavy theme bobs the face.
+        let mut w2 = World::new();
+        w2.mouse = Some((300.0, 0.0));
+        let mut e = Eyes::new(9);
+        for i in 0..120u64 {
+            w2.env.idle_ms = if i % 6 == 0 { 0 } else { 50 + i };
+            e.tick(1.0 / 60.0, &work_senses(&w2, AppCategory::Coding));
+        }
+        assert!(e.keys.len() >= 5);
     }
 
     #[test]

@@ -8,7 +8,7 @@ use super::textedit::TextField;
 use super::theme::*;
 use crate::viewmodel::{local_naive, mmss, one_line, SpeedPhase};
 use chrono::{Datelike, NaiveDate};
-use teardrop_core::{format_note_date, AiProvider, EyeStyle, IdleLook, NoteDateFilter, Page, Phase, Playback};
+use teardrop_core::{apps, format_note_date, AiProvider, AppCategory, EyeStyle, IdleLook, NoteDateFilter, Page, Phase, Playback};
 
 pub fn draw(c: &mut Ctx, page: Page, a: Rect) {
     match page {
@@ -428,6 +428,22 @@ fn focus(c: &mut Ctx, a: Rect) {
     let btn_w = (rw - 52.0).min(180.0);
     c.pill(Rect::new(rx, by, btn_w, 38.0), Action::FocusToggle, label, Some(acc), 13.5);
     c.icon_btn(Rect::new(rx + btn_w + 12.0, by, 38.0, 38.0), Action::FocusReset, Icon::Reset, 16.0, if pomo.phase == Phase::Idle { TEXT_3 } else { TEXT });
+
+    // What the eyes act out for the app in front; click (or wheel) to re-map it.
+    if let Some(app) = vm.focus_app(c.set) {
+        let ty = by + 50.0;
+        c.text("Eyes", Rect::new(rx, ty + 3.0, 40.0, 20.0), 12.0, Weight::Medium, TEXT_2, Align::Left);
+        let user = app.source == apps::Source::User;
+        let theme = match (app.theme, user.then(|| apps::override_for(&c.set.app_themes, &app.exe)).flatten()) {
+            // A custom theme shows its own name.
+            (Some(_), Some(v)) if AppCategory::from_id(v).is_none() => v.to_string(),
+            (Some(t), _) => t.cat.label().to_string(),
+            (None, _) => "Plain".to_string(),
+        };
+        let exe: String = if app.exe.chars().count() > 16 { app.exe.chars().take(15).chain(['\u{2026}']).collect() } else { app.exe.clone() };
+        let label = format!("{theme} \u{00b7} {exe}");
+        c.pill(Rect::new(rx + 42.0, ty, (rw - 42.0).min(230.0), 24.0), Action::FocusAppTheme, &label, user.then_some(acc), 11.0);
+    }
 
     // Keyboard hints at the bottom with 20px padding above bottom rim
     c.text("S start \u{00b7} P pause \u{00b7} R reset", Rect::new(rx, a.bottom() - 16.0, rw, 16.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
@@ -2211,10 +2227,10 @@ fn settings(c: &mut Ctx, a: Rect) {
         let styles = EyeStyle::ALL.map(|st| (Action::EyeStyle(st), st.label(), st == style));
         segmented(c, Rect::new(rx, ey, col_w, 26.0), &styles, 11.0);
 
-        let chip_w = (col_w - 12.0) / 3.0;
+        let chip_w = (col_w - 18.0) / 4.0;
         let my = ey + 32.0;
         let mut cx = rx;
-        for k in [SettingKey::MoodRing, SettingKey::WeatherMood] {
+        for k in [SettingKey::MoodRing, SettingKey::WeatherMood, SettingKey::FocusApps] {
             let on = k.get(c.set);
             c.pill(Rect::new(cx, my, chip_w, 24.0), Action::Toggle(k), k.label(), on.then_some(acc_on()), 10.5);
             cx += chip_w + 6.0;

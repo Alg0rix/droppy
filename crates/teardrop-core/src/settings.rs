@@ -1,5 +1,7 @@
 //! User settings (persisted as JSON in %APPDATA%).
+use crate::apps::EyeTheme;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -149,6 +151,18 @@ pub struct Settings {
     /// (month, day) for the birthday party.
     #[serde(default)]
     pub birthday: Option<(u8, u8)>,
+    /// During a Focus block the eyes act out the kind of app in front
+    /// (coding, writing, design...).
+    #[serde(default = "yes")]
+    pub focus_app_eyes: bool,
+    /// App -> theme overrides. Key: exe name (`code`, `figma.exe`) or
+    /// `title:<words>` for window titles; value: a category id (`coding`),
+    /// a name from `eye_themes`, or `none`.
+    #[serde(default)]
+    pub app_themes: BTreeMap<String, String>,
+    /// User-named themes: a built-in animation with its own iris colour.
+    #[serde(default)]
+    pub eye_themes: Vec<EyeTheme>,
     /// iCal feed links (secret addresses): never shown, logged or put in a view model.
     #[serde(default)]
     pub calendar_urls: Vec<String>,
@@ -288,6 +302,9 @@ impl Default for Settings {
             mood_ring: false,
             weather_mood: false,
             birthday: None,
+            focus_app_eyes: true,
+            app_themes: BTreeMap::new(),
+            eye_themes: Vec::new(),
             calendar_urls: Vec::new(),
             ai_provider: AiProvider::ChatGpt,
             ai_share_day: true,
@@ -316,5 +333,16 @@ mod tests {
         assert_eq!(s.ai_provider, AiProvider::ChatGpt);
         assert!(s.ai_share_day);
         assert_eq!(s.active_ai_model(), "gpt-6.1-sol");
+        assert!(s.focus_app_eyes && s.app_themes.is_empty() && s.eye_themes.is_empty());
+    }
+
+    #[test]
+    fn app_themes_load_from_json() {
+        let j = r##"{"idle_look":"eyes","lyrics_enabled":true,"water_reminders":true,"clipboard_history":true,"sounds":false,"hide_in_fullscreen":true,"start_with_windows":false,"goal_ml":2000,
+            "app_themes":{"code":"writing","title:jira":"Sprint"},
+            "eye_themes":[{"name":"Sprint","base":"planning","tint":"#22c55e"}]}"##;
+        let s: Settings = serde_json::from_str(j).unwrap();
+        assert_eq!(s.app_themes.get("code").map(String::as_str), Some("writing"));
+        assert_eq!(s.eye_themes[0].base, crate::AppCategory::Planning);
     }
 }
