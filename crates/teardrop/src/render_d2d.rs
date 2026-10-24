@@ -267,35 +267,51 @@ pub mod d2d {
                     solid.SetColor(&d2d_color(*color));
                     rt.DrawGeometry(&g, solid, *width, &self.round);
                 }
-                Cmd::Text { s, r, size, weight, color, align, karaoke, caret } => {
-                    if s.is_empty() {
+                Cmd::Text { s, r, size, weight, color, align, karaoke, edit } => {
+                    if s.is_empty() && edit.is_none() {
                         return;
                     }
                     let Some(fmt) = self.format(*size, *weight, *align) else { return };
                     let wide: Vec<u16> = s.encode_utf16().collect();
-                    solid.SetColor(&d2d_color(*color));
-                    rt.DrawText(&wide, &fmt, &rc(*r), solid, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
-                    if let Some((frac, lit)) = karaoke {
-                        let tw = self.text_width(&wide, &fmt).min(r.w);
-                        let clip = D2D_RECT_F { left: r.x, top: r.y, right: r.x + tw * frac, bottom: r.y + r.h };
-                        rt.PushAxisAlignedClip(&clip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-                        solid.SetColor(&d2d_color(*lit));
-                        rt.DrawText(&wide, &fmt, &rc(*r), solid, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
+                    if let Some(ed) = edit {
+                        // Editable text: measured caret + selection, scrolled
+                        // horizontally so the caret stays inside `r`.
+                        let n_chars = s.chars().count();
+                        let utf16_of = |ci: usize| -> usize { s.chars().take(ci.min(n_chars)).map(|c| c.len_utf16()).sum() };
+                        let pref_w = |ci: usize| self.text_width(&wide[..utf16_of(ci)], &fmt);
+                        let tw = self.text_width(&wide, &fmt);
+                        let caret_x = pref_w(ed.caret);
+                        let off = if tw > r.w { (caret_x - r.w + 6.0).clamp(0.0, (tw - r.w).max(0.0)) } else { 0.0 };
+                        rt.PushAxisAlignedClip(&rc(*r), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                        if let Some((a, b)) = ed.sel {
+                            let (xa, xb) = (r.x + pref_w(a) - off, r.x + pref_w(b) - off);
+                            solid.SetColor(&d2d_color(ed.sel_color));
+                            rt.FillRectangle(&D2D_RECT_F { left: xa, top: r.y + 1.0, right: xb.max(xa + 1.0), bottom: r.y + r.h - 1.0 }, solid);
+                        }
+                        if !wide.is_empty() {
+                            let tr = D2D_RECT_F { left: r.x - off, top: r.y, right: r.x - off + (tw + 4.0).max(r.w), bottom: r.y + r.h };
+                            solid.SetColor(&d2d_color(*color));
+                            rt.DrawText(&wide, &fmt, &tr, solid, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
+                        }
+                        if ed.show_caret {
+                            let h = (size * 1.15).min(r.h - 2.0).max(2.0);
+                            let top = r.y + (r.h - h) / 2.0;
+                            let x = r.x + caret_x - off;
+                            solid.SetColor(&d2d_color(ed.caret_color));
+                            rt.FillRectangle(&D2D_RECT_F { left: x + 1.0, top, right: x + 2.6, bottom: top + h }, solid);
+                        }
                         rt.PopAxisAlignedClip();
-                    }
-                    if let Some(caret) = caret {
-                        // Measured, not estimated: the caret sits right after
-                        // the last glyph, respecting the field's alignment.
-                        let tw = self.text_width(&wide, &fmt).min(r.w);
-                        let x = match align {
-                            Align::Left => r.x + tw,
-                            Align::Center => r.x + (r.w + tw) / 2.0,
-                            Align::Right => r.right(),
-                        };
-                        let h = (size * 1.15).min(r.h - 2.0).max(2.0);
-                        let top = r.y + (r.h - h) / 2.0;
-                        solid.SetColor(&d2d_color(*caret));
-                        rt.FillRectangle(&D2D_RECT_F { left: x + 1.0, top, right: x + 2.6, bottom: top + h }, solid);
+                    } else {
+                        solid.SetColor(&d2d_color(*color));
+                        rt.DrawText(&wide, &fmt, &rc(*r), solid, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
+                        if let Some((frac, lit)) = karaoke {
+                            let tw = self.text_width(&wide, &fmt).min(r.w);
+                            let clip = D2D_RECT_F { left: r.x, top: r.y, right: r.x + tw * frac, bottom: r.y + r.h };
+                            rt.PushAxisAlignedClip(&clip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                            solid.SetColor(&d2d_color(*lit));
+                            rt.DrawText(&wide, &fmt, &rc(*r), solid, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
+                            rt.PopAxisAlignedClip();
+                        }
                     }
                 }
                 Cmd::Clip(r) => {

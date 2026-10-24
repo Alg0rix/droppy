@@ -117,6 +117,21 @@ pub enum Weight {
     Bold,
 }
 
+/// Editing overlay for a [`Cmd::Text`]: a movable caret and a selection
+/// range (char indices into `s`), all measured by the renderer.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextEdit {
+    /// Caret position (char index into `s`); always used for the scroll
+    /// offset so the text doesn't jump on blink-off frames.
+    pub caret: usize,
+    /// Whether the caret bar is drawn this frame (blink phase).
+    pub show_caret: bool,
+    /// Selection range (ordered char indices); None = no selection.
+    pub sel: Option<(usize, usize)>,
+    pub caret_color: Color,
+    pub sel_color: Color,
+}
+
 #[derive(Debug, Clone)]
 pub enum Cmd {
     /// The island silhouette: soft shadow, body fill, 1px rim light.
@@ -139,9 +154,8 @@ pub enum Cmd {
         color: Color,
         align: Align,
         karaoke: Option<(f32, Color)>,
-        /// Draw a text caret right after the last glyph (measured by the
-        /// renderer, so it lands exactly at the end of the string).
-        caret: Option<Color>,
+        /// Editing overlay: caret + selection, measured by the renderer.
+        edit: Option<TextEdit>,
     },
     Clip(Rect),
     PopClip,
@@ -249,17 +263,22 @@ impl Scene {
             return;
         }
         let (r, color) = (self.r(r), self.c(color));
-        self.cmds.push(Cmd::Text { s: s.into(), r, size, weight, color, align, karaoke: None, caret: None });
+        self.cmds.push(Cmd::Text { s: s.into(), r, size, weight, color, align, karaoke: None, edit: None });
     }
 
-    /// Like [`Scene::text`] but the renderer also draws a caret at the exact
-    /// end of the string — used by input fields instead of an estimated width.
-    pub fn text_caret(&mut self, s: impl Into<String>, r: Rect, size: f32, weight: Weight, color: Color, align: Align, caret: Color) {
+    /// Like [`Scene::text`] (left-aligned) but carries a caret/selection
+    /// overlay the renderer measures with real text metrics — input fields
+    /// use this instead of estimated widths.
+    #[allow(clippy::too_many_arguments)]
+    pub fn text_edit(&mut self, s: impl Into<String>, r: Rect, size: f32, weight: Weight, color: Color, edit: TextEdit) {
         if self.alpha <= 0.003 {
             return;
         }
-        let (r, color, caret) = (self.r(r), self.c(color), self.c(caret));
-        self.cmds.push(Cmd::Text { s: s.into(), r, size, weight, color, align, karaoke: None, caret: Some(caret) });
+        let (r, color) = (self.r(r), self.c(color));
+        let mut edit = edit;
+        edit.caret_color = self.c(edit.caret_color);
+        edit.sel_color = self.c(edit.sel_color);
+        self.cmds.push(Cmd::Text { s: s.into(), r, size, weight, color, align: Align::Left, karaoke: None, edit: Some(edit) });
     }
 
     pub fn text_karaoke(&mut self, s: impl Into<String>, r: Rect, size: f32, weight: Weight, base: Color, lit: Color, frac: f32) {
@@ -267,7 +286,7 @@ impl Scene {
             return;
         }
         let (r, base, lit) = (self.r(r), self.c(base), self.c(lit));
-        self.cmds.push(Cmd::Text { s: s.into(), r, size, weight, color: base, align: Align::Left, karaoke: Some((frac.clamp(0.0, 1.0), lit)), caret: None });
+        self.cmds.push(Cmd::Text { s: s.into(), r, size, weight, color: base, align: Align::Left, karaoke: Some((frac.clamp(0.0, 1.0), lit)), edit: None });
     }
 
     pub fn clip(&mut self, r: Rect) {

@@ -202,6 +202,34 @@ pub const CONTENT_TOP: f32 = 64.0;
 /// Extra width a level HUD (volume, brightness) gets when the face rides along.
 pub const HUD_FACE_W: f32 = 40.0;
 
+/// Collapsed-capsule lyric text size / line height.
+pub const LYRIC_SIZE: f32 = 13.0;
+pub const LYRIC_LH: f32 = 18.0;
+/// Widest the music capsule may grow while showing a lyric line.
+pub const LYRIC_MAX_W: f32 = 640.0;
+
+/// Sublines + target capsule size for the current synced lyric, if one shows.
+/// None on instrumental gaps, missing/disabled lyrics — callers fall back to
+/// the title marquee. The wrap width targets LYRIC_MAX_W, not the animating
+/// pill, so sublines never reflow mid-morph.
+pub fn compact_lyric(vm: &ViewModel, s: &Settings) -> Option<(Vec<String>, f32, f32)> {
+    if !vm.music_active() || !s.lyrics_enabled {
+        return None;
+    }
+    let text = vm.lyric_idx.and_then(|i| vm.lyric_lines.get(i)).map(|l| l.text.trim())?;
+    if text.is_empty() {
+        return None;
+    }
+    let left = 46.0; // album art + gap
+    let tail = if s.idle_look == IdleLook::Eyes { 44.0 + 42.0 } else { 44.0 } + 12.0;
+    let max_text_w = LYRIC_MAX_W - left - tail;
+    let sublines = pages::wrap_lyrics(text, max_text_w, LYRIC_SIZE, true);
+    let text_w = sublines.iter().map(|l| est_w(l, LYRIC_SIZE) * 1.20).fold(0.0, f32::max);
+    let w = (left + text_w + tail).clamp(232.0, LYRIC_MAX_W);
+    let h = (sublines.len() as f32 * LYRIC_LH + 18.0).max(36.0);
+    Some((sublines, w, h))
+}
+
 /// Content area of the open card for a card whose left edge is `card_x`.
 pub fn content_rect(card_x: f32, geom: &DropletGeom) -> Rect {
     Rect::new(card_x + 22.0, CONTENT_TOP, geom.card_w - 44.0, geom.card_h - CONTENT_TOP - 18.0)
@@ -330,10 +358,28 @@ fn collapsed(c: &mut Ctx, r: Rect, a: f32) {
         if eyes {
             face(c, r, Spot::Music, Some(acc));
         }
-        // The title stays up the whole time; long ones scroll.
-        let tr = Rect::new(art.right() + 10.0, cy - 10.0, (x0 - 10.0) - (art.right() + 10.0), 20.0);
-        let line = format!("{} \u{2014} {}", vm.track.title, vm.track.display_artist());
-        marquee(c, tr, &line, 12.0, Weight::Medium, TEXT, c.now_ms);
+        if let Some((sublines, _, _)) = compact_lyric(vm, c.set) {
+            // Synced lyric, karaoke-swept, vertically centered. The sublines
+            // come from compact_lyric (wrapped at the target size), never
+            // re-wrapped on the animating r.w, so lines don't reflow.
+            let frac = teardrop_core::line_progress(&vm.lyric_lines, vm.lyric_idx.unwrap_or(0), vm.track.position_ms);
+            let sweeps = pages::karaoke_subline_progress(&sublines, frac);
+            let block_h = sublines.len() as f32 * LYRIC_LH;
+            let tx = art.right() + 10.0;
+            let tw = ((x0 - 10.0) - tx).max(0.0);
+            let mut ly = cy - block_h / 2.0;
+            c.s.clip(r);
+            for (subline, sub_frac) in sweeps {
+                c.s.text_karaoke(subline.to_string(), Rect::new(tx, ly, tw, LYRIC_LH), LYRIC_SIZE, Weight::Semibold, TEXT_2, TEXT, sub_frac);
+                ly += LYRIC_LH;
+            }
+            c.s.pop_clip();
+        } else {
+            // The title stays up the whole time; long ones scroll.
+            let tr = Rect::new(art.right() + 10.0, cy - 10.0, (x0 - 10.0) - (art.right() + 10.0), 20.0);
+            let line = format!("{} \u{2014} {}", vm.track.title, vm.track.display_artist());
+            marquee(c, tr, &line, 12.0, Weight::Medium, TEXT, c.now_ms);
+        }
     } else {
         match c.set.idle_look {
             IdleLook::Clock => c.text(vm.clock_text(), r, 13.5, Weight::Semibold, TEXT, Align::Center),

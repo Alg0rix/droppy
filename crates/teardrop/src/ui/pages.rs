@@ -2,8 +2,9 @@
 
 use super::icons::{self, Icon};
 use super::layout::{est_w, Ctx};
-use super::scene::{Align, Color, Fill, Rect, Weight};
+use super::scene::{Align, Color, Fill, Rect, TextEdit, Weight};
 use super::state::{Action, SettingKey};
+use super::textedit::TextField;
 use super::theme::*;
 use crate::viewmodel::{local_naive, mmss, one_line, SpeedPhase};
 use chrono::{Datelike, NaiveDate};
@@ -29,6 +30,12 @@ pub fn draw(c: &mut Ctx, page: Page, a: Rect) {
 
 const WHITE: Color = Color::rgb(255, 255, 255);
 const ON_ACCENT: Color = Color::rgb(14, 14, 18);
+
+/// Caret/selection overlay for a focused single-line field (blinks on clock_s).
+fn field_edit(c: &Ctx, f: &TextField, acc: Color) -> TextEdit {
+    let blink = (c.ui.clock_s * 1.8) % 2.0 < 1.0;
+    TextEdit { caret: f.caret(), show_caret: blink, sel: f.selection(), caret_color: acc, sel_color: acc.fade(0.35) }
+}
 
 fn fmt_ms(ms: u64) -> String {
     format!("{}:{:02}", ms / 60_000, (ms / 1000) % 60)
@@ -674,12 +681,9 @@ fn tasks(c: &mut Ctx, a: Rect) {
     icons::draw(&mut c.s, Icon::Plus, field.x + 22.0, field.cy(), 15.0, if typing { acc } else { TEXT_3 });
     let tr = Rect::new(field.x + 42.0, field.y, field.w - 54.0, field.h);
     match &c.ui.input {
-        Some(s) if !s.is_empty() => {
-            c.text(s.clone(), tr, 14.0, Weight::Regular, TEXT, Align::Left);
-            if (c.ui.clock_s * 1.8) % 2.0 < 1.0 {
-                let cx = (tr.x + est_w(s, 14.0)).min(tr.right() - 4.0);
-                c.s.rect(Rect::new(cx + 1.0, field.cy() - 9.0, 1.6, 18.0), 0.8, acc);
-            }
+        Some(f) if !f.is_empty() => {
+            let ed = field_edit(c, f, acc);
+            c.s.text_edit(f.as_str().to_string(), tr, 14.0, Weight::Regular, TEXT, ed);
         }
         Some(_) => {
             c.text("What needs doing?", tr, 14.0, Weight::Regular, TEXT_3, Align::Left);
@@ -747,30 +751,51 @@ pub fn notes_max_scroll(n: usize) -> usize {
     n.saturating_sub(NOTE_ROWS)
 }
 
-/// Greedy word wrap that keeps explicit newlines (blank lines stay blank).
-pub fn wrap_note_lines(text: &str, width: f32, size: f32) -> Vec<String> {
+/// Greedy word wrap that keeps explicit newlines (blank lines stay blank),
+/// returning the char range each visual line covers in `text` — the ranges
+/// used to map caret/selection char indices onto lines.
+pub fn wrap_note_ranges(text: &str, width: f32, size: f32) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
+    let mut base = 0usize; // char index where this logical line starts
     for raw in text.split('\n') {
+        let raw_len = raw.chars().count();
         if raw.is_empty() {
-            out.push(String::new());
-            continue;
-        }
-        let mut line = String::new();
-        for word in raw.split(' ') {
-            let candidate = if line.is_empty() { word.to_string() } else { format!("{line} {word}") };
-            if !line.is_empty() && est_w(&candidate, size) > width {
-                out.push(std::mem::take(&mut line));
-                line.push_str(word);
-            } else {
-                line = candidate;
+            out.push((base, base));
+        } else {
+            let mut line_txt = String::new();
+            let mut start: Option<usize> = None;
+            let mut end = base;
+            let mut wpos = base;
+            for word in raw.split(' ') {
+                let wlen = word.chars().count();
+                let candidate = if line_txt.is_empty() { word.to_string() } else { format!("{line_txt} {word}") };
+                if !line_txt.is_empty() && est_w(&candidate, size) > width {
+                    out.push((start.unwrap_or(base), end));
+                    line_txt = word.to_string();
+                    start = Some(wpos);
+                } else {
+                    if start.is_none() {
+                        start = Some(wpos);
+                    }
+                    line_txt = candidate;
+                }
+                end = wpos + wlen;
+                wpos += wlen + 1; // past the separating space
             }
+            out.push((start.unwrap_or(base), end));
         }
-        out.push(line);
+        base += raw_len + 1;
     }
     if out.is_empty() {
-        out.push(String::new());
+        out.push((0, 0));
     }
     out
+}
+
+/// Slice the visual lines produced by [`wrap_note_ranges`].
+fn note_lines_from_ranges(text: &str, ranges: &[(usize, usize)]) -> Vec<String> {
+    let ch: Vec<char> = text.chars().collect();
+    ranges.iter().map(|&(a, b)| ch[a..b].iter().collect()).collect()
 }
 
 /// Short "when" label for a note row: now, 5m, 3h, 2d, then the date.
@@ -813,7 +838,7 @@ fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
 
     let search_rect = Rect::new(new_btn.right() + 10.0, a.y, search_w, 32.0);
     let searching = c.ui.note_search.is_some();
-    let query = c.ui.note_search.as_deref().unwrap_or("");
+    let query = c.ui.note_search.as_ref().map(|f| f.as_str()).unwrap_or("");
     c.s.rect(search_rect, 10.0, if searching { SURFACE_HOVER } else { SURFACE });
     if searching {
         c.s.stroke(search_rect, 10.0, 1.2, acc.fade(0.85));
@@ -821,10 +846,11 @@ fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
     icons::draw(&mut c.s, Icon::Search, search_rect.x + 15.0, search_rect.cy(), 12.0, if searching { acc } else { TEXT_3 });
     let tr = Rect::new(search_rect.x + 32.0, search_rect.y, search_rect.w - 56.0, search_rect.h);
     if !query.is_empty() {
-        c.text(query.to_string(), tr, 13.0, Weight::Regular, TEXT, Align::Left);
-        if searching && (c.ui.clock_s * 1.8) % 2.0 < 1.0 {
-            let cx = (tr.x + est_w(query, 13.0)).min(tr.right() - 4.0);
-            c.s.rect(Rect::new(cx + 1.0, search_rect.cy() - 8.0, 1.6, 16.0), 0.8, acc);
+        if let Some(f) = c.ui.note_search.as_ref() {
+            let ed = field_edit(c, f, acc);
+            c.s.text_edit(f.as_str().to_string(), tr, 13.0, Weight::Regular, TEXT, ed);
+        } else {
+            c.text(query.to_string(), tr, 13.0, Weight::Regular, TEXT, Align::Left);
         }
         // Clear search button
         let clr_btn = Rect::new(search_rect.right() - 26.0, search_rect.cy() - 10.0, 20.0, 20.0);
@@ -960,9 +986,12 @@ fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
 }
 
 fn note_editor(c: &mut Ctx, a: Rect, acc: Color) {
-    let text = c.ui.input.clone().unwrap_or_default();
+    let field = c.ui.input.clone().unwrap_or_default();
+    let text = field.as_str().to_string();
     let idx = c.ui.note_edit.as_ref().and_then(|id| c.vm.notes.notes.iter().position(|n| &n.id == id));
-    let selected_all = c.ui.note_selected_all;
+    let selected_all = field.all_selected();
+    let sel = field.selection();
+    let caret = field.caret();
 
     c.text("Note Editor", Rect::new(a.x, a.y + 2.0, 100.0, 24.0), 13.0, Weight::Semibold, TEXT, Align::Left);
 
@@ -984,32 +1013,41 @@ fn note_editor(c: &mut Ctx, a: Rect, acc: Color) {
 
     let inner_w = body.w - 24.0;
     let line_h = 19.0;
-    let lines = wrap_note_lines(&text, inner_w, 13.5);
+    let ranges = wrap_note_ranges(&text, inner_w, 13.5);
+    let lines = note_lines_from_ranges(&text, &ranges);
     let visible = (((body.h - 20.0) / line_h).floor() as usize).max(1);
-    let start = lines.len().saturating_sub(visible);
+    // Scroll so the caret's visual line stays in view (tail when at the end).
+    let caret_line = ranges.iter().position(|&(la, lb)| caret >= la && caret <= lb).unwrap_or(ranges.len() - 1);
+    let mut start = ranges.len().saturating_sub(visible);
+    if caret_line < start {
+        start = caret_line;
+    }
     let blink = (c.ui.clock_s * 1.8) % 2.0 < 1.0;
     let mut y = body.y + 10.0;
-    for (i, line) in lines.iter().skip(start).enumerate() {
-        let last = i + 1 == lines.len() - start;
-        if selected_all {
-            c.s.rect(Rect::new(body.x + 8.0, y - 1.0, inner_w + 8.0, line_h), 4.0, acc.fade(0.28));
-        }
-        if !line.is_empty() {
-            if last && blink && !selected_all {
-                c.s.text_caret(
-                    line.clone(),
-                    Rect::new(body.x + 12.0, y, inner_w, line_h),
-                    13.5,
-                    Weight::Regular,
-                    TEXT,
-                    Align::Left,
-                    acc,
-                );
-            } else {
-                c.text(line.clone(), Rect::new(body.x + 12.0, y, inner_w, line_h), 13.5, Weight::Regular, TEXT, Align::Left);
-            }
+    for (line, &(la, lb)) in lines.iter().zip(ranges.iter()).skip(start) {
+        let line: String = line.clone();
+        let local_sel = sel.and_then(|(sa, sb)| {
+            let (a0, b0) = (sa.max(la), sb.min(lb));
+            (b0 > a0).then(|| (a0 - la, b0 - la))
+        });
+        let on_caret_line = caret >= la && caret <= lb;
+        let local_caret = if on_caret_line { caret - la } else { 0 };
+        if local_sel.is_some() || on_caret_line {
+            c.s.text_edit(
+                line,
+                Rect::new(body.x + 12.0, y, inner_w, line_h),
+                13.5,
+                Weight::Regular,
+                TEXT,
+                TextEdit { caret: local_caret, show_caret: blink && on_caret_line, sel: local_sel, caret_color: acc, sel_color: acc.fade(0.35) },
+            );
+        } else if !line.is_empty() {
+            c.text(line, Rect::new(body.x + 12.0, y, inner_w, line_h), 13.5, Weight::Regular, TEXT, Align::Left);
         }
         y += line_h;
+        if y > body.bottom() - 4.0 {
+            break;
+        }
     }
     if text.is_empty() {
         c.text(
@@ -1020,15 +1058,12 @@ fn note_editor(c: &mut Ctx, a: Rect, acc: Color) {
             TEXT_3,
             Align::Left,
         );
+        if blink {
+            c.s.rect(Rect::new(body.x + 12.0, body.y + 12.0, 1.6, 16.0), 0.8, acc);
+        }
     }
-    let last_line = lines.last().cloned().unwrap_or_default();
-    if blink && last_line.is_empty() && !selected_all {
-        let row = (lines.len() - start).saturating_sub(1) as f32;
-        let cy = body.y + 10.0 + row * line_h;
-        c.s.rect(Rect::new(body.x + 12.0, cy + 2.0, 1.6, 16.0), 0.8, acc);
-    }
-    let hint = if selected_all {
-        "Block selected \u{00b7} Ctrl+C copy \u{00b7} Del clear \u{00b7} Type replaces \u{00b7} Esc deselect"
+    let hint = if sel.is_some() {
+        "Selection \u{00b7} Ctrl+C copy \u{00b7} Del clears \u{00b7} Type replaces \u{00b7} Esc collapses"
     } else {
         "Enter adds a line \u{00b7} Ctrl+A select all \u{00b7} Esc when done"
     };
@@ -1755,12 +1790,14 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
             if editing_url {
                 c.s.stroke(url_box, 7.0, 1.2, acc);
             }
-            let shown_url = if editing_url {
-                c.ui.input.as_deref().unwrap_or("")
+            let url_rect = Rect::new(url_box.x + 8.0, url_box.y, url_box.w - 16.0, url_box.h);
+            if editing_url {
+                let f = c.ui.input.as_ref().unwrap();
+                let ed = field_edit(c, f, acc);
+                c.s.text_edit(f.as_str().to_string(), url_rect, 11.0, Weight::Medium, TEXT, ed);
             } else {
-                c.set.active_ai_url()
-            };
-            c.text(shown_url.to_string(), Rect::new(url_box.x + 8.0, url_box.y, url_box.w - 16.0, url_box.h), 11.0, Weight::Medium, TEXT, Align::Left);
+                c.text(c.set.active_ai_url().to_string(), url_rect, 11.0, Weight::Medium, TEXT, Align::Left);
+            }
             c.hit_text(url_box, Action::AiFocusBaseUrl);
             c.pill(Rect::new(card.right() - 158.0, card.y + 6.0, 72.0, 22.0), Action::AiPasteUrl, "Paste URL", None, 10.5);
             c.pill(Rect::new(card.right() - 80.0, card.y + 6.0, 72.0, 22.0), Action::AiPasteKey, "Paste Key", (!ai.configured).then_some(acc), 10.5);
@@ -1791,12 +1828,14 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
             if editing_url {
                 c.s.stroke(url_box, 7.0, 1.2, acc);
             }
-            let shown_url = if editing_url {
-                c.ui.input.as_deref().unwrap_or("")
+            let url_rect = Rect::new(url_box.x + 8.0, url_box.y, url_box.w - 16.0, url_box.h);
+            if editing_url {
+                let f = c.ui.input.as_ref().unwrap();
+                let ed = field_edit(c, f, acc);
+                c.s.text_edit(f.as_str().to_string(), url_rect, 11.0, Weight::Medium, TEXT, ed);
             } else {
-                c.set.active_ai_url()
-            };
-            c.text(shown_url.to_string(), Rect::new(url_box.x + 8.0, url_box.y, url_box.w - 16.0, url_box.h), 11.0, Weight::Medium, TEXT, Align::Left);
+                c.text(c.set.active_ai_url().to_string(), url_rect, 11.0, Weight::Medium, TEXT, Align::Left);
+            }
             c.hit_text(url_box, Action::AiFocusBaseUrl);
             c.pill(Rect::new(card.right() - 82.0, card.y + 27.0, 74.0, 22.0), Action::AiPasteUrl, "Paste URL", None, 10.5);
         }
@@ -1811,12 +1850,14 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
     if editing_model {
         c.s.stroke(mbox, 8.0, 1.2, acc);
     }
-    let shown_model = if editing_model {
-        c.ui.input.as_deref().unwrap_or("")
+    let model_rect = Rect::new(mbox.x + 8.0, mbox.y, mbox.w - 16.0, mbox.h);
+    if editing_model {
+        let f = c.ui.input.as_ref().unwrap();
+        let ed = field_edit(c, f, acc);
+        c.s.text_edit(f.as_str().to_string(), model_rect, 11.5, Weight::Semibold, TEXT, ed);
     } else {
-        c.set.active_ai_model()
-    };
-    c.text(shown_model.to_string(), Rect::new(mbox.x + 8.0, mbox.y, mbox.w - 16.0, mbox.h), 11.5, Weight::Semibold, TEXT, Align::Left);
+        c.text(c.set.active_ai_model().to_string(), model_rect, 11.5, Weight::Semibold, TEXT, Align::Left);
+    }
     c.hit_text(mbox, Action::AiFocusModel);
 
     c.icon_btn(Rect::new(mbox.right() + 4.0, my, 24.0, 24.0), Action::AiCycleModel(-1), Icon::Prev, 10.0, TEXT_2);
@@ -1916,15 +1957,17 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
     icons::draw(&mut c.s, Icon::Sparkle, field.x + 16.0, field.cy(), 14.0, if typing { acc } else { TEXT_3 });
     let tr = Rect::new(field.x + 32.0, field.y, field.w - 42.0, field.h);
     let shown = if typing {
-        c.ui.input.as_deref().unwrap_or("")
+        c.ui.input.as_ref().map(|f| f.as_str()).unwrap_or("")
     } else {
         ai.input.as_str()
     };
     if !shown.is_empty() {
-        c.text(shown.to_string(), tr, 12.5, Weight::Regular, TEXT, Align::Left);
-        if typing && (c.ui.clock_s * 1.8) % 2.0 < 1.0 {
-            let cx = (tr.x + est_w(shown, 12.5)).min(tr.right() - 4.0);
-            c.s.rect(Rect::new(cx + 1.0, field.cy() - 8.0, 1.5, 16.0), 0.7, acc);
+        if typing {
+            let f = c.ui.input.as_ref().unwrap();
+            let ed = field_edit(c, f, acc);
+            c.s.text_edit(f.as_str().to_string(), tr, 12.5, Weight::Regular, TEXT, ed);
+        } else {
+            c.text(shown.to_string(), tr, 12.5, Weight::Regular, TEXT, Align::Left);
         }
     } else {
         let placeholder = if ai.busy {
@@ -2291,18 +2334,19 @@ mod tests {
 
     #[test]
     fn note_wrap_keeps_paragraph_breaks_and_wraps_long_lines() {
+        let lines = |s: &str, w: f32| note_lines_from_ranges(s, &wrap_note_ranges(s, w, 14.0));
         // Narrow enough that "alpha beta" cannot share a line.
-        let lines = wrap_note_lines("alpha beta gamma", 40.0, 14.0);
-        assert!(lines.len() >= 2, "{lines:?}");
-        assert_eq!(lines[0], "alpha");
-        assert_eq!(lines.join(" "), "alpha beta gamma");
+        let wrapped = lines("alpha beta gamma", 40.0);
+        assert!(wrapped.len() >= 2, "{wrapped:?}");
+        assert_eq!(wrapped[0], "alpha");
+        assert_eq!(wrapped.join(" "), "alpha beta gamma");
 
         // Blank lines survive, so paragraphs keep their spacing.
-        let lines = wrap_note_lines("one\n\ntwo", 400.0, 14.0);
-        assert_eq!(lines, vec!["one".to_string(), String::new(), "two".to_string()]);
+        let wrapped = lines("one\n\ntwo", 400.0);
+        assert_eq!(wrapped, vec!["one".to_string(), String::new(), "two".to_string()]);
 
         // Empty text still yields one caret line.
-        assert_eq!(wrap_note_lines("", 400.0, 14.0), vec![String::new()]);
+        assert_eq!(lines("", 400.0), vec![String::new()]);
     }
 
     #[test]

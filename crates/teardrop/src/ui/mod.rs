@@ -9,6 +9,7 @@ pub mod layout;
 pub mod pages;
 pub mod scene;
 pub mod state;
+pub mod textedit;
 pub mod theme;
 pub mod viz;
 

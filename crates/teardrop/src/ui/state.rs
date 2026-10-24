@@ -266,15 +266,14 @@ pub struct UiState {
     pub cal_selected_day: Option<(i32, u32, u32)>,
     /// Selected event index in the active calendar list for the detail view (`None` = list view).
     pub cal_selected_event: Option<usize>,
+    /// Task / note / AI text being typed (None = field not focused).
     /// Task text being typed (None = field not focused).
-    pub input: Option<String>,
+    pub input: Option<super::textedit::TextField>,
     /// Id of the note the input buffer belongs to (`None` while typing a brand
     /// new note that does not exist yet, or when `input` is not a note).
     pub note_edit: Option<String>,
-    /// Whether all text in the note editor is selected (block selection).
-    pub note_selected_all: bool,
     /// Active query in the note search box (`None` = search not focused).
-    pub note_search: Option<String>,
+    pub note_search: Option<super::textedit::TextField>,
     /// Active date filter for notes.
     pub note_date_filter: NoteDateFilter,
     pub toast: Option<(String, u64)>,
@@ -329,7 +328,6 @@ impl UiState {
             cal_selected_event: None,
             input: None,
             note_edit: None,
-            note_selected_all: false,
             note_search: None,
             note_date_filter: NoteDateFilter::All,
             toast: None,
@@ -413,10 +411,14 @@ impl UiState {
             return (176.0, 36.0);
         }
         if vm.music_active() {
+            // A synced lyric line takes over the capsule and may grow taller.
+            if let Some((_, w, h)) = crate::ui::layout::compact_lyric(vm, s) {
+                return (w, h);
+            }
             // art + title + visualizer; wide enough for the whole title up to a cap.
             let line = format!("{} \u{2014} {}", vm.track.title, vm.track.display_artist());
             let tail = if s.idle_look == IdleLook::Eyes { 44.0 + 42.0 } else { 44.0 };
-            let w = 46.0 + super::layout::est_w(&line, 12.0) * 1.15 + 12.0 + tail;
+            let w = 46.0 + crate::ui::layout::est_w(&line, 12.0) * 1.15 + 12.0 + tail;
             return (w.clamp(232.0, 390.0), 36.0);
         }
         match s.idle_look {
@@ -680,6 +682,50 @@ mod tests {
         vm.track.playback = teardrop_core::Playback::Stopped;
         let idle = ui.compact_target(&vm, &s, now_ms).0;
         assert!(music > idle, "music {music} should be wider than idle {idle}");
+    }
+
+    #[test]
+    fn compact_lyric_sizes_capsule() {
+        let now = Utc::now();
+        let mut vm = ViewModel::demo(now);
+        let s = Settings::default();
+        let ui = UiState::new(Page::Music);
+        let now_ms = now.timestamp_millis() as u64;
+        let title_size = ui.compact_target(&ViewModel::demo(now), &s, now_ms);
+
+        // Short line: one subline, capsule keeps the 36px height, whole line fits.
+        let line = "Ripples keep the shape of you";
+        vm.lyric_lines = teardrop_core::parse_lrc("[00:00.00]Ripples keep the shape of you\n[00:05.00]Surface tension holding true\n");
+        vm.lyric_idx = Some(0);
+        let (w, h) = ui.compact_target(&vm, &s, now_ms);
+        assert_eq!(h, 36.0);
+        let chrome = 46.0 + 44.0 + 12.0;
+        assert!(w >= chrome + crate::ui::layout::est_w(line, 13.0) * 1.2, "w {w} should fit the whole line");
+
+        // Very long line: width capped, capsule grows, no word dropped.
+        let words: Vec<String> = (0..40).map(|i| format!("word{i:02}")).collect();
+        let long = words.join(" ");
+        vm.lyric_lines = teardrop_core::parse_lrc(&format!("[00:00.00]{long}\n[00:05.00]next line\n"));
+        vm.lyric_idx = Some(0);
+        let (w, h) = ui.compact_target(&vm, &s, now_ms);
+        assert!(w <= crate::ui::layout::LYRIC_MAX_W, "w {w} exceeds cap");
+        assert!(h > 36.0, "long lyric should grow the capsule");
+        let (subs, ..) = crate::ui::layout::compact_lyric(&vm, &s).unwrap();
+        assert!(subs.len() > 1);
+        let joined = subs.join(" ");
+        for word in &words {
+            assert!(joined.contains(word.as_str()), "dropped {word}");
+        }
+
+        // Lyrics disabled -> identical to the no-lyrics title size.
+        let mut off = s.clone();
+        off.lyrics_enabled = false;
+        assert_eq!(ui.compact_target(&vm, &off, now_ms), title_size);
+
+        // Empty-text current line (instrumental gap) -> title size.
+        vm.lyric_lines = vec![teardrop_core::LyricLine { at_ms: 0, text: "   ".into() }];
+        vm.lyric_idx = Some(0);
+        assert_eq!(ui.compact_target(&vm, &s, now_ms), title_size);
     }
 
     #[test]

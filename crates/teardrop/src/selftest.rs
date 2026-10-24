@@ -145,6 +145,22 @@ fn shots() -> Vec<Shot> {
     vec![
         Shot { setup: |vm, _, _, _| vm.track.playback = teardrop_core::Playback::Stopped, ..shot("01-collapsed-clock", 0.0, Page::Music) },
         shot("02-collapsed-music", 0.0, Page::Music),
+        Shot {
+            setup: |vm, _, _, _| {
+                vm.lyric_lines = teardrop_core::parse_lrc("[00:00.00]Ripples keep the shape of you\n[01:02.00]Surface tension holding true\n");
+                vm.lyric_idx = Some(0);
+                vm.track.position_ms = 1_400;
+            },
+            ..shot("02b-collapsed-lyric", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, _, _, _| {
+                vm.lyric_lines = teardrop_core::parse_lrc("[00:00.00]Somewhere out on the water where the ripples keep the shape of every word you ever whispered softly to the rain\n[01:02.00]next line\n");
+                vm.lyric_idx = Some(0);
+                vm.track.position_ms = 1_400;
+            },
+            ..shot("02c-collapsed-lyric-long", 0.0, Page::Music)
+        },
         Shot { setup: |_, _, ui, ms| ui.peek_until_ms = ms + 5000, ..shot("03-music-peek", 0.0, Page::Music) },
         Shot {
             setup: |vm, set, _, _| {
@@ -188,16 +204,75 @@ fn shots() -> Vec<Shot> {
         },
         shot("22-page-water", 1.0, Page::Water),
         shot("23-page-shelf", 1.0, Page::Shelf),
-        Shot { setup: |_, _, ui, _| ui.input = Some("Draft the launch notes".into()), ..shot("24-page-tasks-typing", 1.0, Page::Tasks) },
+        Shot { setup: |_, _, ui, _| ui.input = Some(super::ui::textedit::TextField::new("Draft the launch notes")), ..shot("24-page-tasks-typing", 1.0, Page::Tasks) },
+        Shot {
+            setup: |_, _, ui, _| {
+                let mut f = super::ui::textedit::TextField::new("Draft the launch notes");
+                f.move_h(-1, true, false);
+                f.move_h(-1, true, false);
+                ui.input = Some(f);
+            },
+            ticks: 30, // land on a blink-on frame so the caret shows
+            ..shot("24b-tasks-caret-mid", 1.0, Page::Tasks)
+        },
+        Shot {
+            setup: |_, _, ui, _| {
+                // 115 chars (under the 120 cap), caret at end: the field must
+                // scroll right to keep the caret visible.
+                ui.input = Some(super::ui::textedit::TextField::new(
+                    "Review the launch checklist with design, copy, QA, and the release owner before Friday's freeze",
+                ));
+            },
+            ticks: 30,
+            ..shot("24c-tasks-caret-end-long", 1.0, Page::Tasks)
+        },
         shot("24n-page-notes", 1.0, Page::Notes),
         Shot {
             setup: |vm, _, ui, _| {
                 if let Some(n) = vm.notes.notes.first() {
-                    ui.input = Some(n.text.clone());
+                    ui.input = Some(super::ui::textedit::TextField::new(n.text.clone()));
                     ui.note_edit = Some(n.id.clone());
                 }
             },
             ..shot("24o-page-notes-editor", 1.0, Page::Notes)
+        },
+        Shot {
+            setup: |_, _, ui, _| {
+                let mut f = super::ui::textedit::TextField::new("ripples");
+                f.select_all();
+                ui.note_search = Some(f);
+            },
+            ticks: 30,
+            ..shot("24p-notes-search-sel", 1.0, Page::Notes)
+        },
+        Shot {
+            setup: |_, _, ui, _| {
+                // Three logical lines; selection starts mid-line-1 and the
+                // caret lands mid-line-2 — spans a real line break.
+                let mut f = super::ui::textedit::TextField::new("alpha beta gamma delta\nsecond line is here\nthird line tail");
+                f.home(false, true);
+                f.move_h(1, true, false); // start of "beta"
+                f.move_h(1, true, false); // start of "gamma"
+                f.move_v(1, true); // same column on line 2, extending the selection
+                ui.input = Some(f);
+            },
+            ticks: 30,
+            ..shot("24q-notes-editor-sel", 1.0, Page::Notes)
+        },
+        Shot {
+            setup: |vm, _, ui, _| {
+                crate::ai::set_focus_field(crate::ai::AiFocusField::Prompt);
+                vm.ai.focus_field = crate::ai::AiFocusField::Prompt;
+                let mut f = super::ui::textedit::TextField::new(
+                    "Draft a friendly reminder for tomorrow's design review, mention the calendar update and the two open action items",
+                );
+                f.home(false, true);
+                f.move_h(1, false, false);
+                f.move_h(1, false, false);
+                ui.input = Some(f);
+            },
+            ticks: 30,
+            ..shot("26p-ai-prompt-caret", 1.0, Page::Ai)
         },
         shot("25-page-clipboard", 1.0, Page::Clipboard),
         shot("26-page-today", 1.0, Page::Today),

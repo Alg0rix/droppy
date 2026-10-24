@@ -154,10 +154,10 @@ pub fn run(dir: &str) -> i32 {
         }
         if let Some((t0, s)) = typing {
             let n = (((t - t0) * 11.0) as usize).min(s.chars().count());
-            ui.input = Some(s.chars().take(n).collect());
+            ui.input = Some(crate::ui::textedit::TextField::new(s.chars().take(n).collect::<String>()));
             if n == s.chars().count() && t - t0 > 1.9 {
                 vm.tasks.add(s, now);
-                ui.input = Some(String::new());
+                ui.input = Some(crate::ui::textedit::TextField::default());
                 typing = None;
             }
         }
