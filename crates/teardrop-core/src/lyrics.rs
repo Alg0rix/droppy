@@ -71,7 +71,11 @@ pub fn line_progress(lines: &[LyricLine], idx: usize, pos_ms: u64) -> f32 {
     let Some(cur) = lines.get(idx) else { return 0.0 };
     let next_at = lines.get(idx + 1).map(|l| l.at_ms).unwrap_or(cur.at_ms + 4000);
     if pos_ms < cur.at_ms || next_at <= cur.at_ms { return 0.0; }
-    ((pos_ms - cur.at_ms) as f32 / (next_at - cur.at_ms) as f32).clamp(0.0, 1.0)
+    // A line is sung in roughly 85 ms a character, not across the whole gap to
+    // the next one (instrumental breaks would make the fill crawl).
+    let sung = (cur.text.chars().count() as u64 * 85).max(1200);
+    let span = (next_at - cur.at_ms).min(sung);
+    ((pos_ms - cur.at_ms) as f32 / span as f32).clamp(0.0, 1.0)
 }
 
 #[cfg(test)]

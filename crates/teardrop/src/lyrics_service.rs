@@ -32,6 +32,118 @@ pub fn extract_synced(json_body: &str) -> Option<String> {
     }
 }
 
+/// LRCLIB holds some one-line placeholder entries; anything that short is
+/// not worth showing, so lookups move on to the next guess instead.
+pub fn usable(lrc: &str) -> bool {
+    parse_lrc(lrc).len() >= 3
+}
+
+/// Words that mark a bracketed chunk as video noise, not part of the song name.
+const NOISE: [&str; 19] = [
+    "official", "video", "audio", "lyric", "lyrics", "visualizer", "visualiser", "mv", "hd", "4k", "remaster", "remastered", "hq", "explicit", "full", "version", "feat", "ft", "featuring",
+];
+
+fn is_noise(chunk: &str) -> bool {
+    let l = chunk.to_lowercase();
+    l.split(|c: char| !c.is_alphanumeric()).any(|w| NOISE.contains(&w))
+}
+
+/// Drop `(Official Video)`, `[Lyrics]`, `| promo` style noise and `feat.` credits.
+pub fn clean_title(title: &str) -> String {
+    let mut out = String::new();
+    let mut depth = 0;
+    let mut chunk = String::new();
+    let mut open = '(';
+    for ch in title.chars() {
+        match ch {
+            '(' | '[' | '{' if depth == 0 => {
+                depth = 1;
+                open = ch;
+                chunk.clear();
+            }
+            ')' | ']' | '}' if depth == 1 => {
+                depth = 0;
+                if !is_noise(&chunk) {
+                    out.push(open);
+                    out.push_str(&chunk);
+                    out.push(ch);
+                }
+            }
+            _ if depth > 0 => chunk.push(ch),
+            _ => out.push(ch),
+        }
+    }
+    if depth > 0 {
+        out.push(open);
+        out.push_str(&chunk);
+    }
+    let mut s = out.as_str();
+    for sep in [" | ", " // "] {
+        if let Some(i) = s.find(sep) {
+            s = &s[..i];
+        }
+    }
+    let lower = s.to_lowercase();
+    for key in [" feat.", " feat ", " ft.", " ft ", " featuring "] {
+        if let Some(i) = lower.find(key) {
+            s = &s[..i];
+            break;
+        }
+    }
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// YouTube channels: "ArtistVEVO", "Artist - Topic", "Artist Official".
+pub fn clean_artist(artist: &str) -> String {
+    let mut a = artist.trim().to_string();
+    for suf in [" - Topic", "VEVO", "Vevo", " Official", " OFFICIAL"] {
+        if let Some(x) = a.strip_suffix(suf) {
+            a = x.trim().to_string();
+        }
+    }
+    a
+}
+
+/// Ordered (artist, title) guesses for a player's metadata. Browser tabs put
+/// "Artist - Song" in the title and the channel name in the artist field.
+pub fn candidates(artist: &str, title: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut push = |a: String, t: String| {
+        if !t.is_empty() && !out.iter().any(|(x, y)| x.eq_ignore_ascii_case(&a) && y.eq_ignore_ascii_case(&t)) {
+            out.push((a, t));
+        }
+    };
+    let (ca, ct) = (clean_artist(artist), clean_title(title));
+    for sep in [" - ", " \u{2013} ", " \u{2014} ", " \u{2212} "] {
+        if let Some((l, r)) = ct.split_once(sep) {
+            push(clean_artist(l), clean_title(r));
+            // "Song - Artist" order is rarer but happens.
+            push(clean_artist(r), clean_title(l));
+            break;
+        }
+    }
+    push(ca, ct.clone());
+    push(artist.trim().to_string(), title.trim().to_string());
+    push(String::new(), ct);
+    out
+}
+
+/// Best synced lyrics from an LRCLIB `/search` array: closest duration wins
+/// (within 6 s when our duration is known).
+pub fn pick_synced(json_body: &str, duration_ms: u64) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(json_body).ok()?;
+    let want = duration_ms as f64 / 1000.0;
+    v.as_array()?
+        .iter()
+        .filter_map(|e| {
+            let lrc = e["syncedLyrics"].as_str().filter(|s| !s.trim().is_empty())?;
+            let diff = if want > 0.0 { (e["duration"].as_f64().unwrap_or(0.0) - want).abs() } else { 0.0 };
+            (want <= 0.0 || diff <= 6.0).then_some((diff, lrc))
+        })
+        .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(_, lrc)| lrc.to_string())
+}
+
 pub fn cache_path(cache_dir: &std::path::Path, artist: &str, title: &str) -> std::path::PathBuf {
     let bad = |c: char| matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*');
     let clean = |s: &str| {
@@ -143,15 +255,33 @@ pub mod net {
         }
     }
 
-    pub fn fetch_lrclib(artist: &str, title: &str, album: &str) -> Option<String> {
-        let url = format!(
-            "https://lrclib.net/api/get?artist_name={}&track_name={}&album_name={}",
-            url_encode(artist),
-            url_encode(title),
-            url_encode(album)
-        );
-        let body = https_get(&url)?;
-        super::extract_synced(&body)
+    /// Try every cleaned-up (artist, title) guess against LRCLIB: an exact
+    /// `/get` first, then `/search`, finally a free-text search.
+    pub fn fetch_lrclib(artist: &str, title: &str, album: &str, duration_ms: u64) -> Option<String> {
+        let secs = duration_ms / 1000;
+        for (a, t) in super::candidates(artist, title) {
+            let mut url = format!(
+                "https://lrclib.net/api/get?artist_name={}&track_name={}",
+                url_encode(&a),
+                url_encode(&t)
+            );
+            if !album.trim().is_empty() {
+                url.push_str(&format!("&album_name={}", url_encode(album)));
+            }
+            if secs > 0 {
+                url.push_str(&format!("&duration={secs}"));
+            }
+            if let Some(lrc) = https_get(&url).and_then(|b| super::extract_synced(&b)).filter(|l| super::usable(l)) {
+                return Some(lrc);
+            }
+            let url = format!("https://lrclib.net/api/search?track_name={}&artist_name={}", url_encode(&t), url_encode(&a));
+            if let Some(lrc) = https_get(&url).and_then(|b| super::pick_synced(&b, duration_ms)).filter(|l| super::usable(l)) {
+                return Some(lrc);
+            }
+        }
+        let (a, t) = super::candidates(artist, title).into_iter().next()?;
+        let url = format!("https://lrclib.net/api/search?q={}", url_encode(format!("{a} {t}").trim()));
+        https_get(&url).and_then(|b| super::pick_synced(&b, duration_ms)).filter(|l| super::usable(l))
     }
 }
 
@@ -162,6 +292,7 @@ pub fn get_lyrics(
     artist: &str,
     title: &str,
     album: &str,
+    duration_ms: u64,
 ) -> Vec<LyricLine> {
     if artist.trim().is_empty() && title.trim().is_empty() {
         return Vec::new();
@@ -171,12 +302,12 @@ pub fn get_lyrics(
     }
     #[cfg(windows)]
     {
-        if let Some(lrc) = net::fetch_lrclib(artist, title, album) {
+        if let Some(lrc) = net::fetch_lrclib(artist, title, album, duration_ms) {
             save_cache(cache_dir, artist, title, &lrc);
             return parse_lrc(&lrc);
         }
     }
-    let _ = album;
+    let _ = (album, duration_ms);
     Vec::new()
 }
 
@@ -199,6 +330,31 @@ mod tests {
     }
 
     #[test]
+    fn youtube_titles_get_cleaned() {
+        assert_eq!(clean_title("Never Gonna Give You Up (Official Video) [4K Remaster]"), "Never Gonna Give You Up");
+        assert_eq!(clean_title("Song (feat. Someone) (Live)"), "Song (Live)");
+        assert_eq!(clean_title("Blinding Lights | The Weeknd"), "Blinding Lights");
+        assert_eq!(clean_artist("TheWeekndVEVO"), "TheWeeknd");
+        assert_eq!(clean_artist("Daft Punk - Topic"), "Daft Punk");
+    }
+
+    #[test]
+    fn candidates_split_artist_dash_title() {
+        let c = candidates("RickAstleyVEVO", "Rick Astley - Never Gonna Give You Up (Official Music Video)");
+        assert_eq!(c[0], ("Rick Astley".to_string(), "Never Gonna Give You Up".to_string()));
+        let plain = candidates("Band", "Song");
+        assert_eq!(plain[0], ("Band".to_string(), "Song".to_string()));
+    }
+
+    #[test]
+    fn search_pick_prefers_matching_duration() {
+        let body = r#"[{"duration":300,"syncedLyrics":"[00:01.00]long"},{"duration":212,"syncedLyrics":"[00:01.00]right"},{"duration":211,"syncedLyrics":null}]"#;
+        assert!(pick_synced(body, 213_000).unwrap().contains("right"));
+        assert!(pick_synced(body, 100_000).is_none(), "nothing within 6s");
+        assert!(pick_synced(body, 0).is_some());
+    }
+
+    #[test]
     fn cache_roundtrip() {
         let dir = std::env::temp_dir().join(format!("teardrop-lyr-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -207,5 +363,19 @@ mod tests {
         assert_eq!(hit.len(), 1);
         assert_eq!(hit[0].text, "hello");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(all(test, windows))]
+mod live {
+    /// Needs internet: `cargo test -p teardrop live_youtube_lyrics -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn live_youtube_lyrics() {
+        let dir = std::env::temp_dir().join("teardrop-live-lyrics");
+        let _ = std::fs::remove_dir_all(&dir);
+        let lines = super::get_lyrics(&dir, "TheWeekndVEVO", "The Weeknd - Blinding Lights (Official Video)", "", 200_000);
+        println!("{} lines", lines.len());
+        assert!(lines.len() > 10);
     }
 }

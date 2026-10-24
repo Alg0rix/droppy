@@ -10,4 +10,5 @@ pub mod pages;
 pub mod scene;
 pub mod state;
 pub mod theme;
+pub mod viz;
 

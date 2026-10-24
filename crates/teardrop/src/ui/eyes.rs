@@ -1774,7 +1774,7 @@ impl Eyes {
         }
         self.particles(sc, pt);
         if lv.flash > 0.01 {
-            sc.rect(pt.bounds, pt.bounds.h / 2.0, WHITE.fade(lv.flash * 0.85));
+            sc.rect(pt.bounds, pt.bounds.h / 2.0, WHITE.fade(lv.flash * 0.45));
         }
     }
 

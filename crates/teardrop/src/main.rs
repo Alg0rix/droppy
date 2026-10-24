@@ -4,9 +4,12 @@
 //! screen: collapsed it shows live activities (music, timer, HUDs); click
 //! or hover it and it stretches open like a teardrop into quick pages
 //! (music + synced lyrics, focus, water, shelf, tasks, clipboard, today).
+#![windows_subsystem = "windows"]
 
 #[cfg(windows)]
 mod demo;
+#[cfg(windows)]
+mod drop_target;
 #[cfg(windows)]
 mod shelf_drag;
 mod lyrics_service;
@@ -15,8 +18,10 @@ mod paths;
 mod render_d2d;
 mod selftest;
 mod services_env;
+mod speedtest;
 mod services_system;
 mod startup;
+mod update;
 mod state;
 mod ui;
 mod store;
@@ -26,6 +31,13 @@ mod window;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.len() >= 2 {
+        #[cfg(windows)]
+        unsafe {
+            use windows::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+            let _ = AttachConsole(ATTACH_PARENT_PROCESS);
+        }
+    }
     if args.len() >= 3 && args[1] == "--selftest" {
         std::process::exit(selftest::run(&args[2]));
     }

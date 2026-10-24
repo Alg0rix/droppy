@@ -8,7 +8,7 @@ use super::scene::{Align, Color, Fill, Rect, Scene, Weight};
 use super::state::{Action, Hit, UiState};
 use super::theme::*;
 use crate::viewmodel::{mmss, ViewModel};
-use teardrop_core::{DropletGeom, HudKind, IdleLook, Page, Settings, Track};
+use teardrop_core::{DropletGeom, HudKind, IdleLook, Page, Settings};
 
 /// Morph input from the island spring.
 #[derive(Debug, Clone, Copy)]
@@ -167,6 +167,7 @@ fn tab_icon(p: Page) -> Icon {
         Page::Tasks => Icon::List,
         Page::Clipboard => Icon::Clipboard,
         Page::Today => Icon::Calendar,
+        Page::Speed => Icon::Gauge,
         Page::Settings => Icon::Gear,
     }
 }
@@ -180,6 +181,7 @@ fn tab_label_w(p: Page) -> f32 {
         Page::Tasks => 86.0,
         Page::Clipboard => 108.0,
         Page::Today => 86.0,
+        Page::Speed => 86.0,
         Page::Settings => 36.0,
     }
 }
@@ -228,6 +230,9 @@ fn header(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
     }
     let ic = if on { TEXT } else { TEXT_2.mix(TEXT, h * 0.7) };
     icons::draw(&mut c.s, Icon::Gear, gr.cx(), gr.cy(), 16.0, ic);
+    if c.vm.update.phase == crate::update::UpdatePhase::Available {
+        c.s.circle(gr.right() - 6.0, gr.y + 7.0, 4.5, accent(Page::Speed));
+    }
     c.hit(gr, Action::Gear);
 }
 
@@ -266,25 +271,22 @@ fn collapsed(c: &mut Ctx, r: Rect, a: f32) {
         let art = Rect::new(r.x + 10.0, cy - 11.0, 22.0, 22.0);
         c.s.rect(art, 6.5, Fill::DGrad(c1, c2));
         let acc = c1.mix(Color::rgb(255, 255, 255), 0.25);
-        let x0 = if c.set.idle_look == IdleLook::Eyes {
-            // The eyes dance where the equalizer would be, tinted by the art.
-            face(c, r, Spot::Music, Some(acc));
-            r.right() - 50.0
-        } else {
-            let bars = Track::eq_bars(c.now_ms);
-            let x0 = r.right() - 14.0 - 25.0;
-            for (i, b) in bars.iter().enumerate() {
-                let h = 4.0 + b * 12.0;
-                c.s.rect(Rect::new(x0 + i as f32 * 5.5, cy - h / 2.0, 3.0, h), 1.5, acc);
-            }
-            x0
-        };
-        let pk = c.ui.peek_amt;
-        if pk > 0.02 {
-            let tr = Rect::new(art.right() + 12.0, cy - 10.0, (x0 - 12.0) - (art.right() + 12.0), 20.0);
-            let line = format!("{} \u{2014} {}", vm.track.title, vm.track.display_artist());
-            c.s.text(line, tr, 12.0, Weight::Medium, TEXT.fade(pk), Align::Center);
+        // Visualizer bars always; with Eyes they sit just left of the face.
+        let eyes = c.set.idle_look == IdleLook::Eyes;
+        let n = if eyes { 5 } else { 7 };
+        let right = if eyes { r.right() - 56.0 } else { r.right() - 14.0 };
+        let x0 = right - n as f32 * 5.0;
+        for (i, b) in c.ui.viz.sample(n).iter().enumerate() {
+            let h = 3.0 + b * 15.0;
+            c.s.rect(Rect::new(x0 + i as f32 * 5.0, cy - h / 2.0, 3.0, h), 1.5, acc);
         }
+        if eyes {
+            face(c, r, Spot::Music, Some(acc));
+        }
+        // The title stays up the whole time; long ones scroll.
+        let tr = Rect::new(art.right() + 10.0, cy - 10.0, (x0 - 10.0) - (art.right() + 10.0), 20.0);
+        let line = format!("{} \u{2014} {}", vm.track.title, vm.track.display_artist());
+        marquee(c, tr, &line, 12.0, Weight::Medium, TEXT, c.now_ms);
     } else {
         match c.set.idle_look {
             IdleLook::Clock => c.text(vm.clock_text(), r, 13.5, Weight::Semibold, TEXT, Align::Center),
@@ -294,6 +296,25 @@ fn collapsed(c: &mut Ctx, r: Rect, a: f32) {
         }
     }
     c.s.reset_transform();
+}
+
+/// One line of text that fits `r`, or scrolls through it (hold, glide, hold).
+fn marquee(c: &mut Ctx, r: Rect, s: &str, size: f32, weight: Weight, color: Color, now_ms: u64) {
+    // est_w runs a little short for Segoe UI; pad it so nothing gets ellipsized.
+    let tw = est_w(s, size) * 1.15;
+    if tw <= r.w {
+        c.text(s, r, size, weight, color, Align::Left);
+        return;
+    }
+    let over = tw - r.w + 8.0;
+    let (hold, speed) = (1500.0, 34.0);
+    let glide = over / speed * 1000.0;
+    let cycle = hold * 2.0 + glide;
+    let m = (now_ms as f32) % cycle;
+    let off = if m < hold { 0.0 } else if m < hold + glide { (m - hold) / 1000.0 * speed } else { over };
+    c.s.clip(r);
+    c.text(s, Rect::new(r.x - off, r.y, tw + 24.0, r.h), size, weight, color, Align::Left);
+    c.s.pop_clip();
 }
 
 fn face(c: &mut Ctx, r: Rect, spot: Spot, accent: Option<Color>) {

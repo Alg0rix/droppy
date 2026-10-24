@@ -11,6 +11,7 @@ pub enum Page {
     Tasks,
     Clipboard,
     Today,
+    Speed,
     /// Reached from the gear in the header; not part of the tab cycle.
     Settings,
 }
@@ -22,9 +23,9 @@ impl Default for Page {
 }
 
 impl Page {
-    /// The seven tab pages in header order (Settings is reached via the gear).
+    /// The eight tab pages in header order (Settings is reached via the gear).
     pub fn all() -> &'static [Page] {
-        &[Page::Music, Page::Focus, Page::Water, Page::Shelf, Page::Tasks, Page::Clipboard, Page::Today]
+        &[Page::Music, Page::Focus, Page::Water, Page::Shelf, Page::Tasks, Page::Clipboard, Page::Today, Page::Speed]
     }
 
     pub fn title(self) -> &'static str {
@@ -36,6 +37,7 @@ impl Page {
             Page::Tasks => "Tasks",
             Page::Clipboard => "Clipboard",
             Page::Today => "Today",
+            Page::Speed => "Speed",
             Page::Settings => "Settings",
         }
     }

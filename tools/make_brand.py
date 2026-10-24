@@ -124,7 +124,7 @@ def island_points(cx: float, y0: float, w: float, h: float, r: float, f: float) 
     )
 
 # ---------------------------------------------------------------------------
-# 3. 2D App Logo SVG (Tile + Island + 2D Droppy Mascot)
+# 3. 2D App Logo SVG (Droppy Centered - No Notch)
 # ---------------------------------------------------------------------------
 def logo_svg(size=1024.0) -> str:
     s = float(size)
@@ -132,38 +132,11 @@ def logo_svg(size=1024.0) -> str:
     tile_size = s - 2 * inset
     tile_r = tile_size * 0.2245
 
-    # Island dimensions
-    isl_w = tile_size * 0.655
-    isl_h = tile_size * 0.209
-    isl_r = tile_size * 0.075
-    isl_flare = tile_size * 0.041
-
-    # Album art inside island
-    art_size = isl_h * 0.72
-    art_x = (s - isl_w) / 2 + isl_w * 0.08
-    art_y = inset + (isl_h - art_size) / 2
-
-    # Equalizer inside island
-    eq_bars = (0.45, 0.85, 0.60, 1.0)
-    bw = tile_size * 0.022
-    bgap = tile_size * 0.016
-    eq_w = len(eq_bars) * bw + (len(eq_bars) - 1) * bgap
-    eq_x = (s + isl_w) / 2 - isl_w * 0.08 - eq_w
-
-    stops = "".join(f'<stop offset="{u:g}" stop-color="{c}"/>' for u, c in COVER_GRAD)
-    bars_svg = "".join(
-        f'<rect x="{eq_x + i * (bw + bgap):.1f}" '
-        f'y="{art_y + art_size/2 - art_size * 0.45 * h:.1f}" '
-        f'width="{bw:.1f}" height="{art_size * 0.9 * h:.1f}" rx="{bw / 2:.1f}" fill="{EQ_COLOR}"/>\n'
-        for i, h in enumerate(eq_bars)
-    )
-
-    # White Mascot Droppy below island
-    # Center mascot at (s/2, inset + tile_size * 0.67)
-    mascot_w = tile_size * 0.44
+    # Center white Droppy mascot inside the squircle tile
+    mascot_w = tile_size * 0.72
     mascot_scale = mascot_w / 100.0
     mascot_tx = (s - mascot_w) / 2.0
-    mascot_ty = inset + tile_size * 0.40
+    mascot_ty = (s - mascot_w) / 2.0
 
     d_path = droplet_path_d(mascot_scale, mascot_tx, mascot_ty)
     
@@ -179,8 +152,6 @@ def logo_svg(size=1024.0) -> str:
     le = capsule_path(mascot_tx + 38 * mascot_scale, mascot_ty + 62 * mascot_scale, 8.5 * mascot_scale, 16 * mascot_scale)
     re = capsule_path(mascot_tx + 62 * mascot_scale, mascot_ty + 62 * mascot_scale, 8.5 * mascot_scale, 16 * mascot_scale)
 
-    sun_r = 0.16 * art_size
-
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {s:g} {s:g}">\n'
         f'<title>Teardrop</title>\n'
@@ -193,18 +164,10 @@ def logo_svg(size=1024.0) -> str:
         f'    <stop offset="0.3" stop-color="{BRAND_COLOR}"/>\n'
         f'    <stop offset="1" stop-color="{BRAND_DARK}"/>\n'
         f'  </linearGradient>\n'
-        f'  <linearGradient id="cover" x1="0" y1="0" x2="0" y2="1">{stops}</linearGradient>\n'
         f'</defs>\n'
         f'<g clip-path="url(#tile)">\n'
         f'  <rect x="0" y="0" width="{s:g}" height="{s:g}" fill="url(#tile_bg)"/>\n'
-        f'  <path d="{island_points(s / 2, inset - 4, isl_w, isl_h + 4, isl_r, isl_flare)}" fill="{ISLAND_COLOR}"/>\n'
         f'</g>\n'
-        # Album art on the island
-        f'<rect x="{art_x:.1f}" y="{art_y:.1f}" width="{art_size:.1f}" height="{art_size:.1f}" rx="{0.24 * art_size:.1f}" fill="url(#cover)"/>\n'
-        f'<path d="M{art_x + 0.66 * art_size - sun_r:.1f} {art_y + 0.5 * art_size:.1f} a{sun_r:.1f} {sun_r:.1f} 0 0 1 {2 * sun_r:.1f} 0Z" fill="{COVER_SUN}"/>\n'
-        f'<path d="M{art_x + 0.24 * art_size:.1f} {art_y + 0.8 * art_size:.1f} L{art_x + 0.34 * art_size:.1f} {art_y + 0.56 * art_size:.1f} L{art_x + 0.42 * art_size:.1f} {art_y + 0.8 * art_size:.1f} Z" fill="#FFFFFF"/>\n'
-        f'{bars_svg}'
-        # White Droppy Mascot below island
         f'<path d="{d_path} {le} {re}" fill="#FFFFFF" fill-rule="evenodd"/>\n'
         f'</svg>\n'
     )
@@ -221,10 +184,8 @@ def draw_logo_raster(size: int) -> Image.Image:
     tile_r = t * 0.2245
 
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
 
     # Gradient background tile
-    # Create gradient
     grad = Image.new("RGBA", (1, int(t)), (0, 0, 0, 0))
     c_top = (56, 189, 248)    # #38BDF8
     c_mid = (2, 132, 199)     # #0284C7
@@ -249,85 +210,44 @@ def draw_logo_raster(size: int) -> Image.Image:
     ImageDraw.Draw(mask).rounded_rectangle([0, 0, t - 1, t - 1], radius=tile_r, fill=255)
     img.paste(grad, (round(inset), round(inset)), mask)
 
-    # Draw the hanging island on top
-    isl_w = t * 0.655
-    isl_h = t * 0.209
-    isl_r = t * 0.075
-    isl_flare = t * 0.041
-    x0, x1 = (s - isl_w) / 2, (s + isl_w) / 2
-    y0 = inset
-
-    # Polygon approximation for the flared island
-    pts = []
-    # top flare left
-    pts.append((x0 - isl_flare, y0))
-    pts.append((x0, y0 + isl_flare))
-    # left side down
-    pts.append((x0, y0 + isl_h - isl_r))
-    # bottom left corner
-    for deg in range(180, 271, 10):
-        rad = math.radians(deg)
-        pts.append((x0 + isl_r + isl_r * math.cos(rad), y0 + isl_h - isl_r - isl_r * math.sin(rad)))
-    # bottom edge
-    pts.append((x1 - isl_r, y0 + isl_h))
-    # bottom right corner
-    for deg in range(270, 361, 10):
-        rad = math.radians(deg)
-        pts.append((x1 - isl_r + isl_r * math.cos(rad), y0 + isl_h - isl_r - isl_r * math.sin(rad)))
-    # right side up
-    pts.append((x1, y0 + isl_flare))
-    pts.append((x1 + isl_flare, y0))
-
-    # Mask island to tile
-    isl_img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    ImageDraw.Draw(isl_img).polygon(pts, fill=(10, 10, 10, 255))
-    tile_full_mask = Image.new("L", (s, s), 0)
-    ImageDraw.Draw(tile_full_mask).rounded_rectangle([inset, inset, inset + t - 1, inset + t - 1], radius=tile_r, fill=255)
-    img.paste(isl_img, (0, 0), tile_full_mask)
-
-    # Album art on island
-    art_size = isl_h * 0.72
-    art_x = round((s - isl_w) / 2 + isl_w * 0.08)
-    art_y = round(inset + (isl_h - art_size) / 2)
-    art_img = Image.new("RGBA", (round(art_size), round(art_size)), (0, 0, 0, 0))
-    # Mini gradient inside art
-    for py in range(round(art_size)):
-        v = py / max(1, art_size - 1)
-        cr = int(56 * (1 - v) + 30 * v)
-        cg = int(189 * (1 - v) + 27 * v)
-        cb = int(248 * (1 - v) + 75 * v)
-        for px in range(round(art_size)):
-            art_img.putpixel((px, py), (cr, cg, cb, 255))
-    art_draw = ImageDraw.Draw(art_img)
-    # Sun
-    sun_r = 0.16 * art_size
-    art_draw.pieslice([0.66 * art_size - sun_r, 0.5 * art_size - sun_r, 0.66 * art_size + sun_r, 0.5 * art_size + sun_r], 180, 360, fill=(253, 224, 71, 255))
-    # Mountain
-    art_draw.polygon([(0.24 * art_size, 0.8 * art_size), (0.34 * art_size, 0.56 * art_size), (0.42 * art_size, 0.8 * art_size)], fill=(255, 255, 255, 255))
-    art_mask = Image.new("L", art_img.size, 0)
-    ImageDraw.Draw(art_mask).rounded_rectangle([0, 0, art_img.width - 1, art_img.height - 1], radius=0.24 * art_size, fill=255)
-    img.paste(art_img, (art_x, art_y), art_mask)
-
-    # Equalizer bars
-    eq_bars = (0.45, 0.85, 0.60, 1.0)
-    bw = t * 0.022
-    bgap = t * 0.016
-    eq_w = len(eq_bars) * bw + (len(eq_bars) - 1) * bgap
-    eq_x = (s + isl_w) / 2 - isl_w * 0.08 - eq_w
-    cy = art_y + art_size / 2
-    for i, bh_ratio in enumerate(eq_bars):
-        bh = art_size * 0.9 * bh_ratio
-        bx = eq_x + i * (bw + bgap)
-        draw.rounded_rectangle([bx, cy - bh / 2, bx + bw, cy + bh / 2], radius=bw / 2, fill=(56, 189, 248, 255))
-
-    # White 2D Droppy Mascot below island
-    mascot_w = t * 0.44
+    # Center white Droppy mascot
+    mascot_w = t * 0.72
     m_scale = mascot_w / 100.0
     m_tx = (s - mascot_w) / 2.0
-    m_ty = inset + t * 0.40
+    m_ty = (s - mascot_w) / 2.0
 
-    # Draw droplet outline via polygon
+    def bezier_point(p0, p1, p2, p3, steps=24):
+        pts = []
+        for st in range(steps + 1):
+            u = st / steps
+            x = (1-u)**3 * p0[0] + 3*(1-u)**2*u * p1[0] + 3*(1-u)*u**2 * p2[0] + u**3 * p3[0]
+            y = (1-u)**3 * p0[1] + 3*(1-u)**2*u * p1[1] + 3*(1-u)*u**2 * p2[1] + u**3 * p3[1]
+            pts.append((m_tx + x * m_scale, m_ty + y * m_scale))
+        return pts
+
     d_pts = []
+    d_pts.extend(bezier_point((50, 12), (55, 12), (86, 44), (86, 70)))
+    d_pts.extend(bezier_point((86, 70), (86, 86), (70, 92), (50, 92)))
+    d_pts.extend(bezier_point((50, 92), (30, 92), (14, 86), (14, 70)))
+    d_pts.extend(bezier_point((14, 70), (14, 44), (45, 12), (50, 12)))
+
+    drop_mask = Image.new("L", (s, s), 0)
+    ImageDraw.Draw(drop_mask).polygon(d_pts, fill=255)
+
+    eye_w = 8.5 * m_scale
+    eye_h = 16.0 * m_scale
+    eye_r = eye_w / 2
+    lx = m_tx + (38 - 4.25) * m_scale
+    ly = m_ty + (62 - 8.0) * m_scale
+    rx = m_tx + (62 - 4.25) * m_scale
+    ry = m_ty + (62 - 8.0) * m_scale
+    ImageDraw.Draw(drop_mask).rounded_rectangle([lx, ly, lx + eye_w, ly + eye_h], radius=eye_r, fill=0)
+    ImageDraw.Draw(drop_mask).rounded_rectangle([rx, ry, rx + eye_w, ry + eye_h], radius=eye_r, fill=0)
+
+    white_layer = Image.new("RGBA", (s, s), (255, 255, 255, 255))
+    img.paste(white_layer, (0, 0), drop_mask)
+
+    return img.resize((size, size), Image.LANCZOS)
     # Sample cubic Beziers
     def bezier_point(p0, p1, p2, p3, steps=16):
         pts = []
@@ -560,6 +480,50 @@ def main():
     (assets_dir / "teardrop-logo.svg").write_text(logo_svg(1024), encoding="utf-8")
     (assets_dir / "teardrop-mark.svg").write_text(teardrop_mark_svg(BRAND_COLOR, "#FFFFFF"), encoding="utf-8")
     print("✓ Copied branding assets to assets/")
+
+    # 5. Installer Artwork (Inno Setup & NSIS)
+    installer_art = ROOT / "installer" / "art"
+    installer_art.mkdir(parents=True, exist_ok=True)
+
+    wizard_small_sizes = [58, 77, 97, 116, 124, 143, 159]
+    for n in wizard_small_sizes:
+        draw_logo_raster(n).save(installer_art / f"wizard-small-{n}.png", optimize=True)
+
+    def make_wizard_banner(w: int, h: int) -> Image.Image:
+        # Subtle light blue / cyan modern gradient
+        banner = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        for y in range(h):
+            ratio = y / max(1, h - 1)
+            r = int(240 * (1 - ratio) + 224 * ratio)
+            g = int(249 * (1 - ratio) + 242 * ratio)
+            b = int(255 * (1 - ratio) + 254 * ratio)
+            for x in range(w):
+                banner.putpixel((x, y), (r, g, b, 255))
+        # Place Droppy mascot in upper-middle
+        mw = round(w * 0.72)
+        m_img = draw_mascot_raster(mw)
+        mx = (w - mw) // 2
+        my = round(h * 0.44 - mw // 2)
+        banner.alpha_composite(m_img, (mx, my))
+        return banner
+
+    wizard_sizes = [(202, 386), (336, 643), (430, 824)]
+    for w, h in wizard_sizes:
+        make_wizard_banner(w, h).convert("RGB").save(installer_art / f"wizard-{w}x{h}.png", optimize=True)
+
+    # NSIS bitmaps (24-bit BMP)
+    make_wizard_banner(164, 314).convert("RGB").save(installer_art / "nsis-welcome.bmp")
+    nsis_hdr = Image.new("RGBA", (150, 57), (255, 255, 255, 255))
+    logo48 = draw_logo_raster(48)
+    nsis_hdr.alpha_composite(logo48, (150 - 48 - 6, (57 - 48) // 2))
+    nsis_hdr.convert("RGB").save(installer_art / "nsis-header.bmp")
+
+    # Inno Setup BMPs (compatible with all versions of Inno Setup)
+    make_wizard_banner(164, 314).convert("RGB").save(installer_art / "wizard.bmp")
+    small_hdr = Image.new("RGBA", (55, 55), (255, 255, 255, 255))
+    small_hdr.alpha_composite(logo48, ((55 - 48) // 2, (55 - 48) // 2))
+    small_hdr.convert("RGB").save(installer_art / "wizard-small.bmp")
+    print("✓ Wrote installer artwork in installer/art/")
 
 if __name__ == "__main__":
     main()

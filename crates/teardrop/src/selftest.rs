@@ -156,6 +156,8 @@ fn shots() -> Vec<Shot> {
         Shot { setup: |_, _, ui, _| ui.input = Some("Draft the launch notes".into()), ..shot("24-page-tasks-typing", 1.0, Page::Tasks) },
         shot("25-page-clipboard", 1.0, Page::Clipboard),
         shot("26-page-today", 1.0, Page::Today),
+        Shot { setup: |_, _, ui, _| { ui.drag_files = 2; ui.drop_amt = 1.0; ui.clock_s = 0.3; }, ..shot("23b-shelf-drag-over", 1.0, Page::Shelf) },
+        shot("26b-page-speed", 1.0, Page::Speed),
         shot("27-page-settings", 1.0, Page::Settings),
         Shot { hover: Some(Action::MediaPlayPause), ..shot("30-hover-play", 1.0, Page::Music) },
         Shot { hover: Some(Action::Tab(Page::Tasks)), ..shot("31-hover-tab", 1.0, Page::Water) },
@@ -354,7 +356,7 @@ pub fn run(dir: &str) -> i32 {
     if vm.pomo.remaining_ms(now) == 0 {
         failures.push("focus start failed".into());
     }
-    if Page::Music.step(1) != Page::Focus || Page::Today.step(1) != Page::Music || Page::Settings.step(1) != Page::Music {
+    if Page::Music.step(1) != Page::Focus || Page::Speed.step(1) != Page::Music || Page::Settings.step(1) != Page::Music {
         failures.push("page stepping wrong".into());
     }
     interactions.push(json!({"action": "tasks/focus/page-step", "open": vm.tasks.open_count()}));
@@ -411,6 +413,7 @@ pub fn run(dir: &str) -> i32 {
         position_ms: 90_000,
         duration_ms: 60_000,
         playing: true,
+        rate: 1.0,
     };
     let track = super::media_smtc::snapshot_to_track(&snap);
     if track.position_ms != 60_000 || track.playback != teardrop_core::Playback::Playing {

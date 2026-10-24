@@ -38,7 +38,8 @@ mod inner {
     use windows::Win32::System::Diagnostics::Debug::Beep;
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
-    use windows::Win32::System::Ole::OleInitialize;
+    use crate::drop_target::{DropEvent, DropTarget};
+    use windows::Win32::System::Ole::{OleInitialize, RegisterDragDrop};
     use windows::Win32::System::RemoteDesktop::{WTSRegisterSessionNotification, WTSUnRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION};
     use windows::Win32::System::SystemServices::MK_LBUTTON;
     use windows::Win32::UI::HiDpi::{GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
@@ -48,7 +49,7 @@ mod inner {
         VK_MEDIA_PREV_TRACK,
     };
     use windows::Win32::UI::Shell::{
-        DragAcceptFiles, DragFinish, DragQueryFileW, ShellExecuteW, Shell_NotifyIconW, HDROP, NIF_ICON, NIF_MESSAGE, NIF_TIP,
+        ShellExecuteW, Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP,
         NIM_ADD, NIM_DELETE, NOTIFYICONDATAW,
     };
     use windows::Win32::UI::WindowsAndMessaging::*;
@@ -98,6 +99,8 @@ mod inner {
         static PINNED: Cell<bool> = Cell::new(false);
         static MENU_OPEN: Cell<bool> = Cell::new(false);
         static HIDDEN: Cell<bool> = Cell::new(false);
+        static UPDATE_REV: Cell<u32> = Cell::new(u32::MAX);
+        static DRAG_OPENED: Cell<bool> = Cell::new(false);
         static HOVER_PENDING: Cell<bool> = Cell::new(false);
         static LAST_MOUSE: Cell<(f32, f32)> = Cell::new((-1.0, -1.0));
         static PRESS_AT: Cell<Option<(f32, f32)>> = Cell::new(None);
@@ -187,7 +190,7 @@ mod inner {
         };
         UI.with(|u| u.borrow_mut().mouse = mouse);
         // Cheap per-frame signals for the eyes (the meter only while it dances).
-        let peak = if eyes_on() && VIEW.with(|v| v.borrow().music_active()) { volume::peak() } else { None };
+        let peak = if VIEW.with(|v| v.borrow().music_active()) { volume::peak() } else { None };
         VIEW.with(|v| {
             let mut vm = v.borrow_mut();
             vm.env.idle_ms = env::idle_ms();
@@ -289,6 +292,15 @@ mod inner {
         });
         ACC.set(acc.min(H));
         let open = open_amount();
+        sync_position();
+        sync_update();
+        let speed = crate::speedtest::snapshot();
+        VIEW.with(|v| {
+            let mut vm = v.borrow_mut();
+            if vm.speed != speed {
+                vm.speed = speed;
+            }
+        });
         let (ui_moving, ambient) = UI.with(|u| {
             VIEW.with(|v| {
                 SETTINGS.with(|s| {
@@ -380,7 +392,7 @@ mod inner {
         unsafe {
             let fg = GetForegroundWindow();
             let hide = (|| {
-                if fg.0.is_null() || fg == hwnd {
+                if fg.0.is_null() || fg == hwnd || is_shell_window(fg) {
                     return false;
                 }
                 let mut fr = RECT::default();
@@ -418,9 +430,25 @@ mod inner {
                 }
             } else if HIDE_AT.take().is_some() || HIDDEN.get() {
                 HIDDEN.set(false);
+                // Paint a fresh frame first so the stale one never flashes up.
+                render(hwnd);
                 let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
             }
             hide
+        }
+    }
+
+    /// The desktop and taskbar cover the monitor too, but they are not a
+    /// fullscreen app: focusing them must never hide the island.
+    fn is_shell_window(w: HWND) -> bool {
+        unsafe {
+            if w == GetShellWindow() || w == GetDesktopWindow() {
+                return true;
+            }
+            let mut buf = [0u16; 64];
+            let n = GetClassNameW(w, &mut buf);
+            let class = String::from_utf16_lossy(&buf[..n.max(0) as usize]);
+            matches!(class.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd")
         }
     }
 
@@ -629,6 +657,26 @@ mod inner {
             }
             Action::HudWater => add_water(250),
             Action::Tab(p) => VIEW.with(|v| v.borrow_mut().page = p),
+            Action::CalStep(d) => {
+                UI.with(|u| u.borrow_mut().cal_offset += d as i32);
+                save = false;
+            }
+            Action::UpdateCheck => {
+                crate::update::check();
+                save = false;
+            }
+            Action::UpdateInstall => {
+                crate::update::install();
+                save = false;
+            }
+            Action::SpeedTest => {
+                crate::speedtest::start();
+                save = false;
+            }
+            Action::CalToday => {
+                UI.with(|u| u.borrow_mut().cal_offset = 0);
+                save = false;
+            }
             Action::Gear => VIEW.with(|v| {
                 let mut vm = v.borrow_mut();
                 if vm.page == Page::Settings {
@@ -784,7 +832,31 @@ mod inner {
 
     // ----------------------------------------------------------------- tray
 
+    fn load_app_icon() -> Option<HICON> {
+        unsafe {
+            let inst = GetModuleHandleW(None).ok()?;
+            let hinst: windows::Win32::Foundation::HINSTANCE = inst.into();
+            let res = LoadImageW(
+                hinst,
+                windows::core::PCWSTR(1 as *const u16),
+                IMAGE_ICON,
+                GetSystemMetrics(SM_CXSMICON),
+                GetSystemMetrics(SM_CYSMICON),
+                IMAGE_FLAGS(0),
+            );
+            if let Ok(handle) = res {
+                if !handle.is_invalid() {
+                    return Some(HICON(handle.0));
+                }
+            }
+            LoadIconW(hinst, windows::core::PCWSTR(1 as *const u16)).ok()
+        }
+    }
+
     fn make_tray_icon() -> Option<HICON> {
+        if let Some(icon) = load_app_icon() {
+            return Some(icon);
+        }
         let mut s = Scene::new();
         s.circle(16.0, 16.0, 15.0, Fill::DGrad(Color::rgb(61, 200, 245), Color::rgb(60, 90, 220)));
         icons::draw(&mut s, icons::Icon::Drop, 16.0, 16.0, 20.0, Color::rgb(255, 255, 255));
@@ -812,7 +884,7 @@ mod inner {
 
     fn add_tray(hwnd: HWND) {
         unsafe {
-            let hicon = make_tray_icon().or_else(|| LoadIconW(None, IDI_APPLICATION).ok());
+            let hicon = load_app_icon().or_else(make_tray_icon).or_else(|| LoadIconW(None, IDI_APPLICATION).ok());
             let Some(hicon) = hicon else { return };
             let mut nid = NOTIFYICONDATAW { cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32, hWnd: hwnd, uID: 1, ..Default::default() };
             nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
@@ -880,9 +952,6 @@ mod inner {
         let lyrics_on = SETTINGS.with(|s| s.borrow().lyrics_enabled);
         VIEW.with(|v| {
             let mut vm = v.borrow_mut();
-            if vm.track.playback == Playback::Playing && vm.track.duration_ms > 0 {
-                vm.track.position_ms = (vm.track.position_ms + 1000).min(vm.track.duration_ms);
-            }
             if !lyrics_on || vm.track.title.trim().is_empty() {
                 vm.lyric_idx = None;
                 return;
@@ -912,8 +981,9 @@ mod inner {
                 // One background attempt once the track proves stable; never blocks the UI.
                 if n == 2 && !FETCHING.swap(true, Ordering::SeqCst) {
                     let (artist, title, album) = (vm.track.artist.clone(), vm.track.title.clone(), vm.track.album.clone());
+                    let duration_ms = vm.track.duration_ms;
                     std::thread::spawn(move || {
-                        let lines = lyrics_service::get_lyrics(&cache_dir, &artist, &title, &album);
+                        let lines = lyrics_service::get_lyrics(&cache_dir, &artist, &title, &album, duration_ms);
                         if let Ok(mut slot) = LYRICS_RESULT.lock() {
                             *slot = Some((key, lines));
                         }
@@ -923,6 +993,46 @@ mod inner {
             }
             vm.lyric_idx = line_at(&vm.lyric_lines, vm.track.position_ms);
         });
+    }
+
+    /// Per-frame playback clock: the 2 s snapshots are extrapolated every
+    /// frame so the seek bar and synced lyrics move smoothly instead of
+    /// stepping once a second.
+    fn sync_position() {
+        if SEEK_AT.get().is_some() {
+            return;
+        }
+        let Some(pos) = media_smtc::position_now() else { return };
+        VIEW.with(|v| {
+            let mut vm = v.borrow_mut();
+            if vm.track.playback != Playback::Playing || vm.track.title.trim().is_empty() {
+                return;
+            }
+            vm.track.position_ms = pos.min(vm.track.duration_ms.max(pos));
+            if !vm.lyric_lines.is_empty() {
+                vm.lyric_idx = line_at(&vm.lyric_lines, pos);
+            }
+        });
+    }
+
+    /// Copy the updater's state into the view model when it changes and
+    /// announce a newly found release once.
+    fn sync_update() {
+        let rev = crate::update::revision();
+        if UPDATE_REV.replace(rev) == rev {
+            return;
+        }
+        let snap = crate::update::snapshot();
+        let announce = VIEW.with(|v| {
+            let mut vm = v.borrow_mut();
+            let was = vm.update.phase;
+            let now = snap.phase;
+            vm.update = snap.clone();
+            now == crate::update::UpdatePhase::Available && was != now
+        });
+        if announce {
+            toast(&format!("Update {} available \u{2014} open Settings", snap.version));
+        }
     }
 
     fn poll_smtc() {
@@ -1034,9 +1144,11 @@ mod inner {
             poll_env(n);
         }
         poll_volume();
-        if n % 5 == 0 {
-            poll_smtc();
+        if n == 25 || n % 21_600 == 25 {
+            crate::update::check();
         }
+        // Cheap: reads the published slot, which extrapolates the position.
+        poll_smtc();
         lyrics_tick();
         if n % 30 == 0 {
             save_all();
@@ -1157,6 +1269,11 @@ mod inner {
                 }
             });
             save_all();
+            wake(hwnd);
+            return;
+        }
+        if page == Page::Today && in_content && LAST_MOUSE.get().0 < 20.0 + 20.0 + 214.0 + 20.0 {
+            UI.with(|u| u.borrow_mut().cal_offset += dir as i32);
             wake(hwnd);
             return;
         }
@@ -1294,23 +1411,34 @@ mod inner {
         handled
     }
 
-    fn on_drop(hwnd: HWND, wp: WPARAM) {
-        let mut list: Vec<String> = Vec::new();
-        unsafe {
-            let hdrop = HDROP(wp.0 as _);
-            let count = DragQueryFileW(hdrop, 0xFFFF_FFFF, None);
-            for i in 0..count.min(24) {
-                let mut buf = [0u16; 520];
-                let len = DragQueryFileW(hdrop, i, Some(&mut buf));
-                if len > 0 {
-                    list.push(String::from_utf16_lossy(&buf[..len as usize]));
+    /// A file drag entered, left or landed on the island (OLE drop target).
+    fn drop_event(hwnd: HWND, ev: DropEvent) {
+        match ev {
+            DropEvent::Enter(n) => {
+                DRAG_OPENED.set(!is_open());
+                VIEW.with(|v| v.borrow_mut().page = Page::Shelf);
+                UI.with(|u| u.borrow_mut().drag_files = n);
+                open_island(hwnd, false);
+            }
+            DropEvent::Leave => {
+                UI.with(|u| u.borrow_mut().drag_files = 0);
+                if DRAG_OPENED.replace(false) && !PINNED.get() {
+                    close_island(hwnd);
                 }
             }
-            DragFinish(hdrop);
+            DropEvent::Drop(list) => {
+                DRAG_OPENED.set(false);
+                UI.with(|u| u.borrow_mut().drag_files = 0);
+                if !list.is_empty() {
+                    UI.with(|u| u.borrow_mut().absorb_t = 1.0);
+                    on_drop_paths(hwnd, list);
+                }
+            }
         }
-        if list.is_empty() {
-            return;
-        }
+        wake(hwnd);
+    }
+
+    fn on_drop_paths(hwnd: HWND, list: Vec<String>) {
         let now = Utc::now();
         VIEW.with(|v| {
             let mut vm = v.borrow_mut();
@@ -1336,7 +1464,7 @@ mod inner {
                 if dpi >= 96 {
                     SCALE.set(dpi as f32 / 96.0);
                 }
-                let _ = DragAcceptFiles(hwnd, true);
+                let _ = RegisterDragDrop(hwnd, &DropTarget::new(hwnd, drop_event));
                 let _ = AddClipboardFormatListener(hwnd);
                 let _ = SetTimer(hwnd, T_SLOW, 1000, None);
                 let _ = RegisterHotKey(hwnd, HOTKEY_ID, MOD_WIN | MOD_SHIFT, HOTKEY_VK);
@@ -1441,15 +1569,15 @@ mod inner {
                 }
                 DefWindowProcW(hwnd, msg, wp, lp)
             }
-            WM_DROPFILES => {
-                on_drop(hwnd, wp);
-                LRESULT(0)
-            }
             WM_CLIPBOARDUPDATE => {
-                if IsClipboardFormatAvailable(CF_DIB_U32).is_ok() || IsClipboardFormatAvailable(CF_BITMAP_U32).is_ok() {
+                let text = IsClipboardFormatAvailable(CF_UNICODETEXT_U32).is_ok();
+                let image = IsClipboardFormatAvailable(CF_DIB_U32).is_ok() || IsClipboardFormatAvailable(CF_BITMAP_U32).is_ok();
+                // Office/browsers add a bitmap to plain text copies; only an
+                // image-only clipboard (a screenshot) gets the camera flash.
+                if image && !text {
                     with_eyes(|e| e.react(React::Flash));
                     wake(hwnd);
-                } else if IsClipboardFormatAvailable(CF_UNICODETEXT_U32).is_ok() {
+                } else if text {
                     with_eyes(|e| e.react(React::GotIt));
                     wake(hwnd);
                 }
@@ -1584,12 +1712,16 @@ mod inner {
                 LRESULT(0)
             }
             _ if msg != 0 && msg == SHELL_MSG.get() => {
-                match wp.0 as u32 {
-                    HSHELL_FLASH => with_eyes(|e| e.react(React::Perk)),
-                    HSHELL_WINDOWCREATED if env::is_crash_window(HWND(lp.0 as _)) => with_eyes(|e| e.react(React::Shocked)),
-                    _ => {}
+                // Shell hook traffic is constant (every title change); only wake for ours.
+                let r = match wp.0 as u32 {
+                    HSHELL_FLASH => Some(React::Perk),
+                    HSHELL_WINDOWCREATED if env::is_crash_window(HWND(lp.0 as _)) => Some(React::Shocked),
+                    _ => None,
+                };
+                if let Some(r) = r {
+                    with_eyes(|e| e.react(r));
+                    wake(hwnd);
                 }
-                wake(hwnd);
                 LRESULT(0)
             }
             _ => DefWindowProcW(hwnd, msg, wp, lp),
@@ -1609,6 +1741,7 @@ mod inner {
                 hInstance: inst.into(),
                 lpszClassName: cls,
                 hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
+                hIcon: load_app_icon().unwrap_or_default(),
                 ..Default::default()
             };
             let _ = RegisterClassW(&wc);

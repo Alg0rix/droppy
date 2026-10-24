@@ -19,8 +19,8 @@ jobs:
         run: cargo test --workspace
       - name: Build
         run: cargo build -p teardrop --release
-      - name: Install NSIS
-        run: choco install nsis -y --no-progress
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
       - name: Package
         shell: pwsh
         run: |
@@ -28,8 +28,8 @@ jobs:
           $ver = $tag.TrimStart('v')
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/teardrop.exe dist/teardrop.exe
-          & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" "/DVERSION=$ver" tools/installer.nsi
-          if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$ver" installer/teardrop.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
           Compress-Archive -Path dist/teardrop.exe, README.md, LICENSE -DestinationPath "dist/teardrop-$tag-portable.zip" -Force
           Copy-Item dist/teardrop.exe "dist/teardrop-$tag.exe"
           Get-FileHash "dist/teardrop-setup-$ver.exe", "dist/teardrop-$tag.exe", "dist/teardrop-$tag-portable.zip" -Algorithm SHA256 |

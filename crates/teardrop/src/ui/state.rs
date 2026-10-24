@@ -117,6 +117,16 @@ pub enum Action {
     /// Set the birthday to today, or clear it (wheel nudges the day).
     Birthday,
     GoalStep(i8),
+    /// Step the Today calendar by whole months.
+    CalStep(i8),
+    /// Jump the Today calendar back to the current month.
+    CalToday,
+    /// Run the internet speed test.
+    SpeedTest,
+    /// Look for a newer release on GitHub.
+    UpdateCheck,
+    /// Download, verify and run the new installer.
+    UpdateInstall,
     Quit,
 }
 
@@ -150,7 +160,7 @@ pub struct UiState {
     pub mouse: Option<(f32, f32)>,
     amt: HashMap<Action, f32>,
     tog: HashMap<SettingKey, f32>,
-    pub tab_amt: [f32; 8],
+    pub tab_amt: [f32; 9],
     pub page: Page,
     pub prev_page: Page,
     pub page_t: f32,
@@ -160,7 +170,9 @@ pub struct UiState {
     pub peek_until_ms: u64,
     pub peek_amt: f32,
     track_key: String,
-    pub scroll: [usize; 8],
+    pub scroll: [usize; 9],
+    /// Months the Today calendar is shifted from the current one.
+    pub cal_offset: i32,
     /// Task text being typed (None = field not focused).
     pub input: Option<String>,
     pub toast: Option<(String, u64)>,
@@ -169,12 +181,21 @@ pub struct UiState {
     /// Island morph amount (0 collapsed .. 1 open), set by the shell each frame.
     pub island_open: f32,
     pub eyes: Eyes,
+    pub viz: super::viz::Visualizer,
+    /// Eased speed-test gauge value (Mbit/s).
+    pub speed_val: f32,
+    /// Files being carried over the island right now (0 = no drag).
+    pub drag_files: u32,
+    /// Eased 0..1 "something is hovering to be dropped".
+    pub drop_amt: f32,
+    /// 1 -> 0 burst right after a drop lands.
+    pub absorb_t: f32,
 }
 
 impl UiState {
     pub fn new(page: Page) -> Self {
-        let mut tab_amt = [0.0; 8];
-        tab_amt[page_index(page).min(7)] = if page == Page::Settings { 0.0 } else { 1.0 };
+        let mut tab_amt = [0.0; 9];
+        tab_amt[page_index(page).min(8)] = if page == Page::Settings { 0.0 } else { 1.0 };
         Self {
             hover: None,
             pressed: None,
@@ -191,13 +212,19 @@ impl UiState {
             peek_until_ms: 0,
             peek_amt: 0.0,
             track_key: String::new(),
-            scroll: [0; 8],
+            scroll: [0; 9],
+            cal_offset: 0,
             input: None,
             toast: None,
             clock_s: 0.0,
             water_level: 0.0,
             island_open: 0.0,
             eyes: Eyes::new(0x7EA2_D20F),
+            viz: Default::default(),
+            speed_val: 0.0,
+            drag_files: 0,
+            drop_amt: 0.0,
+            absorb_t: 0.0,
         }
     }
 
@@ -219,11 +246,11 @@ impl UiState {
     }
 
     pub fn scroll_of(&self, p: Page) -> usize {
-        self.scroll[page_index(p).min(7)]
+        self.scroll[page_index(p).min(8)]
     }
 
     pub fn scroll_by(&mut self, p: Page, delta: i32, max: usize) {
-        let s = &mut self.scroll[page_index(p).min(7)];
+        let s = &mut self.scroll[page_index(p).min(8)];
         *s = (*s as i32 + delta).clamp(0, max as i32) as usize;
     }
 
@@ -255,7 +282,11 @@ impl UiState {
             return (176.0, 36.0);
         }
         if vm.music_active() {
-            return (if now_ms < self.peek_until_ms { 340.0 } else { 232.0 }, 36.0);
+            // art + title + visualizer; wide enough for the whole title up to a cap.
+            let line = format!("{} \u{2014} {}", vm.track.title, vm.track.display_artist());
+            let tail = if s.idle_look == IdleLook::Eyes { 44.0 + 42.0 } else { 44.0 };
+            let w = 46.0 + super::layout::est_w(&line, 12.0) * 1.15 + 12.0 + tail;
+            return (w.clamp(232.0, 390.0), 36.0);
         }
         match s.idle_look {
             IdleLook::Clock => (116.0, 34.0),
@@ -272,6 +303,7 @@ impl UiState {
                 Page::Water => true,
                 Page::Music => vm.track.playback == teardrop_core::Playback::Playing,
                 Page::Tasks => self.input.is_some(),
+                Page::Speed => vm.speed.phase.running(),
                 _ => false,
             } || self.toast.is_some();
         }
@@ -351,7 +383,7 @@ impl UiState {
 
         // Tab pill.
         let want = page_index(vm.page);
-        for i in 0..8 {
+        for i in 0..9 {
             let target = if i == want && vm.page != Page::Settings { 1.0 } else { 0.0 };
             moving |= approach(&mut self.tab_amt[i], target, 16.0, dt);
         }
@@ -391,6 +423,28 @@ impl UiState {
         // Water level eases to the logged amount.
         let level = vm.water.progress(vm.day());
         moving |= approach(&mut self.water_level, level, 5.0, dt);
+
+        moving |= approach(&mut self.drop_amt, if self.drag_files > 0 { 1.0 } else { 0.0 }, 12.0, dt);
+        if self.drag_files > 0 {
+            moving = true;
+        }
+        if self.absorb_t > 0.0 {
+            self.absorb_t = (self.absorb_t - dt / 0.8).max(0.0);
+            moving = true;
+        }
+
+        let sp = &vm.speed;
+        let target = match sp.phase {
+            crate::viewmodel::SpeedPhase::Up => sp.up,
+            _ => sp.down,
+        };
+        moving |= approach(&mut self.speed_val, target, 6.0, dt);
+
+        let playing = vm.track.playback == teardrop_core::Playback::Playing;
+        self.viz.tick(dt, vm.env.audio_peak, playing);
+        if self.viz.active() {
+            moving = true;
+        }
 
         self.tick_eyes(dt, vm, s, now_ms);
 

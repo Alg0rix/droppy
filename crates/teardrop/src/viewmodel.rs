@@ -22,7 +22,39 @@ pub struct ViewModel {
     pub hud: Option<Hud>,
     pub idle_look: IdleLook,
     pub env: Ambient,
+    pub speed: SpeedView,
+    pub update: crate::update::UpdateView,
     pub now: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SpeedPhase {
+    #[default]
+    Idle,
+    Ping,
+    Down,
+    Up,
+    Done,
+    Failed,
+}
+
+impl SpeedPhase {
+    pub fn running(self) -> bool {
+        matches!(self, SpeedPhase::Ping | SpeedPhase::Down | SpeedPhase::Up)
+    }
+}
+
+/// Internet speed test progress/result (Mbit/s, ms).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct SpeedView {
+    pub phase: SpeedPhase,
+    pub ping_ms: Option<f32>,
+    pub down: f32,
+    pub up: f32,
+}
+
+impl SpeedView {
+    pub const IDLE: SpeedView = SpeedView { phase: SpeedPhase::Idle, ping_ms: None, down: 0.0, up: 0.0 };
 }
 
 /// Coarse local weather (opt-in fetch).
@@ -112,6 +144,8 @@ impl ViewModel {
             hud: None,
             idle_look: IdleLook::Clock,
             env: Ambient::default(),
+            speed: SpeedView::IDLE,
+            update: Default::default(),
             now,
         }
     }
@@ -132,6 +166,8 @@ impl ViewModel {
             hud: None,
             idle_look: IdleLook::Clock,
             env: Ambient::default(),
+            speed: SpeedView::IDLE,
+            update: Default::default(),
             now,
         }
     }

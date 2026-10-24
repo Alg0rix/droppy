@@ -19,6 +19,29 @@ pub struct SmtcSnapshot {
     pub position_ms: u64,
     pub duration_ms: u64,
     pub playing: bool,
+    /// Playback speed (1.0 = normal) used to extrapolate the position.
+    pub rate: f32,
+}
+
+/// Position `age_ms` after a snapshot was taken: players only report the
+/// timeline when something changes, so a playing track keeps advancing.
+pub fn extrapolate_ms(position_ms: u64, duration_ms: u64, playing: bool, rate: f32, age_ms: u64) -> u64 {
+    if !playing {
+        return position_ms;
+    }
+    let advanced = position_ms + (age_ms as f64 * rate.clamp(0.0, 4.0) as f64) as u64;
+    if duration_ms > 0 { advanced.min(duration_ms) } else { advanced }
+}
+
+/// Current extrapolated position of the published snapshot, without cloning it.
+#[cfg(windows)]
+pub fn position_now() -> Option<u64> {
+    worker::position_now()
+}
+
+#[cfg(not(windows))]
+pub fn position_now() -> Option<u64> {
+    None
 }
 
 /// WinRT playback-status code (GlobalSystemMediaTransportControlsSessionPlaybackStatus.0).
@@ -79,7 +102,7 @@ mod worker {
     use std::sync::{Mutex, Once, OnceLock};
     use std::time::{Duration, Instant};
 
-    const POLL_EVERY: Duration = Duration::from_secs(5);
+    const POLL_EVERY: Duration = Duration::from_secs(2);
 
     static SLOT: Mutex<Option<(SmtcSnapshot, Instant)>> = Mutex::new(None);
     static ONCE: Once = Once::new();
@@ -96,13 +119,23 @@ mod worker {
         SLOT.lock()
             .ok()
             .and_then(|slot| slot.clone())
-            .and_then(|(s, at)| {
-                if at.elapsed() <= max_age {
-                    Some(s)
-                } else {
-                    None
+            .and_then(|(mut s, at)| {
+                let age = at.elapsed();
+                if age > max_age {
+                    return None;
                 }
+                s.position_ms = super::extrapolate_ms(s.position_ms, s.duration_ms, s.playing, s.rate, age.as_millis() as u64);
+                Some(s)
             })
+    }
+
+    pub fn position_now() -> Option<u64> {
+        let slot = SLOT.lock().ok()?;
+        let (s, at) = slot.as_ref()?;
+        if at.elapsed() > Duration::from_secs(15) || s.duration_ms == 0 {
+            return None;
+        }
+        Some(super::extrapolate_ms(s.position_ms, s.duration_ms, s.playing, s.rate, at.elapsed().as_millis() as u64))
     }
 
     /// Queue a seek at `target_ms`. Returns immediately; the media worker
@@ -180,6 +213,17 @@ mod worker {
         }
     }
 
+    /// Milliseconds between a WinRT DateTime (100 ns ticks since 1601) and now,
+    /// 0 when it is unset or in the future, capped at 12 h.
+    fn ticks_since_ms(ticks: i64) -> u64 {
+        const UNIX_EPOCH_TICKS: i64 = 116_444_736_000_000_000;
+        if ticks <= 0 {
+            return 0;
+        }
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| (d.as_nanos() / 100) as i64).unwrap_or(0) + UNIX_EPOCH_TICKS;
+        ((now - ticks).max(0) / 10_000).min(12 * 3600 * 1000) as u64
+    }
+
     fn hstr(h: &windows::core::HSTRING) -> String {
         h.to_string_lossy().trim().to_string()
     }
@@ -195,27 +239,33 @@ mod worker {
         let title = props.Title().ok().map(|h| hstr(&h)).unwrap_or_default();
         let artist = props.Artist().ok().map(|h| hstr(&h)).unwrap_or_default();
         let album = props.AlbumTitle().ok().map(|h| hstr(&h)).unwrap_or_default();
+        let info = session.GetPlaybackInfo().ok();
+        let playing = info.as_ref().and_then(|i| i.PlaybackStatus().ok()).map(|st| st.0 == 4).unwrap_or(false);
+        let rate = info
+            .as_ref()
+            .and_then(|i| i.PlaybackRate().ok())
+            .and_then(|r| r.Value().ok())
+            .map(|r| r as f32)
+            .filter(|r| *r > 0.0)
+            .unwrap_or(1.0);
         let (position_ms, duration_ms) = session
             .GetTimelineProperties()
             .ok()
             .map(|t| {
                 let pos = t.Position().ok().map(|s| (s.Duration / 10_000).max(0) as u64).unwrap_or(0);
                 let end = t.EndTime().ok().map(|s| (s.Duration / 10_000).max(0) as u64).unwrap_or(0);
-                (pos, end)
+                // `Position` is the value at `LastUpdatedTime`, which for
+                // browsers (YouTube) can be long ago.
+                let since = t.LastUpdatedTime().ok().map(|d| ticks_since_ms(d.UniversalTime)).unwrap_or(0);
+                (super::extrapolate_ms(pos, end, playing, rate, since), end)
             })
             .unwrap_or((0, 0));
-        let playing = session
-            .GetPlaybackInfo()
-            .ok()
-            .and_then(|i| i.PlaybackStatus().ok())
-            .map(|st| st.0 == 4)
-            .unwrap_or(false);
         let app = session
             .SourceAppUserModelId()
             .ok()
             .map(|h| super::friendly_app(&hstr(&h)).to_string())
             .unwrap_or_else(|| "Music".to_string());
-        Some(SmtcSnapshot { title, artist, album, app, position_ms, duration_ms, playing })
+        Some(SmtcSnapshot { title, artist, album, app, position_ms, duration_ms, playing, rate })
     }
 }
 
@@ -256,11 +306,20 @@ mod tests {
             position_ms: 90_000,
             duration_ms: 60_000,
             playing: true,
+            rate: 1.0,
         };
         let t = snapshot_to_track(&s);
         assert_eq!(t.position_ms, 60_000);
         assert_eq!(t.playback, Playback::Playing);
         assert!((t.progress() - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn position_keeps_advancing_while_playing() {
+        assert_eq!(extrapolate_ms(10_000, 200_000, true, 1.0, 3_000), 13_000);
+        assert_eq!(extrapolate_ms(10_000, 200_000, true, 2.0, 3_000), 16_000);
+        assert_eq!(extrapolate_ms(10_000, 200_000, false, 1.0, 3_000), 10_000);
+        assert_eq!(extrapolate_ms(199_000, 200_000, true, 1.0, 9_000), 200_000, "clamps to the track end");
     }
 
     #[test]

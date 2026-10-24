@@ -5,7 +5,7 @@ use super::layout::{est_w, Ctx};
 use super::scene::{Align, Color, Fill, Rect, Weight};
 use super::state::{Action, SettingKey};
 use super::theme::*;
-use crate::viewmodel::{local_naive, mmss, one_line};
+use crate::viewmodel::{local_naive, mmss, one_line, SpeedPhase};
 use chrono::{Datelike, NaiveDate};
 use teardrop_core::{EyeStyle, IdleLook, Page, Phase, Playback};
 
@@ -18,6 +18,7 @@ pub fn draw(c: &mut Ctx, page: Page, a: Rect) {
         Page::Tasks => tasks(c, a),
         Page::Clipboard => clipboard(c, a),
         Page::Today => today(c, a),
+        Page::Speed => speed(c, a),
         Page::Settings => settings(c, a),
     }
 }
@@ -60,7 +61,15 @@ fn music(c: &mut Ctx, a: Rect) {
         let (c1, c2) = art_colors(&t.title);
         c.s.rect(art, 22.0, Fill::DGrad(c1, c2));
         c.s.rect(Rect::new(art.x, art.y, art.w, art.h * 0.55), 22.0, Fill::VGrad(Color::rgba(255, 255, 255, 0.22), Color::rgba(255, 255, 255, 0.0)));
-        icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy(), 46.0, WHITE.fade(0.92));
+        icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy() - 8.0, 40.0, WHITE.fade(0.92));
+        // Visualizer along the bottom of the tile.
+        let n = 14;
+        let (bw, gap) = (4.5, 3.0);
+        let x0 = art.cx() - (n as f32 * bw + (n - 1) as f32 * gap) / 2.0;
+        for (i, b) in c.ui.viz.sample(n).iter().enumerate() {
+            let h = 3.0 + b * 30.0;
+            c.s.rect(Rect::new(x0 + i as f32 * (bw + gap), art.bottom() - 12.0 - h, bw, h), 2.2, WHITE.fade(0.85));
+        }
     } else {
         c.s.rect(art, 22.0, SURFACE);
         icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy(), 40.0, TEXT_3);
@@ -307,6 +316,43 @@ pub fn shelf_max_scroll(n: usize) -> usize {
 }
 
 fn shelf(c: &mut Ctx, a: Rect) {
+    shelf_list(c, a);
+    drop_overlay(c, a);
+}
+
+/// While a file is carried over the island the shelf is swallowed by inward
+/// ripples and a bobbing tray; right after the drop a ring bursts outward.
+fn drop_overlay(c: &mut Ctx, a: Rect) {
+    let acc = accent(Page::Shelf);
+    let (amt, u) = (c.ui.drop_amt, c.ui.absorb_t);
+    let (cx, cy) = (a.cx(), a.cy());
+    if amt > 0.01 {
+        let t = c.ui.clock_s;
+        c.s.rect(a.inset(-6.0), 20.0, Color::rgba(14, 14, 18, 0.88 * amt));
+        c.s.rect(a.inset(-6.0), 20.0, acc.fade(0.10 * amt));
+        for k in 0..3 {
+            let ph = (t * 0.8 + k as f32 / 3.0).fract();
+            let r = Rect::new(a.x, a.y, a.w, a.h).inset(ph * 52.0);
+            c.s.stroke(r, (18.0 - ph * 10.0).max(6.0), 2.0, acc.fade((1.0 - ph) * 0.55 * amt));
+        }
+        let bob = (t * 4.2).sin() * 5.0;
+        let pulse = 1.0 + 0.06 * (t * 4.2).sin();
+        c.s.circle(cx, cy - 14.0, 40.0 * pulse * amt.max(0.2), acc.fade(0.16 * amt));
+        icons::draw(&mut c.s, Icon::Tray, cx, cy - 14.0 + bob, 38.0, acc.fade(amt));
+        let n = c.ui.drag_files.max(1);
+        let msg = if n == 1 { "Release to add to the shelf".to_string() } else { format!("Release to add {n} files") };
+        c.text(msg, Rect::new(a.x, cy + 34.0, a.w, 20.0), 14.0, Weight::Semibold, TEXT.fade(amt), Align::Center);
+    }
+    if u > 0.0 {
+        let p = 1.0 - u;
+        let ease = 1.0 - (1.0 - p).powi(3);
+        c.s.ring(cx, cy, 24.0 + ease * 150.0, 5.0 * u + 1.0, 0.0, 1.0, acc.fade(u * 0.8));
+        c.s.circle(cx, cy, 30.0, acc.fade(u));
+        icons::draw(&mut c.s, Icon::Check, cx, cy, 30.0 * (0.7 + 0.3 * ease), ON_ACCENT.fade(u));
+    }
+}
+
+fn shelf_list(c: &mut Ctx, a: Rect) {
     let acc = accent(Page::Shelf);
     let vm = c.vm;
     let n = vm.shelf.items.len();
@@ -529,20 +575,30 @@ fn today(c: &mut Ctx, a: Rect) {
     let now = local_naive(vm.now);
     let date = now.date();
 
-    // Month grid (Monday first).
+    // Month grid (Monday first), shifted by the browsing offset.
+    let off_m = c.ui.cal_offset;
+    let idx = date.year() * 12 + date.month0() as i32 + off_m;
+    let (shown_y, shown_m) = (idx.div_euclid(12), idx.rem_euclid(12) as u32 + 1);
     let cal = Rect::new(a.x, a.y, 214.0, a.h);
-    c.text(date.format("%B %Y").to_string(), Rect::new(cal.x, cal.y, cal.w, 24.0), 14.0, Weight::Semibold, TEXT, Align::Left);
+    let title = NaiveDate::from_ymd_opt(shown_y, shown_m, 1).unwrap().format("%B %Y").to_string();
+    let title_r = Rect::new(cal.x, cal.y, cal.w - 56.0, 24.0);
+    c.text(title, title_r, 14.0, Weight::Semibold, if off_m == 0 { TEXT } else { acc }, Align::Left);
+    if off_m != 0 {
+        c.hit(title_r, Action::CalToday);
+    }
+    c.icon_btn(Rect::new(cal.right() - 52.0, cal.y + 1.0, 24.0, 22.0), Action::CalStep(-1), Icon::Prev, 10.0, TEXT_2);
+    c.icon_btn(Rect::new(cal.right() - 24.0, cal.y + 1.0, 24.0, 22.0), Action::CalStep(1), Icon::Next, 10.0, TEXT_2);
     let cell_w = cal.w / 7.0;
     for (i, d) in ["M", "T", "W", "T", "F", "S", "S"].iter().enumerate() {
         c.text(*d, Rect::new(cal.x + i as f32 * cell_w, cal.y + 30.0, cell_w, 16.0), 10.5, Weight::Semibold, TEXT_3, Align::Center);
     }
-    let first = NaiveDate::from_ymd_opt(date.year(), date.month(), 1).unwrap();
+    let first = NaiveDate::from_ymd_opt(shown_y, shown_m, 1).unwrap();
     let off = first.weekday().num_days_from_monday() as usize;
-    for d in 1..=days_in_month(date.year(), date.month()) {
+    for d in 1..=days_in_month(shown_y, shown_m) {
         let slot = off + d as usize - 1;
         let (col, row) = (slot % 7, slot / 7);
-        let r = Rect::new(cal.x + col as f32 * cell_w, cal.y + 50.0 + row as f32 * 27.0, cell_w, 26.0);
-        let is_today = d == date.day();
+        let r = Rect::new(cal.x + col as f32 * cell_w, cal.y + 50.0 + row as f32 * 25.0, cell_w, 24.0);
+        let is_today = off_m == 0 && d == date.day();
         if is_today {
             c.s.circle(r.cx(), r.cy(), 12.0, acc);
         }
@@ -574,11 +630,96 @@ fn today(c: &mut Ctx, a: Rect) {
     }
 }
 
+// -------------------------------------------------------------------- speed
+
+/// Gauge ceiling for `v` Mbit/s: the next "nice" step so the arc has headroom.
+pub fn gauge_max(v: f32) -> f32 {
+    [50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0, 10000.0].into_iter().find(|m| v <= *m * 0.92).unwrap_or(10000.0)
+}
+
+fn speed(c: &mut Ctx, a: Rect) {
+    let acc = accent(Page::Speed);
+    let sp = c.vm.speed;
+    let shown = c.ui.speed_val;
+    let busy = sp.phase.running();
+
+    // Gauge.
+    let ring = (a.x + 96.0, a.y + 112.0);
+    let rr = 80.0;
+    c.s.ring(ring.0, ring.1, rr, 10.0, 0.0, 1.0, Color::rgba(255, 255, 255, 0.08));
+    let frac = (shown / gauge_max(sp.down.max(sp.up).max(shown))).clamp(0.0, 1.0);
+    if frac > 0.003 {
+        c.s.ring(ring.0, ring.1, rr, 10.0, 0.0, frac, acc);
+    }
+    let big = if shown >= 100.0 { format!("{shown:.0}") } else { format!("{shown:.1}") };
+    c.text(big, Rect::new(ring.0 - 70.0, ring.1 - 30.0, 140.0, 42.0), 36.0, Weight::Semibold, if sp.phase == SpeedPhase::Idle { TEXT_3 } else { TEXT }, Align::Center);
+    let cap = match sp.phase {
+        SpeedPhase::Idle => "Mbps",
+        SpeedPhase::Ping => "Pinging\u{2026}",
+        SpeedPhase::Down => "Mbps \u{00b7} download",
+        SpeedPhase::Up => "Mbps \u{00b7} upload",
+        SpeedPhase::Done => "Mbps \u{00b7} download",
+        SpeedPhase::Failed => "Offline?",
+    };
+    c.text(cap, Rect::new(ring.0 - 70.0, ring.1 + 14.0, 140.0, 18.0), 12.0, Weight::Medium, if sp.phase == SpeedPhase::Failed { AMBER } else { TEXT_2 }, Align::Center);
+
+    // Results.
+    let x = a.x + 214.0;
+    let w = a.w - 214.0;
+    c.text("Speed test", Rect::new(x, a.y, w, 26.0), 17.0, Weight::Semibold, TEXT, Align::Left);
+    c.text("Ping, download and upload", Rect::new(x, a.y + 26.0, w, 16.0), 11.5, Weight::Regular, TEXT_3, Align::Left);
+    let done = |p: SpeedPhase| matches!(sp.phase, SpeedPhase::Done) || (p == SpeedPhase::Down && sp.phase == SpeedPhase::Up);
+    let mbit = |v: f32| if v >= 100.0 { format!("{v:.0} Mbps") } else { format!("{v:.1} Mbps") };
+    let rows = [
+        ("Ping", sp.ping_ms.map(|p| format!("{p:.0} ms")), sp.ping_ms.is_some()),
+        ("Download", Some(mbit(sp.down)), done(SpeedPhase::Down) || sp.phase == SpeedPhase::Down),
+        ("Upload", Some(mbit(sp.up)), done(SpeedPhase::Up) || sp.phase == SpeedPhase::Up),
+    ];
+    for (i, (label, val, on)) in rows.iter().enumerate() {
+        let y = a.y + 60.0 + i as f32 * 34.0;
+        c.text(*label, Rect::new(x, y, 90.0, 20.0), 13.0, Weight::Regular, TEXT_2, Align::Left);
+        let text = if *on { val.clone().unwrap_or_default() } else { "\u{2014}".to_string() };
+        c.text(text, Rect::new(x + 80.0, y, w - 80.0, 20.0), 15.0, Weight::Semibold, if *on { TEXT } else { TEXT_3 }, Align::Right);
+        c.s.rect(Rect::new(x, y + 27.0, w, 1.0), 0.5, HAIRLINE);
+    }
+
+    let label = match sp.phase {
+        SpeedPhase::Idle => "Start test",
+        SpeedPhase::Done | SpeedPhase::Failed => "Test again",
+        _ => "Testing\u{2026}",
+    };
+    let pr = Rect::new(x, a.bottom() - 40.0, w, 36.0);
+    if busy {
+        c.pill(pr, Action::Island, label, Some(acc.fade(0.4)), 13.0);
+    } else {
+        c.pill(pr, Action::SpeedTest, label, Some(acc), 13.0);
+    }
+}
+
 // ----------------------------------------------------------------- settings
+
+/// "Check for updates" / "Update to vX" button for the GitHub release check.
+fn update_pill(c: &mut Ctx, r: Rect) {
+    use crate::update::UpdatePhase::*;
+    let u = &c.vm.update;
+    let acc = accent(Page::Speed);
+    match u.phase {
+        Idle | Failed => {
+            let label = if u.phase == Failed { "Update failed \u{2014} retry" } else { "Check for updates" };
+            let act = if u.phase == Failed && !u.version.is_empty() { Action::UpdateInstall } else { Action::UpdateCheck };
+            c.pill(r, act, label, None, 11.0);
+        }
+        UpToDate => c.pill(r, Action::UpdateCheck, &format!("Up to date \u{00b7} v{}", crate::update::CURRENT), None, 11.0),
+        Checking => c.pill(r, Action::Island, "Checking\u{2026}", None, 11.0),
+        Available => c.pill(r, Action::UpdateInstall, &format!("Update to v{}", u.version), Some(acc), 11.5),
+        Downloading => c.pill(r, Action::Island, "Downloading\u{2026}", Some(acc.fade(0.45)), 11.0),
+    }
+}
 
 fn settings(c: &mut Ctx, a: Rect) {
     c.text("Settings", Rect::new(a.x, a.y, 160.0, 26.0), 17.0, Weight::Semibold, TEXT, Align::Left);
     c.pill(Rect::new(a.right() - 70.0, a.y + 1.0, 70.0, 24.0), Action::Quit, "Quit", None, 11.5);
+    update_pill(c, Rect::new(a.right() - 70.0 - 8.0 - 150.0, a.y + 1.0, 150.0, 24.0));
 
     let col_w = (a.w - 28.0) / 2.0;
     let left = [SettingKey::OpenOnHover, SettingKey::Lyrics, SettingKey::WaterReminders, SettingKey::ClipboardHistory];
