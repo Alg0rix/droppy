@@ -155,32 +155,192 @@ fn music(c: &mut Ctx, a: Rect) {
     icons::draw(&mut c.s, icon, cx + nudge, cy, 22.0, ON_ACCENT);
     c.hit(Rect::new(cx - 28.0, cy - 28.0, 56.0, 56.0), pa);
 
-    // Right Column: Synced Karaoke Lyrics
+    // Right Column: Synced Karaoke Lyrics (auto-wrapped)
     let lx = a.x + left_w + 36.0;
     let lw = (a.right() - lx).max(0.0);
 
     if !c.set.lyrics_enabled {
         c.text("Lyrics are turned off", Rect::new(lx, a.y + 90.0, lw, 24.0), 13.5, Weight::Regular, TEXT_3, Align::Left);
     } else if let (true, Some(i)) = (has, vm.lyric_idx) {
+        let curr_line = vm.lyric_lines.get(i);
+        let curr_sublines = curr_line
+            .map(|l| wrap_lyrics(&l.text, lw, 17.0, true))
+            .unwrap_or_default();
+        let curr_count = curr_sublines.len().max(1);
+
+        let prev_line = if i > 0 { vm.lyric_lines.get(i - 1) } else { None };
+        let prev_sublines = prev_line
+            .map(|l| wrap_lyrics(&l.text, lw, 13.0, false))
+            .unwrap_or_default();
+        let prev_count = prev_sublines.len().min(2);
+
+        let next_line = vm.lyric_lines.get(i + 1);
+        let next_sublines = next_line
+            .map(|l| wrap_lyrics(&l.text, lw, 13.0, false))
+            .unwrap_or_default();
+
+        let prev_lh = 19.0;
+        let curr_lh = 26.0;
+        let next_lh = 19.0;
+
+        let curr_y = if curr_count >= 3 {
+            a.y + 64.0
+        } else if prev_count >= 2 {
+            a.y + 86.0
+        } else {
+            a.y + 80.0
+        };
+
         // Line 1: Previous line (dimmed)
-        if i > 0 {
-            if let Some(prev) = vm.lyric_lines.get(i - 1) {
-                c.text(prev.text.clone(), Rect::new(lx, a.y + 46.0, lw, 24.0), 13.5, Weight::Regular, TEXT_3, Align::Left);
+        if prev_count > 0 {
+            let prev_start = prev_sublines.len().saturating_sub(prev_count);
+            let prev_total_h = prev_count as f32 * prev_lh;
+            let mut py = curr_y - 12.0 - prev_total_h;
+            for line in &prev_sublines[prev_start..] {
+                c.text(line.clone(), Rect::new(lx, py, lw, prev_lh), 13.0, Weight::Regular, TEXT_3, Align::Left);
+                py += prev_lh;
             }
         }
-        // Line 2: Current active line (karaoke highlighted)
-        if let Some(curr) = vm.lyric_lines.get(i) {
+
+        // Line 2: Current active line (wrapped karaoke highlight)
+        if let Some(_curr) = curr_line {
             let frac = teardrop_core::line_progress(&vm.lyric_lines, i, t.position_ms);
-            c.s.text_karaoke(curr.text.clone(), Rect::new(lx, a.y + 82.0, lw, 36.0), 18.0, Weight::Bold, TEXT_2, WHITE, frac);
-        }
-        // Line 3: Next line (dimmed)
-        if let Some(next) = vm.lyric_lines.get(i + 1) {
-            c.text(next.text.clone(), Rect::new(lx, a.y + 128.0, lw, 24.0), 13.5, Weight::Regular, TEXT_3, Align::Left);
+            let sweeps = karaoke_subline_progress(&curr_sublines, frac);
+            let mut cy = curr_y;
+            for (subline, sub_frac) in sweeps {
+                c.s.text_karaoke(
+                    subline.to_string(),
+                    Rect::new(lx, cy, lw, curr_lh),
+                    17.0,
+                    Weight::Bold,
+                    TEXT_2,
+                    WHITE,
+                    sub_frac,
+                );
+                cy += curr_lh;
+            }
+
+            // Line 3: Next line (dimmed)
+            let mut ny = cy + 14.0;
+            for line in &next_sublines {
+                if ny + next_lh > a.bottom() - 10.0 {
+                    break;
+                }
+                c.text(line.clone(), Rect::new(lx, ny, lw, next_lh), 13.0, Weight::Regular, TEXT_3, Align::Left);
+                ny += next_lh;
+            }
         }
     } else {
         let msg = if has { "No synced lyrics for this track" } else { "Lyrics appear here while music plays" };
         c.text(msg, Rect::new(lx, a.y + 90.0, lw, 24.0), 13.5, Weight::Regular, TEXT_3, Align::Left);
     }
+}
+
+/// Wrap lyric line into visual lines that fit `max_w` pixels.
+/// Supports whitespace-separated words as well as CJK / long unbroken words by splitting at characters when needed.
+pub fn wrap_lyrics(text: &str, max_w: f32, size: f32, bold: bool) -> Vec<String> {
+    let factor = if bold { 1.20 } else { 1.14 };
+    let text = text.trim();
+    if text.is_empty() {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    let mut cur = String::new();
+
+    let push_word = |out: &mut Vec<String>, cur: &mut String, word: &str| {
+        let candidate = if cur.is_empty() {
+            word.to_string()
+        } else {
+            format!("{cur} {word}")
+        };
+
+        if est_w(&candidate, size) * factor <= max_w {
+            *cur = candidate;
+        } else if !cur.is_empty() {
+            out.push(std::mem::take(cur));
+            if est_w(word, size) * factor <= max_w {
+                *cur = word.to_string();
+            } else {
+                let mut sub = String::new();
+                for ch in word.chars() {
+                    let mut next = sub.clone();
+                    next.push(ch);
+                    if est_w(&next, size) * factor > max_w && !sub.is_empty() {
+                        out.push(sub);
+                        sub = ch.to_string();
+                    } else {
+                        sub = next;
+                    }
+                }
+                *cur = sub;
+            }
+        } else {
+            let mut sub = String::new();
+            for ch in word.chars() {
+                let mut next = sub.clone();
+                next.push(ch);
+                if est_w(&next, size) * factor > max_w && !sub.is_empty() {
+                    out.push(sub);
+                    sub = ch.to_string();
+                } else {
+                    sub = next;
+                }
+            }
+            *cur = sub;
+        }
+    };
+
+    for word in text.split_whitespace() {
+        push_word(&mut out, &mut cur, word);
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+
+    if out.is_empty() {
+        out.push(text.to_string());
+    }
+
+    out
+}
+
+/// Compute subline sweep progress fractions (0.0..=1.0) across wrapped lines.
+pub fn karaoke_subline_progress<'a>(lines: &'a [String], frac: f32) -> Vec<(&'a str, f32)> {
+    if lines.is_empty() {
+        return Vec::new();
+    }
+    if lines.len() == 1 {
+        return vec![(&lines[0], frac.clamp(0.0, 1.0))];
+    }
+
+    let weights: Vec<f32> = lines
+        .iter()
+        .map(|l| (l.chars().count() as f32).max(1.0))
+        .collect();
+    let total_weight: f32 = weights.iter().sum();
+
+    let mut result = Vec::with_capacity(lines.len());
+    let mut accum = 0.0;
+    let frac = frac.clamp(0.0, 1.0);
+
+    for (line, &w) in lines.iter().zip(weights.iter()) {
+        let start = accum / total_weight;
+        let end = (accum + w) / total_weight;
+        let line_frac = if frac <= start {
+            0.0
+        } else if frac >= end {
+            1.0
+        } else if end > start {
+            ((frac - start) / (end - start)).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        result.push((line.as_str(), line_frac));
+        accum += w;
+    }
+
+    result
 }
 
 // -------------------------------------------------------------------- focus
@@ -2170,5 +2330,44 @@ mod tests {
 
         assert!(teardrop_core::fuzzy_score("meet", "Team Meeting Notes").is_some());
         assert!(teardrop_core::fuzzy_score("plan", "Team Meeting Notes").is_none());
+    }
+
+    #[test]
+    fn lyrics_wrapping_and_karaoke_progress() {
+        let short = "Hello world";
+        let wrapped_short = wrap_lyrics(short, 300.0, 17.0, true);
+        assert_eq!(wrapped_short, vec!["Hello world"]);
+
+        // Long text wraps cleanly into multiple lines
+        let long = "This is a very long line of lyrics that definitely exceeds the lyrics column width and should wrap nicely";
+        let wrapped_long = wrap_lyrics(long, 200.0, 17.0, true);
+        assert!(wrapped_long.len() >= 2, "Expected wrapped lines, got {:?}", wrapped_long);
+
+        // Subline karaoke progress transitions
+        let lines = vec!["Hello".to_string(), "world".to_string()];
+        // 0.0 -> both 0.0
+        let p0 = karaoke_subline_progress(&lines, 0.0);
+        assert_eq!(p0[0].1, 0.0);
+        assert_eq!(p0[1].1, 0.0);
+
+        // 0.25 -> first line is 0.5, second line is 0.0
+        let p25 = karaoke_subline_progress(&lines, 0.25);
+        assert!((p25[0].1 - 0.5).abs() < 1e-4);
+        assert_eq!(p25[1].1, 0.0);
+
+        // 0.5 -> first line is 1.0, second line is 0.0
+        let p50 = karaoke_subline_progress(&lines, 0.5);
+        assert_eq!(p50[0].1, 1.0);
+        assert_eq!(p50[1].1, 0.0);
+
+        // 0.75 -> first line is 1.0, second line is 0.5
+        let p75 = karaoke_subline_progress(&lines, 0.75);
+        assert_eq!(p75[0].1, 1.0);
+        assert!((p75[1].1 - 0.5).abs() < 1e-4);
+
+        // 1.0 -> both 1.0
+        let p100 = karaoke_subline_progress(&lines, 1.0);
+        assert_eq!(p100[0].1, 1.0);
+        assert_eq!(p100[1].1, 1.0);
     }
 }
