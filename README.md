@@ -127,6 +127,8 @@ The **Usage** page reads data that's already on your PC and only starts when you
 Bring your own account or key. Supported: **ChatGPT** (sign in with your subscription), **OpenCode Go**, any **OpenAI-compatible** server (OpenAI, OpenRouter, Groq, LM Studio, vLLM, llama.cpp), **Gemini**, **Claude**, and local **Ollama**. Open the **AI** page and press **Setup**.
 
 - API keys and sign-in tokens are encrypted with Windows DPAPI in `%APPDATA%\Teardrop\ai-secrets.json`, so they only decrypt for your Windows user. They're never shown or logged.
+- **ChatGPT** signs in with the Codex device-code flow, and reuses the tokens already in `~/.codex/auth.json` when it has none or they're newer, so a Codex CLI login counts as a Teardrop login. Tokens refresh in the background before they expire.
+- **Sync models** asks the provider for its live catalog (`/models`) and remembers it in `%APPDATA%\Teardrop\ai-models.json`; the page also syncs on launch, so the picker shows the current model list (today that's `gpt-6.1-sol` first) instead of a bundled fallback. If a sync fails, the footer says why and the last known catalog stays in place.
 - When *Share my day* is on (it's on by default), each message also carries a short summary of your day: upcoming calendar titles and times, open task titles, water and focus status, what's playing and basic PC stats. Turn it off to send only what you type. Nothing is sent until you press send.
 - Actions the assistant takes inside Teardrop (add a task, log water, start focus) show up under its reply with an **Undo** button.
 

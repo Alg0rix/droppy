@@ -45,49 +45,105 @@ pub fn split_url(url: &str) -> Option<(bool, &str, u16, &str)> {
 pub fn get(url: &str, headers: &[(&str, &str)], limit: usize) -> Result<Vec<u8>, u32> {
     use windows::core::PCWSTR;
     use windows::Win32::Networking::WinInet::*;
+    let Some((https, host, port, path)) = split_url(url) else {
+        return Err(0);
+    };
     unsafe {
         let agent: Vec<u16> = concat!("teardrop/", env!("CARGO_PKG_VERSION"), "\0").encode_utf16().collect();
         let hinet = InternetOpenW(PCWSTR::from_raw(agent.as_ptr()), 0, None, None, 0);
         if hinet.is_null() {
             return Err(0);
         }
-        let timeout: u32 = 15_000;
-        for opt in [2u32, 6] {
-            let _ = InternetSetOptionW(Some(hinet as *const _), opt, Some(&timeout as *const u32 as *const _), 4);
-        }
-        let wurl: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
-        let hdr: Vec<u16> = headers.iter().map(|(k, v)| format!("{k}: {v}\r\n")).collect::<String>().encode_utf16().collect();
-        let secure_flag = if url.starts_with("https://") { 0x0080_0000 } else { 0 };
-        let hurl = InternetOpenUrlW(hinet as *const _, PCWSTR::from_raw(wurl.as_ptr()), Some(&hdr), 0x8000_0000 | secure_flag, 0);
-        if hurl.is_null() {
+        let connect_timeout: u32 = 15_000;
+        let recv_timeout: u32 = 30_000;
+        let _ = InternetSetOptionW(Some(hinet as *const _), 2, Some(&connect_timeout as *const u32 as *const _), 4);
+        let _ = InternetSetOptionW(Some(hinet as *const _), 5, Some(&recv_timeout as *const u32 as *const _), 4);
+        let _ = InternetSetOptionW(Some(hinet as *const _), 6, Some(&recv_timeout as *const u32 as *const _), 4);
+
+        let whost: Vec<u16> = host.encode_utf16().chain(std::iter::once(0)).collect();
+        let hconn = InternetConnectW(
+            hinet as *const _,
+            PCWSTR::from_raw(whost.as_ptr()),
+            port,
+            PCWSTR::null(),
+            PCWSTR::null(),
+            INTERNET_SERVICE_HTTP,
+            0,
+            0,
+        );
+        if hconn.is_null() {
             let _ = InternetCloseHandle(hinet as *const _);
             return Err(0);
         }
+
+        let verb: Vec<u16> = "GET\0".encode_utf16().collect();
+        let wpath: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+        // INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_NO_UI
+        let mut flags: u32 = 0x8000_0000 | 0x0400_0000 | 0x0008_0000 | 0x0000_0200;
+        if https {
+            flags |= 0x0080_0000; // INTERNET_FLAG_SECURE
+        }
+        let hreq = HttpOpenRequestW(
+            hconn as *const _,
+            PCWSTR::from_raw(verb.as_ptr()),
+            PCWSTR::from_raw(wpath.as_ptr()),
+            PCWSTR::null(),
+            PCWSTR::null(),
+            None,
+            flags,
+            0,
+        );
+        if hreq.is_null() {
+            let _ = InternetCloseHandle(hconn as *const _);
+            let _ = InternetCloseHandle(hinet as *const _);
+            return Err(0);
+        }
+
+        let hdr_str: String = headers.iter().map(|(k, v)| format!("{k}: {v}\r\n")).collect();
+        let hdr: Vec<u16> = hdr_str.encode_utf16().collect();
+        // Never pass an empty slice: WinINet falls back to reading it as a
+        // NUL-terminated string and walks off the end of the buffer.
+        let sent = HttpSendRequestW(
+            hreq as *const _,
+            if hdr.is_empty() { None } else { Some(&hdr) },
+            None,
+            0,
+        );
+        if sent.is_err() {
+            let _ = InternetCloseHandle(hreq as *const _);
+            let _ = InternetCloseHandle(hconn as *const _);
+            let _ = InternetCloseHandle(hinet as *const _);
+            return Err(0);
+        }
+
         let mut st = [0u16; 8];
         let mut len = (st.len() * 2) as u32;
-        let status = if HttpQueryInfoW(hurl as *const _, HTTP_QUERY_STATUS_CODE, Some(st.as_mut_ptr() as *mut _), &mut len, None).is_ok() {
+        let status = if HttpQueryInfoW(hreq as *const _, HTTP_QUERY_STATUS_CODE, Some(st.as_mut_ptr() as *mut _), &mut len, None).is_ok() {
             String::from_utf16_lossy(&st[..(len as usize / 2)]).trim().parse::<u32>().unwrap_or(0)
         } else {
             0
         };
+
         let mut out = Vec::new();
         if status == 200 {
             let mut buf = vec![0u8; 64 * 1024];
             loop {
                 let mut read = 0u32;
-                if InternetReadFile(hurl as *const _, buf.as_mut_ptr() as *mut _, buf.len() as u32, &mut read).is_err() || read == 0 {
+                if InternetReadFile(hreq as *const _, buf.as_mut_ptr() as *mut _, buf.len() as u32, &mut read).is_err() || read == 0 {
                     break;
                 }
                 out.extend_from_slice(&buf[..read as usize]);
                 if out.len() > limit {
-                    out.clear();
+                    out.truncate(limit);
                     break;
                 }
             }
         }
-        let _ = InternetCloseHandle(hurl as *const _);
+
+        let _ = InternetCloseHandle(hreq as *const _);
+        let _ = InternetCloseHandle(hconn as *const _);
         let _ = InternetCloseHandle(hinet as *const _);
-        if status == 200 && !out.is_empty() {
+        if status == 200 {
             Ok(out)
         } else {
             Err(status)

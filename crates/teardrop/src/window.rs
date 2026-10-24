@@ -490,6 +490,13 @@ mod inner {
             *st = store::load(&data, "settings");
             st.start_with_windows = startup::enabled();
         });
+        // Refresh the active provider's catalog in the background so the model
+        // picker is never stuck on the curated fallback after a launch.
+        let (provider, url) = SETTINGS.with(|s| {
+            let st = s.borrow();
+            (st.ai_provider, st.active_ai_url().to_string())
+        });
+        crate::ai::refresh_models(provider, url);
         VIEW.with(|v| {
             let mut vm = v.borrow_mut();
             let page: Page = store::load(&data, "page");

@@ -101,7 +101,9 @@ headset battery, water reminder with one-click action.
 ## Data files
 
 - `%APPDATA%\Teardrop\`: `settings.json`, `water.json`, `tasks.json`,
-  `shelf.json` — kept on uninstall.
+  `shelf.json` — kept on uninstall. AI Chat adds `chats.json`,
+  `ai-secrets.json` (DPAPI ciphertext only) and `ai-models.json` (last synced
+  model catalog per provider; safe to delete, it re-syncs on launch).
 - `%LOCALAPPDATA%\Teardrop\`: `teardrop.log`, `lyrics\` cache — safe to delete.
 
 ## Testing without clicking around

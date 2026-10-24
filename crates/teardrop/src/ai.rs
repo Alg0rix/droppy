@@ -20,6 +20,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
@@ -27,6 +28,10 @@ use teardrop_core::{AiProvider, Settings};
 
 pub const MAX_CHATS: usize = 40;
 pub const MAX_MEMORIES: usize = 32;
+
+/// Model catalogs are verbose (per-model capability blobs): the live Codex
+/// list is already >256 KB, so allow plenty of headroom before truncating.
+const MODEL_CATALOG_LIMIT: usize = 8 * 1024 * 1024;
 
 pub const CHATGPT_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 pub const CHATGPT_ISSUER: &str = "https://auth.openai.com";
@@ -41,18 +46,17 @@ pub const STARTER_PROMPTS: [(&str, &str); 4] = [
     ("Prioritize tasks", "Summarize my open tasks and suggest the top 3 priorities."),
 ];
 
+/// Curated fallback, kept in sync with the live `/codex/models` catalog
+/// (visible entries, priority order). The live probe is authoritative; this
+/// only covers the fresh install / offline case.
 pub const CODEX_DEFAULT_MODELS: &[&str] = &[
-    "gpt-5.3-codex",
-    "gpt-5.4",
-    "gpt-5.4-mini",
-    "gpt-5.5",
+    "gpt-6.1-sol",
+    "gpt-6-astra",
+    "gpt-6-sol",
+    "gpt-6-luna",
     "gpt-5.6-sol",
-    "gpt-5.6-sol-pro",
     "gpt-5.6-terra",
-    "gpt-5.6-terra-pro",
     "gpt-5.6-luna",
-    "gpt-5.6-luna-pro",
-    "gpt-5.3-codex-spark",
 ];
 
 pub const OPENCODE_DEFAULT_MODELS: &[&str] = &[
@@ -369,6 +373,53 @@ fn save_chat_store(store: &ChatStore) {
         let tmp = chats_path().with_extension("tmp");
         if std::fs::write(&tmp, json).is_ok() {
             let _ = std::fs::rename(&tmp, chats_path());
+        }
+    }
+}
+
+// ----------------------------------------------------- Model catalog cache
+
+/// Last successfully synced catalog per provider, so a restart shows the real
+/// list straight away instead of the curated fallback.
+fn models_cache_path() -> PathBuf {
+    appdata_dir().join("ai-models.json")
+}
+
+/// Stable key for `AiProvider` in the cache file (matches the settings JSON:
+/// `chat_gpt`, `open_code_go`, ...).
+fn provider_key(provider: AiProvider) -> String {
+    serde_json::to_value(provider)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_else(|| provider.label().to_string())
+}
+
+fn read_model_cache() -> BTreeMap<String, Vec<String>> {
+    std::fs::read_to_string(models_cache_path())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn load_model_cache(provider: AiProvider) -> Vec<String> {
+    read_model_cache()
+        .remove(&provider_key(provider))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|m| !m.trim().is_empty())
+        .collect()
+}
+
+fn save_model_cache(provider: AiProvider, models: &[String]) {
+    if models.is_empty() {
+        return;
+    }
+    let mut cache = read_model_cache();
+    cache.insert(provider_key(provider), models.to_vec());
+    if let Ok(json) = serde_json::to_string_pretty(&cache) {
+        let tmp = models_cache_path().with_extension("tmp");
+        if std::fs::write(&tmp, json).is_ok() {
+            let _ = std::fs::rename(&tmp, models_cache_path());
         }
     }
 }
@@ -823,6 +874,9 @@ struct Runtime {
     store: ChatStore,
     secrets: SecretStore,
     view: AiView,
+    /// Provider `view.available_models` currently belongs to, so switching
+    /// providers does not leak another provider's catalog into the picker.
+    models_provider: Option<AiProvider>,
     pending_directives: Vec<(u64, usize, Vec<ParsedDirective>)>,
 }
 
@@ -843,6 +897,7 @@ fn with_runtime<R>(f: impl FnOnce(&mut Runtime) -> R) -> R {
             store,
             secrets,
             view: AiView::default(),
+            models_provider: None,
             pending_directives: Vec::new(),
         };
         rt.rebuild_view(AiProvider::ChatGpt);
@@ -900,8 +955,14 @@ impl Runtime {
             .collect();
         self.view.chatgpt_signed_in = !decrypt_secret(&self.secrets.chatgpt_access_token).is_empty();
         self.view.configured = self.has_stored_key(provider);
-        if self.view.available_models.is_empty() {
-            self.view.available_models = default_models_for(provider);
+        if self.models_provider != Some(provider) {
+            self.models_provider = Some(provider);
+            let cached = load_model_cache(provider);
+            self.view.available_models = if cached.is_empty() {
+                default_models_for(provider)
+            } else {
+                cached
+            };
         }
     }
 }
@@ -935,12 +996,13 @@ pub fn default_models_for(provider: AiProvider) -> Vec<String> {
     }
 }
 
-/// Optional seamless bootstrap: if the user already authenticated Codex CLI
-/// (`~/.codex/auth.json`), import and DPAPI-encrypt the tokens whenTeardrop has none.
+/// Keep the ChatGPT tokens in step with the Codex CLI (`~/.codex/auth.json`).
+///
+/// Adopts the CLI's pair when Teardrop has none, when the CLI's access token
+/// lasts longer (it refreshed after us), or when ours is expiring while the
+/// CLI's is still good. Without this the app can stay pinned to a refresh
+/// token the CLI already rotated, and every catalog sync fails silently.
 fn try_import_codex_cli_tokens(sec: &mut SecretStore) {
-    if !sec.chatgpt_access_token.is_empty() {
-        return;
-    }
     let home = std::env::var_os("CODEX_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(|h| PathBuf::from(h).join(".codex")));
@@ -951,22 +1013,32 @@ fn try_import_codex_cli_tokens(sec: &mut SecretStore) {
     let Ok(v) = serde_json::from_str::<Value>(&text) else { return };
     let tokens = v.get("tokens").unwrap_or(&v);
     let access = tokens.get("access_token").and_then(|s| s.as_str()).unwrap_or("");
-    let refresh = tokens.get("refresh_token").and_then(|s| s.as_str()).unwrap_or("");
-    if !access.is_empty() {
-        sec.chatgpt_access_token = encrypt_secret(access);
-        if !refresh.is_empty() {
-            sec.chatgpt_refresh_token = encrypt_secret(refresh);
-        }
-        sec.chatgpt_expires_at = extract_jwt_expiry(access);
-        let acct = tokens
-            .get("account_id")
-            .and_then(|s| s.as_str())
-            .map(str::to_string)
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| extract_chatgpt_account_id(access));
-        sec.chatgpt_account_id = acct;
-        save_secrets(sec);
+    if access.is_empty() {
+        return;
     }
+    let refresh = tokens.get("refresh_token").and_then(|s| s.as_str()).unwrap_or("");
+    let imported_exp = extract_jwt_expiry(access);
+    let stored_exp = sec.chatgpt_expires_at;
+    let now = now_secs();
+    let take = decrypt_secret(&sec.chatgpt_access_token).is_empty()
+        || imported_exp > stored_exp + 30
+        || (stored_exp > 0 && stored_exp - now <= 120 && imported_exp > now);
+    if !take {
+        return;
+    }
+    sec.chatgpt_access_token = encrypt_secret(access);
+    if !refresh.is_empty() {
+        sec.chatgpt_refresh_token = encrypt_secret(refresh);
+    }
+    sec.chatgpt_expires_at = imported_exp;
+    let acct = tokens
+        .get("account_id")
+        .and_then(|s| s.as_str())
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| extract_chatgpt_account_id(access));
+    sec.chatgpt_account_id = acct;
+    save_secrets(sec);
 }
 
 pub fn revision() -> u32 {
@@ -1341,11 +1413,9 @@ pub fn open_browser(_url: &str) {}
 
 /// Ensure the ChatGPT OAuth access token is fresh (proactively refreshes within 120s of expiry).
 fn ensure_fresh_chatgpt_token(sec: &mut SecretStore) -> Result<(String, String), String> {
+    // Pick up a newer pair from the Codex CLI before falling back to ours.
+    try_import_codex_cli_tokens(sec);
     let mut access = decrypt_secret(&sec.chatgpt_access_token);
-    if access.is_empty() {
-        try_import_codex_cli_tokens(sec);
-        access = decrypt_secret(&sec.chatgpt_access_token);
-    }
     if access.is_empty() {
         return Err("Not signed in \u{2014} click Setup \u{2192} Sign in with ChatGPT".into());
     }
@@ -1392,30 +1462,51 @@ fn ensure_fresh_chatgpt_token(sec: &mut SecretStore) -> Result<(String, String),
 }
 
 /// Fetch live models for the active provider on a background thread.
+///
+/// The result is persisted per provider (`ai-models.json`) so the picker shows
+/// the real catalog from the first frame after a restart. Failures keep the
+/// last known good list and say why in the footer instead of silently
+/// reverting to the curated fallback.
 pub fn refresh_models(provider: AiProvider, base_url: String) {
     with_runtime(|rt| {
         rt.view.models_loading = true;
-        rt.view.status_note = format!("Fetching {} models\u{2026}", provider.label());
+        rt.view.status_note = format!("Syncing {} models\u{2026}", provider.label());
     });
     std::thread::spawn(move || {
         let mut sec = load_secrets();
+        let mut failure: Option<String> = None;
         let fetched: Vec<String> = match provider {
-            AiProvider::ChatGpt => {
-                if let Ok((token, acct)) = ensure_fresh_chatgpt_token(&mut sec) {
+            AiProvider::ChatGpt => match ensure_fresh_chatgpt_token(&mut sec) {
+                Ok((token, acct)) => {
                     let url = format!("{CODEX_BASE_URL}/models?client_version=1.0.0");
                     let auth = format!("Bearer {token}");
                     let mut hdrs = vec![("Authorization", auth.as_str()), ("Accept", "application/json")];
                     if !acct.is_empty() {
                         hdrs.push(("ChatGPT-Account-Id", acct.as_str()));
                     }
-                    crate::http::get(&url, &hdrs, 256 * 1024)
-                        .ok()
-                        .map(|b| parse_codex_models(&String::from_utf8_lossy(&b)))
-                        .unwrap_or_default()
-                } else {
+                    match crate::http::get(&url, &hdrs, MODEL_CATALOG_LIMIT) {
+                        Ok(b) => {
+                            let models = parse_codex_models(&String::from_utf8_lossy(&b));
+                            if models.is_empty() {
+                                failure = Some("empty catalog".into());
+                            }
+                            models
+                        }
+                        Err(status) => {
+                            failure = Some(if status == 0 {
+                                "network error".to_string()
+                            } else {
+                                format!("HTTP {status}")
+                            });
+                            Vec::new()
+                        }
+                    }
+                }
+                Err(e) => {
+                    failure = Some(e);
                     Vec::new()
                 }
-            }
+            },
             AiProvider::OpenCodeGo => {
                 let key = decrypt_secret(&sec.opencode_key);
                 let url = format!("{OPENCODE_GO_BASE_URL}/models");
@@ -1427,10 +1518,13 @@ pub fn refresh_models(provider: AiProvider, base_url: String) {
                 if !key.is_empty() {
                     hdrs.push(("Authorization", auth.as_str()));
                 }
-                crate::http::get(&url, &hdrs, 256 * 1024)
-                    .ok()
-                    .map(|b| parse_openai_models_list(&String::from_utf8_lossy(&b)))
-                    .unwrap_or_default()
+                match crate::http::get(&url, &hdrs, MODEL_CATALOG_LIMIT) {
+                    Ok(b) => parse_openai_models_list(&String::from_utf8_lossy(&b)),
+                    Err(status) => {
+                        failure = Some(if status == 0 { "network error".into() } else { format!("HTTP {status}") });
+                        Vec::new()
+                    }
+                }
             }
             AiProvider::OpenAiCompat => {
                 let key = decrypt_secret(&sec.openai_key);
@@ -1441,25 +1535,44 @@ pub fn refresh_models(provider: AiProvider, base_url: String) {
                 if !key.is_empty() {
                     hdrs.push(("Authorization", auth.as_str()));
                 }
-                crate::http::get(&url, &hdrs, 256 * 1024)
-                    .ok()
-                    .map(|b| parse_openai_models_list(&String::from_utf8_lossy(&b)))
-                    .unwrap_or_default()
+                match crate::http::get(&url, &hdrs, MODEL_CATALOG_LIMIT) {
+                    Ok(b) => parse_openai_models_list(&String::from_utf8_lossy(&b)),
+                    Err(status) => {
+                        failure = Some(if status == 0 { "network error".into() } else { format!("HTTP {status}") });
+                        Vec::new()
+                    }
+                }
             }
             _ => default_models_for(provider),
         };
 
+        let synced = !fetched.is_empty();
         with_runtime(|rt| {
             rt.view.models_loading = false;
-            if !fetched.is_empty() {
+            if synced {
                 let count = fetched.len();
-                rt.view.available_models = fetched;
-                rt.view.status_note = format!("Loaded {count} models");
+                rt.models_provider = Some(provider);
+                rt.view.available_models = fetched.clone();
+                rt.view.status_note = format!("Synced {count} models");
             } else {
-                rt.view.available_models = default_models_for(provider);
-                rt.view.status_note = "Using default model catalog".into();
+                if rt.models_provider != Some(provider) || rt.view.available_models.is_empty() {
+                    let cached = load_model_cache(provider);
+                    rt.models_provider = Some(provider);
+                    rt.view.available_models = if cached.is_empty() {
+                        default_models_for(provider)
+                    } else {
+                        cached
+                    };
+                }
+                rt.view.status_note = match failure {
+                    Some(why) => format!("Sync failed ({why}) \u{2014} showing last known catalog"),
+                    None => "Using default model catalog".into(),
+                };
             }
         });
+        if synced {
+            save_model_cache(provider, &fetched);
+        }
     });
 }
 
@@ -1936,6 +2049,46 @@ pub fn mark_action_undone(msg_idx: usize, action_idx: usize, provider: AiProvide
 mod tests {
     use super::*;
 
+    /// Manual check: the curated fallback must still match what the Codex
+    /// backend actually serves, and the live probe must beat it. Run with
+    /// `cargo test -p teardrop live_codex_catalog -- --ignored --nocapture`
+    /// (needs a Codex CLI login in `~/.codex/auth.json`).
+    #[test]
+    #[ignore = "live network probe; needs a Codex CLI login"]
+    fn live_codex_catalog_keeps_curated_fallback_fresh() {
+        let home = std::env::var_os("CODEX_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(std::env::var_os("USERPROFILE").unwrap()).join(".codex"));
+        let Ok(text) = std::fs::read_to_string(home.join("auth.json")) else {
+            eprintln!("skipped: no Codex CLI auth.json");
+            return;
+        };
+        let v: Value = serde_json::from_str(&text).unwrap();
+        let tokens = v.get("tokens").unwrap_or(&v);
+        let access = tokens.get("access_token").and_then(|s| s.as_str()).unwrap();
+        let acct = tokens
+            .get("account_id")
+            .and_then(|s| s.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| extract_chatgpt_account_id(access));
+        let url = format!("{CODEX_BASE_URL}/models?client_version=1.0.0");
+        let auth = format!("Bearer {access}");
+        let mut hdrs = vec![("Authorization", auth.as_str()), ("Accept", "application/json")];
+        if !acct.is_empty() {
+            hdrs.push(("ChatGPT-Account-Id", acct.as_str()));
+        }
+        let body = crate::http::get(&url, &hdrs, MODEL_CATALOG_LIMIT).expect("http::get failed");
+        let models = parse_codex_models(&String::from_utf8_lossy(&body));
+        assert!(!models.is_empty(), "live catalog came back empty");
+        assert_eq!(models.first().map(String::as_str), CODEX_DEFAULT_MODELS.first().copied());
+        for fallback in CODEX_DEFAULT_MODELS {
+            assert!(
+                models.iter().any(|m| m == fallback),
+                "curated fallback model {fallback} is no longer served: {models:?}"
+            );
+        }
+    }
+
     #[test]
     fn dpapi_roundtrips_secrets() {
         let secret = "sk-test-secret-key-987654321";
@@ -1999,12 +2152,39 @@ mod tests {
 
     #[test]
     fn codex_model_catalog_filters_hidden_and_sorts_by_priority() {
+        // Shape copied from a live `GET /backend-api/codex/models` response.
         let body = r#"{"models":[
-            {"slug":"gpt-5.4","priority":2,"visibility":"list"},
-            {"slug":"secret-internal","priority":1,"visibility":"hidden"},
-            {"slug":"gpt-5.3-codex","priority":1,"visibility":"list"}
+            {"slug":"gpt-6-sol","priority":4,"visibility":"list"},
+            {"slug":"gpt-reserve","priority":4,"visibility":"hide"},
+            {"slug":"codex-auto-review","priority":43,"visibility":"hide"},
+            {"slug":"gpt-6.1-sol","priority":1,"visibility":"list"},
+            {"slug":"gpt-5.6-luna","priority":9,"visibility":"list"},
+            {"slug":"gpt-6-astra","priority":2,"visibility":"list"}
         ]}"#;
-        assert_eq!(parse_codex_models(body), vec!["gpt-5.3-codex", "gpt-5.4"]);
+        assert_eq!(
+            parse_codex_models(body),
+            vec!["gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-5.6-luna"]
+        );
+        // The curated fallback must lead with the same model as the live catalog.
+        assert_eq!(default_models_for(AiProvider::ChatGpt)[0], "gpt-6.1-sol");
+        assert_eq!(AiProvider::ChatGpt.default_model(), "gpt-6.1-sol");
+    }
+
+    #[test]
+    fn model_cache_keys_are_stable_and_match_settings_json() {
+        let dir = std::env::temp_dir().join(format!("teardrop-model-cache-{}", now_millis()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // Exercise the same serialization the cache file uses, without touching %APPDATA%.
+        assert_eq!(provider_key(AiProvider::ChatGpt), "chat_gpt");
+        assert_eq!(provider_key(AiProvider::OpenCodeGo), "open_code_go");
+        assert_eq!(provider_key(AiProvider::OpenAiCompat), "open_ai_compat");
+        let mut cache: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        cache.insert(provider_key(AiProvider::ChatGpt), CODEX_DEFAULT_MODELS.iter().map(|s| s.to_string()).collect());
+        let path = dir.join("ai-models.json");
+        std::fs::write(&path, serde_json::to_string(&cache).unwrap()).unwrap();
+        let back: BTreeMap<String, Vec<String>> = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(back["chat_gpt"][0], "gpt-6.1-sol");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

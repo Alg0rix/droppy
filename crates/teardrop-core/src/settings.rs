@@ -106,7 +106,7 @@ impl AiProvider {
 
     pub fn default_model(self) -> &'static str {
         match self {
-            AiProvider::ChatGpt => "gpt-5.3-codex",
+            AiProvider::ChatGpt => "gpt-6.1-sol",
             AiProvider::OpenCodeGo => "gpt-5.4",
             AiProvider::OpenAiCompat => "gpt-4o-mini",
             AiProvider::Gemini => "gemini-3.5-flash-lite",
@@ -315,6 +315,6 @@ mod tests {
         assert!(!s.weather_mood && !s.mood_ring && s.birthday.is_none());
         assert_eq!(s.ai_provider, AiProvider::ChatGpt);
         assert!(s.ai_share_day);
-        assert_eq!(s.active_ai_model(), "gpt-5.3-codex");
+        assert_eq!(s.active_ai_model(), "gpt-6.1-sol");
     }
 }
