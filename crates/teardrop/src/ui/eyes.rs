@@ -46,6 +46,8 @@ pub enum Spot {
     /// Rides at the right end of a level HUD (volume, brightness) and
     /// reacts to the level live.
     Hud,
+    /// Sits between the REC label and the timer while recording; listens to the mic.
+    Rec,
 }
 
 /// Face centre + scale for a spot inside the collapsed body rect.
@@ -55,6 +57,7 @@ pub fn place(spot: Spot, body: Rect) -> (f32, f32, f32) {
         Spot::Music => (body.right() - 31.0, body.cy(), 0.78),
         Spot::Focus => (body.x + 66.0, body.cy(), 0.72),
         Spot::Hud => (body.right() - 26.0, body.cy(), 0.62),
+        Spot::Rec => (body.x + 104.0, body.cy(), 0.66),
     }
 }
 
@@ -63,6 +66,7 @@ pub fn area(spot: Spot, body: Rect) -> (f32, f32) {
     match spot {
         Spot::Idle => ((body.w / 2.0 - 12.0).max(24.0), body.h / 2.0),
         Spot::Hud => (26.0, body.h / 2.0 / 0.62),
+        Spot::Rec => (26.0, body.h / 2.0 / 0.66),
         _ => (24.0, body.h / 2.0 / 0.75),
     }
 }
@@ -92,6 +96,8 @@ pub struct Senses<'a> {
     pub focus_left: Option<f32>,
     /// What the app in front is themed as, while a Focus block runs.
     pub app: Option<AppTheme>,
+    /// Mic level 0..1 while voice recording runs.
+    pub recording: Option<f32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,6 +139,8 @@ pub enum Mood {
     Thinking,
     /// Focus block running: acting out the kind of app in front.
     Work(AppCategory),
+    /// Recording: ear cocked toward the mic, eyes pulse with your voice.
+    Listening,
 }
 
 /// Symbols that replace the eyes for a moment.
@@ -762,6 +770,8 @@ pub struct Eyes {
     skip_until: f32,
     /// The work theme playing (Focus block + known app).
     work: Option<AppTheme>,
+    /// Eased mic level while recording.
+    listen_lvl: f32,
 }
 
 impl Eyes {
@@ -836,6 +846,7 @@ impl Eyes {
             tick_sec: -1,
             skip_until: -1.0,
             work: None,
+            listen_lvl: 0.0,
         }
     }
 
@@ -1186,6 +1197,8 @@ impl Eyes {
             self.glance = None;
         }
         self.beat.feed(s.env.audio_peak, s.music, t, dt);
+        let lvl = s.recording.unwrap_or(0.0);
+        self.listen_lvl += (lvl - self.listen_lvl) * (1.0 - (-12.0 * dt).exp());
         self.edges(s);
         self.mood = self.pick_mood(s);
         let work = match self.mood {
@@ -1507,6 +1520,9 @@ impl Eyes {
         if self.near_s > 4.0 {
             return Mood::Shy;
         }
+        if s.recording.is_some() {
+            return Mood::Listening;
+        }
         if s.thinking {
             return Mood::Thinking;
         }
@@ -1765,6 +1781,13 @@ impl Eyes {
                 if self.due(T_THINK, 0.45) {
                     let i = (self.t * 2.2) as i32 % 3;
                     self.spawn(Kind::Dot, -22.0 - 5.0 * i as f32, -11.0, 0.0, -2.0, 1.3, 1.0);
+                }
+            }
+            Listening => {
+                // Sound leaving the mouth: little dots drift up-left while you talk.
+                let lvl = self.listen_lvl;
+                if lvl > 0.3 && self.due(T_THINK, 0.5 - 0.3 * lvl) {
+                    self.spawn(Kind::Dot, -20.0, 2.0, -4.0, -3.0, 0.9, 1.0);
                 }
             }
             Typing if self.keys.len() >= 14 => {
@@ -2188,6 +2211,20 @@ impl Eyes {
                 look = Some((-0.55 + 0.25 * (t * 2.5).cos(), -0.75 + 0.15 * (t * 2.5).sin()));
                 lv.rot = -0.05;
                 lv.dy = (t * 1.7).sin() * 0.5;
+            }
+            Listening => {
+                let lvl = self.listen_lvl;
+                p.open = 1.0;
+                p.brow = 0.6 + 0.6 * lvl;
+                p.size = 1.0 + 0.2 * lvl;
+                // Head tilted toward the mic on the left.
+                lv.rot = -0.08;
+                lv.dy = (t * 1.4).sin() * 0.4;
+                look = Some(if lvl > 0.08 {
+                    (-0.7, 0.05)
+                } else {
+                    (0.15 * (t * 0.8).sin(), 0.0)
+                });
             }
         }
 
@@ -3839,6 +3876,7 @@ mod tests {
                 thinking: false,
                 focus_left: None,
                 app: None,
+                recording: None,
             }
         }
     }
@@ -4418,6 +4456,31 @@ mod tests {
             e.tick(1.0 / 60.0, &work_senses(&w2, AppCategory::Coding));
         }
         assert!(e.keys.len() >= 5);
+    }
+
+    #[test]
+    fn recording_listens_and_hover_still_wins() {
+        let (mut e, w) = settled();
+        let mut s = w.senses();
+        s.recording = Some(0.6);
+        for _ in 0..90 {
+            e.tick(1.0 / 60.0, &s);
+        }
+        assert_eq!(e.mood, Mood::Listening);
+        assert!(e.pose().look.0 < -0.4, "ear toward the mic");
+        assert!(e.parts.iter().any(|p| p.kind == Kind::Dot));
+        s.hovering = true;
+        s.mouse = Some((0.0, 0.0));
+        e.tick(1.0 / 60.0, &s);
+        assert_eq!(e.mood, Mood::Delight);
+        // Recording stops: the level eases back out.
+        s.hovering = false;
+        s.mouse = None;
+        s.recording = None;
+        for _ in 0..120 {
+            e.tick(1.0 / 60.0, &s);
+        }
+        assert!(e.listen_lvl < 0.05);
     }
 
     #[test]

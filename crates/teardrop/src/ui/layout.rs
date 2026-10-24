@@ -314,6 +314,9 @@ fn collapsed(c: &mut Ctx, r: Rect, a: f32) {
         c.s.circle(r.x + 22.0, cy, 5.0, red);
         c.text("REC", Rect::new(r.x + 38.0, cy - 10.0, 40.0, 20.0), 12.0, Weight::Semibold, red, Align::Left);
         c.text(crate::voice::clock(vm.voice.elapsed_ms), Rect::new(r.right() - 74.0, cy - 10.0, 60.0, 20.0), 14.0, Weight::Semibold, TEXT, Align::Right);
+        if c.set.idle_look == IdleLook::Eyes {
+            face(c, r, Spot::Rec, Some(red));
+        }
     } else if let Some(ev) = vm.meeting_soon() {
         let acc = accent(Page::Today);
         icons::draw(&mut c.s, Icon::Calendar, r.x + 22.0, cy, 15.0, acc);
