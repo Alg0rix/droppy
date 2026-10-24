@@ -158,6 +158,20 @@ fn shots() -> Vec<Shot> {
         shot("26-page-today", 1.0, Page::Today),
         Shot { setup: |_, _, ui, _| { ui.drag_files = 2; ui.drop_amt = 1.0; ui.clock_s = 0.3; }, ..shot("23b-shelf-drag-over", 1.0, Page::Shelf) },
         shot("26b-page-speed", 1.0, Page::Speed),
+        Shot {
+            setup: |vm, _, ui, _| {
+                vm.speed = crate::viewmodel::SpeedView { phase: crate::viewmodel::SpeedPhase::Down, ping_ms: Some(18.0), down: 214.0, up: 0.0 };
+                ui.speed_val = 214.0;
+            },
+            ..shot("26c-speed-download", 1.0, Page::Speed)
+        },
+        Shot {
+            setup: |vm, _, ui, _| {
+                vm.speed = crate::viewmodel::SpeedView { phase: crate::viewmodel::SpeedPhase::Done, ping_ms: Some(18.0), down: 214.0, up: 48.5 };
+                ui.speed_val = 214.0;
+            },
+            ..shot("26d-speed-done", 1.0, Page::Speed)
+        },
         shot("27-page-settings", 1.0, Page::Settings),
         Shot { hover: Some(Action::MediaPlayPause), ..shot("30-hover-play", 1.0, Page::Music) },
         Shot { hover: Some(Action::Tab(Page::Tasks)), ..shot("31-hover-tab", 1.0, Page::Water) },

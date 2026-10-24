@@ -306,12 +306,21 @@ fn marquee(c: &mut Ctx, r: Rect, s: &str, size: f32, weight: Weight, color: Colo
         c.text(s, r, size, weight, color, Align::Left);
         return;
     }
-    let over = tw - r.w + 8.0;
-    let (hold, speed) = (1500.0, 34.0);
+    // Scroll only as far as the real text runs: tw carries padding for the fit test.
+    let over = (tw / 1.15 * 1.08 - r.w + 10.0).max(8.0);
+    let (hold, speed) = (2000.0_f32, 26.0_f32);
     let glide = over / speed * 1000.0;
     let cycle = hold * 2.0 + glide;
-    let m = (now_ms as f32) % cycle;
-    let off = if m < hold { 0.0 } else if m < hold + glide { (m - hold) / 1000.0 * speed } else { over };
+    // Reduce the epoch timestamp in integers first: as f32 it only resolves minutes.
+    let m = (now_ms % cycle as u64) as f32;
+    let off = if m < hold {
+        0.0
+    } else if m < hold + glide {
+        let t = (m - hold) / glide;
+        over * t * t * (3.0 - 2.0 * t)
+    } else {
+        over
+    };
     c.s.clip(r);
     c.text(s, Rect::new(r.x - off, r.y, tw + 24.0, r.h), size, weight, color, Align::Left);
     c.s.pop_clip();

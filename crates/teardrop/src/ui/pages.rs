@@ -632,67 +632,115 @@ fn today(c: &mut Ctx, a: Rect) {
 
 // -------------------------------------------------------------------- speed
 
-/// Gauge ceiling for `v` Mbit/s: the next "nice" step so the arc has headroom.
-pub fn gauge_max(v: f32) -> f32 {
-    [50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0, 10000.0].into_iter().find(|m| v <= *m * 0.92).unwrap_or(10000.0)
+/// Arc fill (0..1) for `v` Mbit/s on a fixed log scale (1 Gbps = full), so the
+/// same speed always fills the same amount and the gauge never rescales mid-test.
+pub fn gauge_frac(v: f32) -> f32 {
+    ((1.0 + v.max(0.0) / 5.0).ln() / (1.0 + 1000.0_f32 / 5.0).ln()).clamp(0.0, 1.0)
 }
 
 fn speed(c: &mut Ctx, a: Rect) {
-    let acc = accent(Page::Speed);
+    use std::f32::consts::{FRAC_PI_2, TAU};
+    const DOWN: Color = Color::rgb(34, 211, 238);
+    const UP: Color = Color::rgb(192, 132, 252);
     let sp = c.vm.speed;
+    let idle = sp.phase == SpeedPhase::Idle;
+    let tint = match sp.phase {
+        SpeedPhase::Up => UP,
+        SpeedPhase::Ping | SpeedPhase::Idle => accent(Page::Speed),
+        _ => DOWN,
+    };
     let shown = c.ui.speed_val;
-    let busy = sp.phase.running();
 
-    // Gauge.
-    let ring = (a.x + 96.0, a.y + 112.0);
-    let rr = 80.0;
-    c.s.ring(ring.0, ring.1, rr, 10.0, 0.0, 1.0, Color::rgba(255, 255, 255, 0.08));
-    let frac = (shown / gauge_max(sp.down.max(sp.up).max(shown))).clamp(0.0, 1.0);
-    if frac > 0.003 {
-        c.s.ring(ring.0, ring.1, rr, 10.0, 0.0, frac, acc);
+    // Dial: 270 degrees open at the bottom, log scale with Ookla-style ticks.
+    let (cx, cy, r) = (a.x + 112.0, a.y + 104.0, 84.0);
+    let (f0, span) = (0.625_f32, 0.75_f32);
+    c.s.ring(cx, cy, r, 9.0, f0, f0 + span, Color::rgba(255, 255, 255, 0.08));
+    let frac = gauge_frac(shown);
+    if !idle && frac > 0.004 {
+        c.s.ring(cx, cy, r, 9.0, f0, f0 + span * frac, tint);
     }
-    let big = if shown >= 100.0 { format!("{shown:.0}") } else { format!("{shown:.1}") };
-    c.text(big, Rect::new(ring.0 - 70.0, ring.1 - 30.0, 140.0, 42.0), 36.0, Weight::Semibold, if sp.phase == SpeedPhase::Idle { TEXT_3 } else { TEXT }, Align::Center);
-    let cap = match sp.phase {
-        SpeedPhase::Idle => "Mbps",
-        SpeedPhase::Ping => "Pinging\u{2026}",
-        SpeedPhase::Down => "Mbps \u{00b7} download",
-        SpeedPhase::Up => "Mbps \u{00b7} upload",
-        SpeedPhase::Done => "Mbps \u{00b7} download",
-        SpeedPhase::Failed => "Offline?",
+    let at = |f: f32, rad: f32| {
+        let ang = (f0 + span * f) * TAU - FRAC_PI_2;
+        (cx + rad * ang.cos(), cy + rad * ang.sin())
     };
-    c.text(cap, Rect::new(ring.0 - 70.0, ring.1 + 14.0, 140.0, 18.0), 12.0, Weight::Medium, if sp.phase == SpeedPhase::Failed { AMBER } else { TEXT_2 }, Align::Center);
-
-    // Results.
-    let x = a.x + 214.0;
-    let w = a.w - 214.0;
-    c.text("Speed test", Rect::new(x, a.y, w, 26.0), 17.0, Weight::Semibold, TEXT, Align::Left);
-    c.text("Ping, download and upload", Rect::new(x, a.y + 26.0, w, 16.0), 11.5, Weight::Regular, TEXT_3, Align::Left);
-    let done = |p: SpeedPhase| matches!(sp.phase, SpeedPhase::Done) || (p == SpeedPhase::Down && sp.phase == SpeedPhase::Up);
-    let mbit = |v: f32| if v >= 100.0 { format!("{v:.0} Mbps") } else { format!("{v:.1} Mbps") };
-    let rows = [
-        ("Ping", sp.ping_ms.map(|p| format!("{p:.0} ms")), sp.ping_ms.is_some()),
-        ("Download", Some(mbit(sp.down)), done(SpeedPhase::Down) || sp.phase == SpeedPhase::Down),
-        ("Upload", Some(mbit(sp.up)), done(SpeedPhase::Up) || sp.phase == SpeedPhase::Up),
-    ];
-    for (i, (label, val, on)) in rows.iter().enumerate() {
-        let y = a.y + 60.0 + i as f32 * 34.0;
-        c.text(*label, Rect::new(x, y, 90.0, 20.0), 13.0, Weight::Regular, TEXT_2, Align::Left);
-        let text = if *on { val.clone().unwrap_or_default() } else { "\u{2014}".to_string() };
-        c.text(text, Rect::new(x + 80.0, y, w - 80.0, 20.0), 15.0, Weight::Semibold, if *on { TEXT } else { TEXT_3 }, Align::Right);
-        c.s.rect(Rect::new(x, y + 27.0, w, 1.0), 0.5, HAIRLINE);
+    for t in [0.0_f32, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0] {
+        let f = gauge_frac(t);
+        let (x1, y1) = at(f, r - 9.0);
+        let (x2, y2) = at(f, r - 14.0);
+        c.s.line(x1, y1, x2, y2, 1.5, TEXT_3);
+        let (lx, ly) = at(f, r - 26.0);
+        c.text(format!("{t:.0}"), Rect::new(lx - 16.0, ly - 7.0, 32.0, 14.0), 9.5, Weight::Medium, TEXT_3, Align::Center);
     }
 
-    let label = match sp.phase {
-        SpeedPhase::Idle => "Start test",
-        SpeedPhase::Done | SpeedPhase::Failed => "Test again",
-        _ => "Testing\u{2026}",
-    };
-    let pr = Rect::new(x, a.bottom() - 40.0, w, 36.0);
-    if busy {
-        c.pill(pr, Action::Island, label, Some(acc.fade(0.4)), 13.0);
+    if idle {
+        // Round GO button in the middle of the dial.
+        let go = Action::SpeedTest;
+        let h = c.hov(go);
+        let rad = 36.0 + h * 2.0;
+        c.s.circle(cx, cy, rad + 6.0, tint.fade(0.10 + 0.10 * h));
+        c.s.ring(cx, cy, rad, 3.0, 0.0, 1.0, tint);
+        c.text("GO", Rect::new(cx - 36.0, cy - 14.0, 72.0, 28.0), 22.0, Weight::Bold, tint, Align::Center);
+        c.hit(Rect::new(cx - rad, cy - rad, rad * 2.0, rad * 2.0), go);
     } else {
-        c.pill(pr, Action::SpeedTest, label, Some(acc), 13.0);
+        // Needle + hub, then the live number in the open bottom of the dial.
+        let (nx, ny) = at(frac, r - 22.0);
+        c.s.line(cx, cy, nx, ny, 3.0, WHITE);
+        c.s.circle(cx, cy, 6.5, WHITE);
+        c.s.circle(cx, cy, 3.0, tint);
+        let big = if shown >= 100.0 { format!("{shown:.0}") } else { format!("{shown:.1}") };
+        c.text(big, Rect::new(cx - 52.0, cy + 18.0, 104.0, 40.0), 32.0, Weight::Semibold, TEXT, Align::Center);
+        let cap = match sp.phase {
+            SpeedPhase::Ping => "Pinging\u{2026}",
+            SpeedPhase::Down => "Mbps \u{00b7} download",
+            SpeedPhase::Up => "Mbps \u{00b7} upload",
+            SpeedPhase::Done => "Mbps \u{00b7} download",
+            _ => "Offline?",
+        };
+        let col = if sp.phase == SpeedPhase::Failed { AMBER } else { TEXT_2 };
+        c.text(cap, Rect::new(cx - 60.0, cy + 56.0, 120.0, 16.0), 11.0, Weight::Medium, col, Align::Center);
+    }
+
+    // Result cards.
+    let x = a.x + 246.0;
+    let w = a.w - 246.0;
+    let reached = |p: SpeedPhase| match p {
+        SpeedPhase::Ping => sp.ping_ms.is_some(),
+        SpeedPhase::Down => matches!(sp.phase, SpeedPhase::Down | SpeedPhase::Up | SpeedPhase::Done),
+        _ => matches!(sp.phase, SpeedPhase::Up | SpeedPhase::Done),
+    };
+    let live = |p: SpeedPhase| sp.phase == p;
+    let mbit = |v: f32| if v >= 100.0 { format!("{v:.0}") } else { format!("{v:.1}") };
+    let rows = [
+        ("PING", "\u{25CF}", AMBER, SpeedPhase::Ping, sp.ping_ms.map(|p| format!("{p:.0}")), "ms"),
+        ("DOWNLOAD", "\u{2193}", DOWN, SpeedPhase::Down, Some(mbit(sp.down)), "Mbps"),
+        ("UPLOAD", "\u{2191}", UP, SpeedPhase::Up, Some(mbit(sp.up)), "Mbps"),
+    ];
+    for (i, (label, glyph, col, phase, value, unit)) in rows.iter().enumerate() {
+        let ry = a.y + 2.0 + i as f32 * 52.0;
+        let card = Rect::new(x, ry, w, 46.0);
+        c.s.rect(card, 12.0, SURFACE);
+        if live(*phase) {
+            c.s.stroke(card, 12.0, 1.5, col.fade(0.7));
+        }
+        let on = reached(*phase);
+        c.s.circle(card.x + 22.0, card.cy(), 12.0, col.fade(if on { 0.20 } else { 0.08 }));
+        c.text(*glyph, Rect::new(card.x + 10.0, card.cy() - 10.0, 24.0, 20.0), 13.0, Weight::Bold, if on { *col } else { TEXT_3 }, Align::Center);
+        c.text(*label, Rect::new(card.x + 42.0, card.y + 5.0, w - 50.0, 14.0), 9.5, Weight::Semibold, TEXT_3, Align::Left);
+        match (on, value) {
+            (true, Some(v)) => {
+                c.text(v.clone(), Rect::new(card.x + 42.0, card.y + 19.0, w - 50.0, 24.0), 18.0, Weight::Semibold, TEXT, Align::Left);
+                c.text(*unit, Rect::new(card.x + 46.0 + est_w(v, 18.0) * 1.08, card.y + 25.0, 50.0, 16.0), 11.0, Weight::Regular, TEXT_2, Align::Left);
+            }
+            _ => c.text("\u{2014}", Rect::new(card.x + 42.0, card.y + 19.0, w - 50.0, 24.0), 18.0, Weight::Semibold, TEXT_3, Align::Left),
+        }
+    }
+
+    // Start / again.
+    let pr = Rect::new(x, a.bottom() - 34.0, w, 32.0);
+    match sp.phase {
+        SpeedPhase::Idle => c.text("Press GO to start", pr, 12.0, Weight::Medium, TEXT_3, Align::Center),
+        p if p.running() => c.pill(pr, Action::Island, "Testing\u{2026}", None, 12.5),
+        _ => c.pill(pr, Action::SpeedTest, "Test again", Some(tint), 12.5),
     }
 }
 
@@ -797,6 +845,15 @@ fn acc_on() -> Color {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn gauge_scale_is_fixed_and_monotonic() {
+        assert_eq!(super::gauge_frac(0.0), 0.0);
+        assert!((super::gauge_frac(1000.0) - 1.0).abs() < 1e-4);
+        assert_eq!(super::gauge_frac(5000.0), 1.0);
+        let (a, b, c) = (super::gauge_frac(10.0), super::gauge_frac(100.0), super::gauge_frac(500.0));
+        assert!(a < b && b < c);
+    }
+
     use super::*;
 
     #[test]
