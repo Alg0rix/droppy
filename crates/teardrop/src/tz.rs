@@ -12,7 +12,7 @@ use chrono::{Local, NaiveDateTime, TimeZone};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Zone {
     Utc,
-    /// Index into the OS zone list.
+    /// Index into the OS zone list on Windows, `chrono_tz::TZ_VARIANTS` elsewhere.
     Win(u16),
 }
 
@@ -153,18 +153,35 @@ mod os {
 #[cfg(not(windows))]
 mod os {
     use super::Zone;
-    use chrono::NaiveDateTime;
+    use chrono::{NaiveDateTime, TimeZone};
+    use chrono_tz::Tz;
 
-    pub fn find(_: &str) -> Option<Zone> {
-        None
+    /// IANA name, or a Windows zone name mapped through the table's first alias.
+    fn as_tz(name: &str) -> Option<Tz> {
+        name.parse::<Tz>().ok().or_else(|| {
+            super::TABLE
+                .iter()
+                .find(|(_, w)| w.eq_ignore_ascii_case(name))
+                .and_then(|(aliases, _)| aliases.first()?.parse().ok())
+        })
     }
 
-    pub fn to_utc_secs(_: u16, _: NaiveDateTime) -> Option<i64> {
-        None
+    /// `Zone::Win` here indexes `TZ_VARIANTS`, which is stable for the process.
+    pub fn find(name: &str) -> Option<Zone> {
+        let tz = as_tz(name)?;
+        chrono_tz::TZ_VARIANTS.iter().position(|t| *t == tz).map(|i| Zone::Win(i as u16))
+    }
+
+    pub fn to_utc_secs(i: u16, n: NaiveDateTime) -> Option<i64> {
+        chrono_tz::TZ_VARIANTS
+            .get(i as usize)?
+            .from_local_datetime(&n)
+            .earliest()
+            .map(|d| d.timestamp())
     }
 }
 
-#[cfg(all(test, windows))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use chrono::NaiveDate;

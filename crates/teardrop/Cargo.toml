@@ -62,3 +62,8 @@ windows = { version = "0.58", features = [
   "implement",
 ] }
 windows-core = "0.58"
+
+# Zone rules for dev/test machines that aren't Windows: the real OS zone list
+# only exists on Windows, elsewhere chrono-tz's bundled tzdb fills in.
+[target.'cfg(not(windows))'.dependencies]
+chrono-tz = "0.10"
