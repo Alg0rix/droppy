@@ -86,6 +86,58 @@ pub fn peak() -> Option<f32> {
     None
 }
 
+/// Post `msg` to `hwnd` (wParam = percent, lParam = muted) the moment the
+/// default output's volume or mute changes, so the HUD and the eyes follow
+/// the keys live instead of on the 1 s poll. The registration lives as long
+/// as the calling thread; a device switch is still caught by the poll.
+#[cfg(windows)]
+pub fn watch(hwnd: isize, msg: u32) -> bool {
+    use std::cell::RefCell;
+    use windows::core::implement;
+    use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+    use windows::Win32::Media::Audio::Endpoints::{IAudioEndpointVolume, IAudioEndpointVolumeCallback, IAudioEndpointVolumeCallback_Impl};
+    use windows::Win32::Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator, AUDIO_VOLUME_NOTIFICATION_DATA};
+    use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
+    use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
+
+    #[implement(IAudioEndpointVolumeCallback)]
+    struct Notify {
+        hwnd: isize,
+        msg: u32,
+    }
+
+    impl IAudioEndpointVolumeCallback_Impl for Notify_Impl {
+        fn OnNotify(&self, data: *mut AUDIO_VOLUME_NOTIFICATION_DATA) -> windows::core::Result<()> {
+            // Called on a Core Audio worker thread: only hand the values over.
+            if let Some(d) = unsafe { data.as_ref() } {
+                let pct = scalar_to_pct(d.fMasterVolume) as usize;
+                let muted = d.bMuted.as_bool() as isize;
+                unsafe {
+                    let _ = PostMessageW(HWND(self.hwnd as *mut _), self.msg, WPARAM(pct), LPARAM(muted));
+                }
+            }
+            Ok(())
+        }
+    }
+
+    thread_local! {
+        static HELD: RefCell<Option<(IAudioEndpointVolume, IAudioEndpointVolumeCallback)>> = const { RefCell::new(None) };
+    }
+    let held = unsafe {
+        (|| {
+            let en: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+            let dev = en.GetDefaultAudioEndpoint(eRender, eConsole).ok()?;
+            let vol: IAudioEndpointVolume = dev.Activate(CLSCTX_ALL, None).ok()?;
+            let cb: IAudioEndpointVolumeCallback = Notify { hwnd, msg }.into();
+            vol.RegisterControlChangeNotify(&cb).ok()?;
+            Some((vol, cb))
+        })()
+    };
+    let ok = held.is_some();
+    HELD.with(|h| *h.borrow_mut() = held);
+    ok
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

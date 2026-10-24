@@ -7,10 +7,10 @@
 //! `TEARDROP_SELFTEST_DPI=144` renders at 150%; default is 192 (2x) so
 //! screenshots are crisp.
 
-use super::ui::eyes::{Glyph, React};
+use super::ui::eyes::{Gauge, Glyph, React};
 use super::ui::layout::{build, IslandView};
 use super::ui::state::{Action, UiState};
-use super::viewmodel::{hud_volume, hud_water_due, ViewModel};
+use super::viewmodel::{hud_brightness, hud_volume, hud_water_due, ViewModel};
 use chrono::Utc;
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -416,6 +416,52 @@ fn shots() -> Vec<Shot> {
             },
             ticks: 40,
             ..shot("50-eyes-star", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, ui, ms| {
+                eyes(vm, set, EyeStyle::Round, false);
+                vm.hud = Some(hud_volume(64, false, ms));
+                ui.eyes.gauge(Gauge::Volume, 0.5, false);
+                ui.eyes.gauge(Gauge::Volume, 0.64, false);
+            },
+            ticks: 40,
+            ..shot("51-eyes-hud-volume", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, ui, ms| {
+                eyes(vm, set, EyeStyle::Round, false);
+                vm.hud = Some(hud_volume(100, false, ms));
+                ui.eyes.gauge(Gauge::Volume, 0.9, false);
+                ui.eyes.gauge(Gauge::Volume, 1.0, false);
+            },
+            ticks: 40,
+            ..shot("51b-eyes-hud-loud", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, ui, ms| {
+                eyes(vm, set, EyeStyle::Round, false);
+                vm.hud = Some(hud_volume(64, true, ms));
+                ui.eyes.gauge(Gauge::Volume, 0.64, true);
+            },
+            ticks: 50,
+            ..shot("51c-eyes-hud-muted", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, ui, ms| {
+                eyes(vm, set, EyeStyle::Round, false);
+                vm.hud = Some(hud_brightness(8, ms));
+                ui.eyes.gauge(Gauge::Brightness, 0.08, false);
+            },
+            ticks: 40,
+            ..shot("51d-eyes-hud-dim", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, ui, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                ui.eyes.noted(300);
+            },
+            ticks: 90,
+            ..shot("52-eyes-noted", 0.0, Page::Music)
         },
         Shot {
             setup: |vm, set, _, _| {

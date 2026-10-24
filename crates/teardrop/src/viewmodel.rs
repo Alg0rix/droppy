@@ -366,6 +366,12 @@ pub fn hud_volume(pct: u8, muted: bool, now_ms: u64) -> Hud {
     h
 }
 
+pub fn hud_brightness(pct: u8, now_ms: u64) -> Hud {
+    let mut h = Hud::transient(HudKind::Brightness, "Brightness", &format!("{pct}%"), now_ms, 2200);
+    h.progress = Some(pct as f32 / 100.0);
+    h
+}
+
 /// Reminder with a one-click "+250 ml" action.
 pub fn hud_water_due(now_ms: u64) -> Hud {
     let mut h = Hud::transient(HudKind::Water, "Water", "Time to hydrate", now_ms, 9000);

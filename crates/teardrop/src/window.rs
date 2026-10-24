@@ -12,12 +12,12 @@ mod inner {
     use crate::services_env::sys as env;
     use crate::services_system::sys::{sample_all, CpuTracker};
     use crate::state::{IslandMode, IslandState};
-    use crate::ui::eyes::{Eyes, React};
+    use crate::ui::eyes::{Eyes, Gauge, React};
     use crate::ui::layout::{build, hit_test, IslandView, CONTENT_TOP};
     use crate::ui::scene::{Color, Fill, Scene};
     use crate::ui::state::{Action, Hit, SettingKey, UiState};
     use crate::ui::{self, icons};
-    use crate::viewmodel::{hud_volume, hud_water_due, hud_water_logged, local_naive, shift_birthday, ViewModel, Weather};
+    use crate::viewmodel::{hud_brightness, hud_volume, hud_water_due, hud_water_logged, local_naive, shift_birthday, ViewModel, Weather};
     use crate::{lyrics_service, media_smtc, paths, shelf_drag, startup, store, volume};
     use chrono::{Datelike, Utc};
     use std::cell::{Cell, RefCell};
@@ -41,7 +41,8 @@ mod inner {
     use crate::drop_target::{DropEvent, DropTarget};
     use windows::Win32::System::Ole::{OleInitialize, RegisterDragDrop};
     use windows::Win32::System::RemoteDesktop::{WTSRegisterSessionNotification, WTSUnRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION};
-    use windows::Win32::System::SystemServices::MK_LBUTTON;
+    use windows::Win32::System::Power::{RegisterPowerSettingNotification, POWERBROADCAST_SETTING};
+    use windows::Win32::System::SystemServices::{GUID_VIDEO_CURRENT_MONITOR_BRIGHTNESS, MK_LBUTTON};
     use windows::Win32::UI::HiDpi::{GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         keybd_event, RegisterHotKey, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, UnregisterHotKey, KEYBD_EVENT_FLAGS,
@@ -72,6 +73,7 @@ mod inner {
     const WTS_SESSION_UNLOCK: u32 = 8;
     const WM_APP_DOWNLOAD: u32 = 0x8002;
     const WM_APP_SHARE: u32 = 0x8003;
+    const WM_APP_VOLUME: u32 = 0x8004;
     const HSHELL_WINDOWCREATED: u32 = 1;
     const HSHELL_FLASH: u32 = 0x8006;
     const CF_BITMAP_U32: u32 = 2;
@@ -119,6 +121,9 @@ mod inner {
         static TICKS: Cell<u32> = Cell::new(0);
         static LYR_STABLE: Cell<u8> = Cell::new(0);
         static LAST_VOL: Cell<Option<(u8, bool)>> = Cell::new(None);
+        static LAST_BRIGHT: Cell<Option<u8>> = Cell::new(None);
+        /// Note text when the editor opened, to tell a real edit from a peek.
+        static NOTE_BEFORE: RefCell<Option<String>> = RefCell::new(None);
         static HIGH_SURR: Cell<u16> = Cell::new(0);
         static SHELL_MSG: Cell<u32> = Cell::new(0);
         static HOVER_ARM: Cell<(f32, f32)> = Cell::new((-1.0, -1.0));
@@ -393,6 +398,14 @@ mod inner {
             }
         });
         PINNED.set(false);
+        // Collapsing mid-note counts as finishing it (same as Esc).
+        let editing_note = UI.with(|u| {
+            let ui = u.borrow();
+            ui.note_edit.is_some() && ui.input.is_some()
+        });
+        if editing_note {
+            finish_note_edit();
+        }
         UI.with(|u| u.borrow_mut().input = None);
         with_eyes(|e| e.island_closed());
         unsafe {
@@ -707,6 +720,7 @@ mod inner {
             let mut ui = u.borrow_mut();
             (ui.note_edit.take(), ui.input.take())
         });
+        let before = NOTE_BEFORE.take();
         let Some(id) = edit else { return };
         let text = text.unwrap_or_default();
         VIEW.with(|v| {
@@ -717,6 +731,10 @@ mod inner {
                 vm.notes.update(&id, &text, Utc::now());
             }
         });
+        // The face reads it over once the island collapses.
+        if !text.trim().is_empty() && before.as_deref() != Some(text.as_str()) {
+            with_eyes(|e| e.noted(text.chars().count()));
+        }
     }
 
     fn send_ai_prompt(prompt: String) {
@@ -1033,12 +1051,16 @@ mod inner {
                     }
                 }
             }
-            Action::TaskRemove(i) => VIEW.with(|v| {
-                let mut vm = v.borrow_mut();
-                if let Some(id) = vm.tasks.tasks.get(i as usize).map(|t| t.id.clone()) {
-                    vm.tasks.remove(&id);
+            Action::TaskRemove(i) => {
+                let removed = VIEW.with(|v| {
+                    let mut vm = v.borrow_mut();
+                    let id = vm.tasks.tasks.get(i as usize).map(|t| t.id.clone());
+                    id.is_some_and(|id| vm.tasks.remove(&id))
+                });
+                if removed {
+                    with_eyes(|e| e.react(React::Poof));
                 }
-            }),
+            }
             Action::TaskInput => {
                 UI.with(|u| {
                     let mut ui = u.borrow_mut();
@@ -1059,6 +1081,7 @@ mod inner {
                     ui.input = Some(String::new());
                     ui.note_edit = None;
                 });
+                NOTE_BEFORE.set(Some(String::new()));
                 activate(hwnd);
                 with_eyes(|e| e.react(React::Perk));
                 save = false;
@@ -1068,6 +1091,7 @@ mod inner {
                     v.borrow().notes.notes.get(i as usize).map(|n| (n.id.clone(), n.text.clone()))
                 });
                 if let Some((id, text)) = note {
+                    NOTE_BEFORE.set(Some(text.clone()));
                     UI.with(|u| {
                         let mut ui = u.borrow_mut();
                         ui.input = Some(text);
@@ -1083,6 +1107,7 @@ mod inner {
                     VIEW.with(|v| {
                         v.borrow_mut().notes.remove(&id);
                     });
+                    with_eyes(|e| e.react(React::Poof));
                     let editing = UI.with(|u| u.borrow().note_edit.as_deref() == Some(id.as_str()));
                     if editing {
                         UI.with(|u| {
@@ -1716,6 +1741,7 @@ mod inner {
                             Note(text) => {
                                 let title = teardrop_core::title_of(&text);
                                 let id = vm.notes.add(&text, now).id.clone();
+                                with_eyes(|e| e.noted(text.chars().count()));
                                 badges.push(AiActionBadge {
                                     label: format!("Saved note: {title}"),
                                     undo: UndoOp::RemoveAddedNote(id),
@@ -1805,16 +1831,41 @@ mod inner {
     }
 
     fn poll_volume() {
-        let Some(vs) = volume::try_read() else { return };
-        let cur = (vs.pct, vs.muted);
-        let prev = LAST_VOL.replace(Some(cur));
-        if prev.is_some() && prev != Some(cur) {
-            if !vs.muted && vs.pct >= 80 && prev.is_some_and(|(p, _)| p < vs.pct) {
-                with_eyes(|e| e.react(React::Wince));
-            }
-            let ms = now_ms();
-            VIEW.with(|v| v.borrow_mut().hud = Some(hud_volume(vs.pct, vs.muted, ms)));
+        if let Some(vs) = volume::try_read() {
+            volume_changed(vs.pct, vs.muted);
         }
+    }
+
+    /// From the 1 s poll or the Core Audio callback: raise the HUD and let
+    /// the face act out the new level. Returns true when something changed.
+    fn volume_changed(pct: u8, muted: bool) -> bool {
+        let cur = (pct, muted);
+        let prev = LAST_VOL.replace(Some(cur));
+        if prev.is_none() || prev == Some(cur) {
+            return false;
+        }
+        let ms = now_ms();
+        VIEW.with(|v| v.borrow_mut().hud = Some(hud_volume(pct, muted, ms)));
+        if eyes_on() {
+            with_eyes(|e| e.gauge(Gauge::Volume, pct as f32 / 100.0, muted));
+        }
+        true
+    }
+
+    /// Display brightness moved (laptop panel, via the power-setting
+    /// notification). The first report after registering is just the
+    /// current level and stays quiet.
+    fn brightness_changed(pct: u8) -> bool {
+        let prev = LAST_BRIGHT.replace(Some(pct));
+        if prev.is_none() || prev == Some(pct) {
+            return false;
+        }
+        let ms = now_ms();
+        VIEW.with(|v| v.borrow_mut().hud = Some(hud_brightness(pct, ms)));
+        if eyes_on() {
+            with_eyes(|e| e.gauge(Gauge::Brightness, pct as f32 / 100.0, false));
+        }
+        true
     }
 
     /// Slower ambient signals, only sampled while the eyes are the idle look.
@@ -2397,6 +2448,9 @@ mod inner {
                     SHELL_MSG.set(RegisterWindowMessageW(w!("SHELLHOOK")));
                 }
                 env::spawn_downloads_watcher(hwnd, WM_APP_DOWNLOAD);
+                // Live level changes: volume keys and the brightness slider/keys.
+                volume::watch(hwnd.0 as isize, WM_APP_VOLUME);
+                let _ = RegisterPowerSettingNotification(HANDLE(hwnd.0), &GUID_VIDEO_CURRENT_MONITOR_BRIGHTNESS, DEVICE_NOTIFY_WINDOW_HANDLE);
                 if SETTINGS.with(|s| s.borrow().weather_mood) {
                     env::refresh_weather();
                 }
@@ -2523,6 +2577,18 @@ mod inner {
                 DefWindowProcW(hwnd, msg, wp, lp)
             }
             _ if msg == WM_POWERBROADCAST => {
+                if wp.0 as u32 == PBT_POWERSETTINGCHANGE {
+                    let ps = lp.0 as *const POWERBROADCAST_SETTING;
+                    if let Some(ps) = ps.as_ref() {
+                        if ps.PowerSetting == GUID_VIDEO_CURRENT_MONITOR_BRIGHTNESS && ps.DataLength >= 4 {
+                            let pct = std::ptr::read_unaligned(ps.Data.as_ptr() as *const u32).min(100) as u8;
+                            if brightness_changed(pct) {
+                                wake(hwnd);
+                            }
+                        }
+                    }
+                    return LRESULT(1);
+                }
                 if wp.0 as u32 == 10 {
                     let ms = now_ms();
                     VIEW.with(|v| {
@@ -2641,6 +2707,12 @@ mod inner {
                     let locked = ev == WTS_SESSION_LOCK;
                     VIEW.with(|v| v.borrow_mut().env.locked = locked);
                     with_eyes(|e| e.react(if locked { React::Goodnight } else { React::WelcomeBack }));
+                    wake(hwnd);
+                }
+                LRESULT(0)
+            }
+            _ if msg == WM_APP_VOLUME => {
+                if volume_changed(wp.0.min(100) as u8, lp.0 != 0) {
                     wake(hwnd);
                 }
                 LRESULT(0)

@@ -40,6 +40,9 @@ pub enum Spot {
     Music,
     /// Replaces the phase label next to the focus ring.
     Focus,
+    /// Rides at the right end of a level HUD (volume, brightness) and
+    /// reacts to the level live.
+    Hud,
 }
 
 /// Face centre + scale for a spot inside the collapsed body rect.
@@ -48,6 +51,7 @@ pub fn place(spot: Spot, body: Rect) -> (f32, f32, f32) {
         Spot::Idle => (body.cx(), body.cy() + 1.0, 1.0),
         Spot::Music => (body.right() - 31.0, body.cy(), 0.78),
         Spot::Focus => (body.x + 66.0, body.cy(), 0.72),
+        Spot::Hud => (body.right() - 26.0, body.cy(), 0.62),
     }
 }
 
@@ -55,6 +59,7 @@ pub fn place(spot: Spot, body: Rect) -> (f32, f32, f32) {
 pub fn area(spot: Spot, body: Rect) -> (f32, f32) {
     match spot {
         Spot::Idle => ((body.w / 2.0 - 12.0).max(24.0), body.h / 2.0),
+        Spot::Hud => (26.0, body.h / 2.0 / 0.62),
         _ => (24.0, body.h / 2.0 / 0.75),
     }
 }
@@ -130,6 +135,145 @@ pub enum Glyph {
     Question,
 }
 
+/// A level the user is dialling right now (shown in a HUD).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Gauge {
+    Volume,
+    Brightness,
+}
+
+/// How long the face keeps reacting to a level after the last change
+/// (the HUD itself lives 2.2 s).
+const GAUGE_HOLD: f32 = 2.4;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct GaugeState {
+    kind: Gauge,
+    level: f32,
+    muted: bool,
+    /// When the level last changed.
+    at: f32,
+    /// When mute last flipped (for the squeeze).
+    mute_at: f32,
+}
+
+/// One dance step. The dancer switches move every phrase (4 or 8 beats)
+/// so a long song never loops the same wiggle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Move {
+    /// Side to side on the beat.
+    Sway,
+    /// Hop up on every beat.
+    Bounce,
+    /// Cool head nod, eyes low.
+    Nod,
+    /// Slide left, slide right.
+    Shuffle,
+    /// Tilt back and forth with a squash.
+    Twist,
+    /// A new direction every beat.
+    LookAround,
+    /// Big springy hops on the downbeat.
+    Hop,
+    /// Lazy figure-eight, half-lidded.
+    Groove,
+    /// Eyes pump bigger on the beat.
+    Pump,
+    /// Winks left, right, left...
+    WinkStep,
+    /// Straight headbang.
+    Bang,
+    /// Banging into each side.
+    SideBang,
+    /// Fast thrash with a shake.
+    Thrash,
+    /// Slow sway, eyes soft.
+    Drift,
+    /// Eyes closed, floating, looking up.
+    Float,
+    /// Lean one way for a bar, then the other.
+    Lean,
+}
+
+impl Move {
+    /// Moves a mood can pick from, with a weight each. High energy favours
+    /// the bigger moves.
+    fn pool(mood: Mood, energy: f32) -> &'static [(Move, u32)] {
+        let hot = energy > 0.45;
+        match mood {
+            Mood::Headbang => &[(Move::Bang, 4), (Move::SideBang, 3), (Move::Thrash, 2), (Move::Nod, 2), (Move::Hop, 1)],
+            Mood::Vibe => &[(Move::Drift, 4), (Move::Float, 3), (Move::Lean, 3), (Move::Nod, 2), (Move::Groove, 2)],
+            _ if hot => &[
+                (Move::Bounce, 3),
+                (Move::Hop, 3),
+                (Move::Shuffle, 3),
+                (Move::Twist, 2),
+                (Move::Pump, 2),
+                (Move::LookAround, 2),
+                (Move::WinkStep, 1),
+                (Move::Sway, 1),
+            ],
+            _ => &[
+                (Move::Sway, 3),
+                (Move::Groove, 3),
+                (Move::Nod, 2),
+                (Move::Shuffle, 2),
+                (Move::Twist, 2),
+                (Move::LookAround, 2),
+                (Move::WinkStep, 1),
+                (Move::Bounce, 1),
+            ],
+        }
+    }
+}
+
+/// Springy follow-through layered over the pose: hops, squishes and
+/// wobbles overshoot and settle instead of easing in flat.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct Jiggle {
+    y: f32,
+    vy: f32,
+    sq: f32,
+    vsq: f32,
+    rot: f32,
+    vrot: f32,
+}
+
+impl Jiggle {
+    fn step(&mut self, dt: f32) {
+        let n = (dt * 240.0).ceil().max(1.0) as usize;
+        let h = dt / n as f32;
+        for _ in 0..n {
+            self.vy += (-self.y * 260.0 - self.vy * 13.0) * h;
+            self.y += self.vy * h;
+            self.vsq += (-self.sq * 420.0 - self.vsq * 15.0) * h;
+            self.sq += self.vsq * h;
+            self.vrot += (-self.rot * 220.0 - self.vrot * 11.0) * h;
+            self.rot += self.vrot * h;
+        }
+        // Keep the follow-through small whatever piles up.
+        self.y = self.y.clamp(-6.0, 6.0);
+        self.sq = self.sq.clamp(-0.25, 0.25);
+        self.rot = self.rot.clamp(-0.35, 0.35);
+    }
+
+    /// Jump: up and stretched, lands with a squish.
+    fn hop(&mut self, v: f32) {
+        self.vy -= v;
+        self.vsq -= v * 0.012;
+    }
+
+    /// Get squashed down.
+    fn squish(&mut self, v: f32) {
+        self.vy += v * 0.4;
+        self.vsq += v * 0.02;
+    }
+
+    fn wobble(&mut self, v: f32) {
+        self.vrot += v;
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum React {
     Surprised,
@@ -146,7 +290,6 @@ pub enum React {
     Hiccups,
     ClockGlance,
     Peek,
-    Wince,
     Flash,
     GotIt,
     Perk,
@@ -164,6 +307,10 @@ pub enum React {
     Confused,
     WatchGame,
     LookUp,
+    /// A note got written: read it over, then a proud nod.
+    Noted,
+    /// Something got deleted: squeeze and a little puff.
+    Poof,
     Emote(Glyph),
 }
 
@@ -185,7 +332,6 @@ impl React {
             Hiccups => 3.4,
             ClockGlance => 1.8,
             Peek => 4.0,
-            Wince => 0.9,
             Flash => 0.8,
             GotIt => 0.7,
             Perk => 1.4,
@@ -203,6 +349,8 @@ impl React {
             Confused => 2.0,
             WatchGame => 1.5,
             LookUp => 2.5,
+            Noted => 2.0,
+            Poof => 0.9,
             Emote(_) => 1.6,
         }
     }
@@ -341,6 +489,10 @@ enum Kind {
     Drool,
     Sheep,
     Dot,
+    /// Sound wave arc, `vx` holds the side it travels to.
+    Wave,
+    /// A tiny page with lines, floats up when a note is saved.
+    Page,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -395,11 +547,14 @@ struct Beat {
     count: u32,
     real: bool,
     silent_s: f32,
+    /// Strength of the latest beat 0..1 (how far the onset jumped over the
+    /// running level); filler beats are soft.
+    hit: f32,
 }
 
 impl Beat {
     fn new() -> Self {
-        Self { slow: 0.0, energy: 0.35, last: 0.0, period: 0.5, count: 0, real: false, silent_s: 0.0 }
+        Self { slow: 0.0, energy: 0.35, last: 0.0, period: 0.5, count: 0, real: false, silent_s: 0.0, hit: 0.5 }
     }
 
     fn feed(&mut self, peak: Option<f32>, playing: bool, t: f32, dt: f32) {
@@ -415,12 +570,14 @@ impl Beat {
                 self.silent_s = if pk < 0.002 { self.silent_s + dt } else { 0.0 };
                 self.real = self.silent_s < 3.0;
                 let gap = t - self.last;
-                if self.real && pk > self.slow * 1.3 + 0.015 && gap > 0.27 {
+                let edge = self.slow * 1.3 + 0.015;
+                if self.real && pk > edge && gap > 0.27 {
                     if gap < 1.4 {
                         self.period += (gap.clamp(0.3, 1.2) - self.period) * 0.3;
                     }
                     self.last = t;
                     self.count += 1;
+                    self.hit = (0.45 + (pk / edge - 1.0) * 1.2).clamp(0.45, 1.0);
                 }
             }
             None => self.real = false,
@@ -430,7 +587,13 @@ impl Beat {
         if t - self.last >= wait {
             self.last = t;
             self.count += 1;
+            self.hit = if self.real { 0.35 } else { 0.6 };
         }
+    }
+
+    /// Progress through the current beat 0..1.
+    fn phase(&self, t: f32) -> f32 {
+        ((t - self.last) / self.period).clamp(0.0, 1.0)
     }
 
     fn pulse(&self, t: f32) -> f32 {
@@ -447,7 +610,6 @@ impl Beat {
 // Spawn timers (indexes into `Eyes::timers`).
 const T_Z: usize = 0;
 const T_BUBBLE: usize = 1;
-const T_NOTE: usize = 2;
 const T_HEART: usize = 3;
 const T_SWEAT: usize = 4;
 const T_QUESTION: usize = 5;
@@ -505,6 +667,13 @@ pub struct Eyes {
     purr_until: f32,
     pleading_until: f32,
     last_water: f32,
+    jig: Jiggle,
+    gauge: Option<GaugeState>,
+    dance: Move,
+    dance_from: u32,
+    dance_len: u32,
+    seen_beat: u32,
+    noted_pages: u32,
 }
 
 impl Eyes {
@@ -555,6 +724,13 @@ impl Eyes {
             purr_until: -1.0,
             pleading_until: -1.0,
             last_water: -1.0,
+            jig: Jiggle::default(),
+            gauge: None,
+            dance: Move::Sway,
+            dance_from: 0,
+            dance_len: 8,
+            seen_beat: 0,
+            noted_pages: 1,
         }
     }
 
@@ -587,6 +763,7 @@ impl Eyes {
     /// Clicked or opened: a few in a row get annoying, more get dizzy.
     pub fn poke(&mut self) {
         let t = self.t;
+        self.jig.squish(40.0);
         self.pokes.push_back(t);
         while self.pokes.front().is_some_and(|&p| t - p > 5.0) {
             self.pokes.pop_front();
@@ -601,9 +778,11 @@ impl Eyes {
         }
     }
 
-    /// The island just collapsed again: sometimes a cheeky wink.
+    /// The island just collapsed again: sometimes a cheeky wink. Anything
+    /// done while it was open (a note, a task) already queued its own reaction
+    /// and gets the stage instead.
     pub fn island_closed(&mut self) {
-        if self.rand() < 0.65 {
+        if self.queue.is_empty() && self.rand() < 0.65 {
             let pick = match (self.rand() * 4.0) as u32 {
                 0 => React::Wink,
                 1 => React::Peek,
@@ -612,6 +791,84 @@ impl Eyes {
             };
             self.react(pick);
         }
+    }
+
+    /// A level HUD changed (volume keys, mute, brightness keys). The face sits
+    /// in the HUD and acts the level out live: it watches the bar fill, hops
+    /// when it goes up, squishes when it goes down.
+    pub fn gauge(&mut self, kind: Gauge, level: f32, muted: bool) {
+        let t = self.t;
+        let level = level.clamp(0.0, 1.0);
+        let prev = self.gauge.filter(|g| g.kind == kind && t - g.at < GAUGE_HOLD);
+        let mute_at = match prev {
+            Some(g) if g.muted == muted => g.mute_at,
+            Some(_) => t,
+            None if muted => t,
+            None => -10.0,
+        };
+        self.gauge = Some(GaugeState { kind, level, muted, at: t, mute_at });
+        let Some(prev) = prev else {
+            // Popping into the HUD; whatever it was doing can wait.
+            self.react = None;
+            self.jig.hop(28.0);
+            return;
+        };
+        if prev.muted != muted {
+            if muted {
+                self.jig.squish(60.0);
+            } else {
+                self.jig.hop(55.0);
+                self.wave_burst(3);
+            }
+            return;
+        }
+        let d = level - prev.level;
+        if d.abs() < 0.001 {
+            return;
+        }
+        let kick = (d.abs() * 600.0).clamp(18.0, 60.0);
+        if d > 0.0 {
+            self.jig.hop(kick);
+            match kind {
+                Gauge::Volume => self.wave_burst(if level > 0.75 { 2 } else { 1 }),
+                Gauge::Brightness => {
+                    let (x, y) = (self.range(-18.0, 18.0), self.range(-12.0, -6.0));
+                    self.spawn(Kind::Spark, x, y, 0.0, -4.0, 0.5, 1.6 + 1.6 * level);
+                }
+            }
+            if kind == Gauge::Volume && level >= 0.9 && prev.level < 0.9 {
+                self.spawn(Kind::Sweat, 21.0, -8.0, 0.0, 2.0, 1.2, 2.0);
+                self.jig.wobble(3.0);
+            }
+        } else {
+            self.jig.squish(kick);
+        }
+    }
+
+    /// Sound waves rolling off both sides of the face.
+    fn wave_burst(&mut self, n: u32) {
+        for i in 0..n {
+            for side in [-1.0f32, 1.0] {
+                self.spawn(Kind::Wave, side * 20.0, 0.0, side, 0.0, 0.55 + 0.12 * i as f32, 1.0 + 0.35 * i as f32);
+            }
+        }
+    }
+
+    /// The level HUD the face is acting out, while it is fresh.
+    fn live_gauge(&self) -> Option<GaugeState> {
+        self.gauge.filter(|g| self.t - g.at < GAUGE_HOLD)
+    }
+
+    /// A note was saved: read it over, then nod. Longer notes get more pages.
+    pub fn noted(&mut self, chars: usize) {
+        self.noted_pages = (1 + chars / 160).min(3) as u32;
+        self.react(React::Noted);
+    }
+
+    /// The dance move playing right now (while music plays).
+    #[cfg(test)]
+    pub fn dance_move(&self) -> Move {
+        self.dance
     }
 
     /// A water reminder fired: look pleading until something gets logged.
@@ -641,6 +898,17 @@ impl Eyes {
     fn start(&mut self, r: React) {
         self.react = Some((r, self.t));
         self.react_mark = false;
+        // Anticipation for every reaction: a hop, a squish or a wobble.
+        match r {
+            React::Surprised | React::Shocked | React::Wake => self.jig.hop(55.0),
+            React::Happy | React::Perk | React::GotIt | React::Love | React::WelcomeBack | React::Sparkle => self.jig.hop(38.0),
+            React::Satisfied | React::Sigh | React::Defeated | React::Annoyed | React::Gulp | React::Poof => self.jig.squish(45.0),
+            React::Huh | React::Confused | React::Dizzy | React::EyeRoll => {
+                let w = if self.rand() < 0.5 { -3.5 } else { 3.5 };
+                self.jig.wobble(w);
+            }
+            _ => {}
+        }
         match r {
             React::Sparkle | React::WelcomeBack => {
                 for _ in 0..5 {
@@ -677,6 +945,19 @@ impl Eyes {
                 }
             }
             React::GotIt => self.spawn(Kind::Spark, 22.0, -6.0, 0.0, 0.0, 0.6, 2.6),
+            React::Noted => {
+                for i in 0..self.noted_pages {
+                    let x = -12.0 + 12.0 * i as f32;
+                    self.spawn(Kind::Page, x, 9.0, 1.5 - i as f32, -14.0, 1.6 + 0.25 * i as f32, 1.0);
+                }
+            }
+            React::Poof => {
+                for i in 0..9 {
+                    let a = i as f32 / 9.0 * TAU;
+                    let v = self.range(16.0, 24.0);
+                    self.spawn(Kind::Dot, 0.0, 2.0, a.cos() * v * 1.4, a.sin() * v * 0.7, 0.55, 1.0);
+                }
+            }
             React::DoubleBlink => {
                 self.blink_start = Some(self.t);
                 self.blink_double = true;
@@ -714,13 +995,16 @@ impl Eyes {
         self.edges(s);
         self.mood = self.pick_mood(s);
 
+        self.choreo(s);
+
         if let Some((r, st)) = self.react {
             if t - st >= r.duration() {
                 self.react = None;
             }
         }
+        let gauging = self.live_gauge().is_some();
         if s.visible {
-            if self.react.is_none() {
+            if self.react.is_none() && !gauging {
                 while let Some((r, q)) = self.queue.pop_front() {
                     if t - q < 25.0 {
                         self.start(r);
@@ -728,8 +1012,18 @@ impl Eyes {
                     }
                 }
             }
-            self.bits(s);
+            if gauging {
+                self.next_bit = self.next_bit.max(t + 4.0);
+            } else {
+                self.bits(s);
+            }
             self.ambient_parts(s);
+        } else {
+            // Hidden time doesn't age the queue: what happened while the
+            // island was open plays once it collapses.
+            for q in &mut self.queue {
+                q.1 += dt;
+            }
         }
         self.reaction_moments();
 
@@ -740,6 +1034,7 @@ impl Eyes {
         self.pose.ease_to(&target, k);
         self.update_gaze(dt, s, own_look);
         self.pose.look = self.gaze;
+        self.jig.step(dt);
         self.blink = self.blink_amount();
         self.update_parts(dt, s);
         self.ring = s.set.mood_ring.then(|| ring_color(s));
@@ -993,6 +1288,55 @@ impl Eyes {
         Mood::Neutral
     }
 
+    /// Dance bookkeeping, once per beat: switch moves at phrase ends, kick
+    /// the spring on the accents, toss notes on every other beat.
+    fn choreo(&mut self, s: &Senses) {
+        let c = self.beat.count;
+        let dancing = matches!(self.mood, Mood::Dance | Mood::Headbang | Mood::Vibe);
+        if !dancing || c == self.seen_beat {
+            self.seen_beat = c;
+            return;
+        }
+        self.seen_beat = c;
+        let pool = Move::pool(self.mood, self.beat.energy);
+        let fits = pool.iter().any(|&(m, _)| m == self.dance);
+        if !fits || c.wrapping_sub(self.dance_from) >= self.dance_len {
+            let cur = self.dance;
+            let total: u32 = pool.iter().filter(|&&(m, _)| m != cur).map(|&(_, w)| w).sum();
+            let mut r = (self.rand() * total as f32) as u32;
+            let mut pick = pool.iter().map(|&(m, _)| m).find(|&m| m != cur).unwrap_or(cur);
+            for &(m, w) in pool.iter().filter(|&&(m, _)| m != cur) {
+                if r < w {
+                    pick = m;
+                    break;
+                }
+                r -= w;
+            }
+            self.dance = pick;
+            self.dance_from = c;
+            self.dance_len = if self.rand() < 0.6 { 8 } else { 4 };
+            let w = if self.rand() < 0.5 { -2.5 } else { 2.5 };
+            self.jig.wobble(w);
+        }
+        let amp = self.beat.hit;
+        let side = if c % 2 == 0 { 1.0 } else { -1.0 };
+        let step = c.wrapping_sub(self.dance_from);
+        match self.dance {
+            Move::Hop if step % 2 == 0 => self.jig.hop(20.0 + 40.0 * amp),
+            Move::Bounce => self.jig.hop(10.0 + 18.0 * amp),
+            Move::Bang | Move::Thrash => self.jig.squish(15.0 + 25.0 * amp),
+            Move::SideBang => self.jig.wobble(side * 2.5 * amp),
+            Move::Pump => self.jig.squish(10.0 * amp),
+            _ => {}
+        }
+        if s.visible && c % 2 == 0 {
+            let (ax, ay) = s.area;
+            let side = if self.rand() < 0.5 { -1.0 } else { 1.0 };
+            let size = 7.5 + 2.0 * amp;
+            self.spawn(Kind::Note, side * (ax - 6.0).min(26.0), ay * 0.3, side * 2.0, -7.0 - 3.0 * amp, 1.6, size);
+        }
+    }
+
     /// Little unprompted bits of personality while nothing else happens.
     fn bits(&mut self, s: &Senses) {
         if self.react.is_some() || !self.queue.is_empty() {
@@ -1111,10 +1455,7 @@ impl Eyes {
                 }
             }
             Dance | Headbang | Vibe => {
-                if self.due(T_NOTE, 1.3) {
-                    let side = if self.rand() < 0.5 { -1.0 } else { 1.0 };
-                    self.spawn(Kind::Note, side * (ax - 6.0).min(26.0), ay * 0.3, side * 2.0, -7.0, 1.6, 8.5);
-                }
+                // Notes ride the beat (see `choreo`).
                 if self.genre == Genre::Love && self.due(T_HEART, 1.0) {
                     let x = self.range(-16.0, 16.0);
                     self.spawn(Kind::Heart, x, 4.0, 0.0, -7.0, 1.4, 2.6);
@@ -1205,6 +1546,11 @@ impl Eyes {
                     self.spawn(Kind::Dot, 0.0, 6.0, a.cos() * v * 1.6, a.sin() * v * 0.5, 0.5, 1.0);
                 }
             }
+            React::Noted if e >= 1.1 && !self.react_mark => {
+                self.react_mark = true;
+                self.jig.hop(30.0);
+                self.spawn(Kind::Spark, 22.0, -7.0, 0.0, 0.0, 0.6, 2.4);
+            }
             React::Wake if e >= 0.25 && !self.react_mark => {
                 self.react_mark = true;
                 self.blink_start = Some(self.t);
@@ -1268,41 +1614,7 @@ impl Eyes {
                 p.blush = 0.8;
                 lv.dx = (t * 45.0).sin() * 0.35;
             }
-            Dance => {
-                let pl = self.beat.pulse(t);
-                let sw = self.beat.sway(t);
-                p.happy = 0.35;
-                p.open = 0.95;
-                look = Some((sw * 0.6, -0.1));
-                lv.dy = -pl * 3.2;
-                lv.squash = pl * 0.14;
-                lv.rot = sw * 0.13;
-                lv.dx = sw * 2.5;
-                x.shades = self.genre == Genre::Party;
-            }
-            Headbang => {
-                let pl = self.beat.pulse(t);
-                let side = if self.beat.count % 2 == 0 { 1.0 } else { -1.0 };
-                p.angry = 0.55;
-                p.open = 0.7;
-                p.brow = -2.0;
-                look = Some((0.0, 0.6));
-                lv.dy = pl * 4.0 - 1.0;
-                lv.rot = side * pl * 0.06;
-                lv.squash = -pl * 0.06;
-            }
-            Vibe => {
-                lv.dx = (t * 1.3).sin() * 3.0;
-                lv.rot = (t * 1.3).sin() * 0.11;
-                if self.genre == Genre::Sad {
-                    p.sad = 0.5;
-                    p.open = 0.55;
-                    p.happy = 0.15;
-                } else {
-                    p.happy = 0.9;
-                    p.open = 0.45;
-                }
-            }
+            Dance | Headbang | Vibe => self.dance_pose(&mut p, &mut x, &mut lv, &mut look),
             Determined => {
                 p.angry = 0.5;
                 p.open = 0.7;
@@ -1443,7 +1755,238 @@ impl Eyes {
         if let Some((r, st)) = self.react {
             self.react_pose(r, t - st, s, &mut p, &mut x, &mut lv, &mut look);
         }
+        if let Some(g) = self.live_gauge() {
+            self.gauge_pose(g, &mut p, &mut x, &mut lv, &mut look);
+        }
         (p, x, lv, look)
+    }
+
+    /// The current dance move, timed to the beat. `pl` is the beat pulse
+    /// scaled by how hard the beat hit, `ph` the progress through the beat.
+    fn dance_pose(&self, p: &mut Pose, x: &mut Extras, lv: &mut Live, look: &mut Option<(f32, f32)>) {
+        let t = self.t;
+        let b = &self.beat;
+        let pl = b.pulse(t) * (0.55 + 0.6 * b.hit);
+        let ph = b.phase(t);
+        let ease = ph * ph * (3.0 - 2.0 * ph);
+        let arc = (ph * PI).sin();
+        let side = if b.count % 2 == 0 { 1.0 } else { -1.0 };
+        let sw = b.sway(t);
+        let step = b.count.wrapping_sub(self.dance_from);
+        match self.dance {
+            Move::Sway => {
+                p.happy = 0.35;
+                p.open = 0.95;
+                *look = Some((sw * 0.6, -0.1));
+                lv.dy = -pl * 3.2;
+                lv.squash = pl * 0.14;
+                lv.rot = sw * 0.13;
+                lv.dx = sw * 2.5;
+            }
+            Move::Bounce => {
+                p.happy = 0.55;
+                p.open = 0.9;
+                *look = Some((0.0, -0.2));
+                lv.dy = -pl * 4.0;
+                lv.squash = pl * 0.16 - 0.03;
+            }
+            Move::Nod => {
+                p.open = 0.7;
+                p.happy = 0.2;
+                *look = Some((side * 0.2, 0.45));
+                lv.dy = pl * 2.6;
+                lv.rot = side * 0.03;
+            }
+            Move::Shuffle => {
+                p.happy = 0.4;
+                *look = Some((side * 0.8, 0.0));
+                lv.dx = side * (2.0 * ease - 1.0) * 4.0;
+                lv.rot = side * 0.06 * arc;
+                lv.squash = -pl * 0.08;
+            }
+            Move::Twist => {
+                p.happy = 0.5;
+                *look = Some((-side * 0.5, 0.0));
+                lv.rot = side * 0.2 * arc;
+                lv.squash = side * 0.07 * arc;
+            }
+            Move::LookAround => {
+                const DIRS: [(f32, f32); 4] = [(-0.8, -0.3), (0.8, -0.3), (-0.6, 0.5), (0.6, 0.5)];
+                *look = Some(DIRS[(b.count % 4) as usize]);
+                p.size = 1.05;
+                p.brow = 1.2 * pl;
+                lv.dy = -pl * 1.5;
+            }
+            Move::Hop => {
+                p.happy = 1.0;
+                p.open = 0.9;
+                lv.squash = pl * 0.1;
+            }
+            Move::Groove => {
+                let f = ((step % 2) as f32 + ph) / 2.0 * TAU;
+                p.open = 0.55;
+                p.happy = 0.55;
+                *look = Some((f.sin() * 0.5, 0.1));
+                lv.dx = f.sin() * 3.2;
+                lv.dy = (2.0 * f).sin() * 1.2;
+                lv.rot = f.cos() * 0.07;
+            }
+            Move::Pump => {
+                p.size = 1.0 + 0.16 * pl;
+                p.pupil = 1.0 + 0.4 * pl;
+                p.brow = 1.5 * pl;
+                lv.squash = -0.06 * pl;
+                *look = Some((0.0, -0.1));
+            }
+            Move::WinkStep => {
+                if ph < 0.55 {
+                    if side > 0.0 {
+                        p.wink_r = 1.0;
+                    } else {
+                        p.wink_l = 1.0;
+                    }
+                }
+                p.happy = 0.5;
+                lv.dx = sw * 2.0;
+                lv.dy = -pl * 2.0;
+            }
+            Move::Bang => {
+                p.angry = 0.55;
+                p.open = 0.7;
+                p.brow = -2.0;
+                *look = Some((0.0, 0.6));
+                lv.dy = pl * 4.0 - 1.0;
+                lv.rot = side * pl * 0.06;
+                lv.squash = -pl * 0.06;
+            }
+            Move::SideBang => {
+                p.angry = 0.5;
+                p.open = 0.7;
+                p.brow = -2.0;
+                *look = Some((side * 0.4, 0.6));
+                lv.dy = pl * 2.5;
+                lv.dx = side * pl * 3.0;
+                lv.rot = side * pl * 0.2;
+            }
+            Move::Thrash => {
+                p.angry = 0.65;
+                p.open = 0.55;
+                p.brow = -2.5;
+                *look = Some((0.0, 0.7));
+                lv.dy = pl * 4.5 - 1.0;
+                lv.dx = (t * 38.0).sin() * pl;
+                lv.squash = -pl * 0.08;
+            }
+            Move::Drift => {
+                p.happy = 0.9;
+                p.open = 0.45;
+                lv.dx = (t * 1.3).sin() * 3.0;
+                lv.rot = (t * 1.3).sin() * 0.11;
+            }
+            Move::Float => {
+                p.open = 0.0;
+                p.happy = 0.8;
+                lv.dy = (t * 1.1).sin() * 1.6 - 0.5;
+                lv.rot = (t * 0.7).sin() * 0.06;
+            }
+            Move::Lean => {
+                let l = if (step / 4) % 2 == 0 { 1.0 } else { -1.0 };
+                p.open = 0.6;
+                p.happy = 0.6;
+                *look = Some((l * 0.6, -0.2));
+                lv.rot = l * 0.12;
+                lv.dx = l * 3.0;
+                lv.dy = pl * 1.2;
+            }
+        }
+        match self.mood {
+            Mood::Headbang => {
+                p.angry = p.angry.max(0.35);
+                p.brow = p.brow.min(-1.0);
+            }
+            Mood::Vibe if self.genre == Genre::Sad => {
+                p.sad = 0.5;
+                p.happy = p.happy.min(0.15);
+                p.open = p.open.min(0.55);
+            }
+            _ => {}
+        }
+        x.shades = self.mood == Mood::Dance && self.genre == Genre::Party;
+    }
+
+    /// Act out the level in a volume or brightness HUD. Runs last so it wins
+    /// over the mood; the face sits right of the bar and watches it fill.
+    fn gauge_pose(&self, g: GaugeState, p: &mut Pose, x: &mut Extras, lv: &mut Live, look: &mut Option<(f32, f32)>) {
+        let t = self.t;
+        p.happy = 0.0;
+        p.sad = 0.0;
+        p.angry = 0.0;
+        p.mouth = 0.0;
+        p.brow = 0.0;
+        p.size = 1.0;
+        p.size_l = 1.0;
+        p.open = 1.0;
+        x.glyph = Glyph::None;
+        x.shades = false;
+        match g.kind {
+            Gauge::Volume if g.muted => {
+                // Clamp the eyes shut: `> <` for a beat, then a tight line.
+                if t - g.mute_at < 0.45 {
+                    x.glyph = Glyph::Squeeze;
+                } else {
+                    p.open = 0.0;
+                    p.happy = 0.15;
+                    p.angry = 0.25;
+                }
+                p.brow = -1.0;
+                lv.dy = 0.8;
+            }
+            Gauge::Volume => {
+                let v = g.level;
+                p.size = 0.86 + 0.34 * v;
+                p.pupil = 1.3 - 0.55 * v;
+                p.open = 0.78 + 0.22 * v;
+                *look = Some((-1.0 + 0.6 * v, -0.15 * v));
+                if v < 0.12 {
+                    // Straining to hear: lean in toward the bar, little `o`.
+                    p.brow = 1.8;
+                    p.mouth = 0.35;
+                    p.size = 0.92;
+                    *look = Some((-0.9, 0.15));
+                    lv.rot = -0.08;
+                    lv.dx = -1.5;
+                } else if v > 0.85 {
+                    // Too loud: wince and rattle.
+                    let k = (v - 0.85) / 0.15;
+                    p.angry = 0.35 * k;
+                    p.open = 1.0 - 0.35 * k;
+                    p.brow = -1.5 * k;
+                    p.mouth = 0.5 * k;
+                    lv.dx = (t * 48.0).sin() * 0.5 * k;
+                } else {
+                    p.happy = 0.25;
+                    p.brow = 0.8 * v;
+                }
+            }
+            Gauge::Brightness => {
+                let b = g.level;
+                // Pupils dilate in the dark and pinch in bright light.
+                p.pupil = 1.6 - 1.0 * b;
+                *look = Some((-0.7 + 0.4 * b, -0.5 * b));
+                if b > 0.75 {
+                    let k = (b - 0.75) / 0.25;
+                    p.open = 1.0 - 0.45 * k;
+                    p.happy = 0.45 * k;
+                    p.brow = -0.8 * k;
+                    x.shades = b >= 0.97;
+                } else if b < 0.25 {
+                    let k = (0.25 - b) / 0.25;
+                    p.size = 1.0 + 0.15 * k;
+                    p.brow = 1.2 * k;
+                    x.shine = true;
+                }
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1571,13 +2114,6 @@ impl Eyes {
                 p.size = 1.08;
                 *look = Some((side * 0.9, 0.0));
             }
-            React::Wince => {
-                p.open = 0.18;
-                p.angry = 0.6;
-                p.brow = -2.0;
-                lv.squash = 0.12;
-                lv.dx = (e * 60.0).sin() * 0.8 * (1.0 - pr);
-            }
             React::Flash => {
                 lv.flash = (1.0 - pr * 2.5).max(0.0);
                 if pr < 0.45 {
@@ -1690,6 +2226,32 @@ impl Eyes {
                 p.brow = 1.5;
                 *look = Some((0.15, -1.0));
             }
+            React::Noted => {
+                if e < 1.1 {
+                    // Read it over: two lines, left to right.
+                    let line = (e / 0.55).floor();
+                    let u = (e / 0.55).fract();
+                    *look = Some((-0.8 + 1.6 * u, 0.35 + 0.3 * line));
+                    p.open = 0.85;
+                    p.brow = 0.6;
+                    p.happy = 0.0;
+                } else {
+                    // Proud double nod.
+                    let k = ((e - 1.1) / 0.9).clamp(0.0, 1.0);
+                    p.happy = 0.9;
+                    p.open = 0.85;
+                    lv.dy = (k * TAU * 2.0).sin().abs() * 2.2 * (1.0 - k);
+                }
+            }
+            React::Poof => {
+                if pr < 0.35 {
+                    x.glyph = Glyph::Squeeze;
+                } else {
+                    p.size = 1.1;
+                    p.brow = 1.5;
+                    *look = Some((0.0, 0.5));
+                }
+            }
             React::Emote(g) => {
                 x.glyph = g;
                 p.size = 1.0 + 0.1 * bell;
@@ -1772,6 +2334,11 @@ impl Eyes {
                     p.vx *= d;
                     p.vy *= d;
                 }
+                Kind::Wave => {
+                    p.x += p.vx * 14.0 * dt;
+                    continue;
+                }
+                Kind::Page => p.vx = (p.age * 3.0 + p.hue * 6.0).sin() * 3.0,
                 Kind::Sheep => {
                     let k = p.age / p.life;
                     p.x = -ax + 8.0 + (2.0 * ax - 16.0) * k;
@@ -1792,7 +2359,8 @@ impl Eyes {
     pub fn draw(&self, sc: &mut Scene, pt: &Paint) {
         let p = &self.pose;
         let lv = &self.live;
-        let xf = Xf::new(pt.cx, pt.cy, pt.scale, p.dx + lv.dx, p.dy + lv.dy, p.rot + lv.rot, p.squash + lv.squash);
+        let j = &self.jig;
+        let xf = Xf::new(pt.cx, pt.cy, pt.scale, p.dx + lv.dx, p.dy + lv.dy + j.y, p.rot + lv.rot + j.rot, p.squash + lv.squash + j.sq);
         let tint = pt.tint.or(self.ring);
         for side in [-1.0f32, 1.0] {
             self.eye(sc, &xf, side, pt.style, tint, pt.accent);
@@ -2091,6 +2659,32 @@ impl Eyes {
                     sc.poly(drop(x, y, p.size * k, stretch), ICE.fade(a));
                 }
                 Kind::Snow => sc.circle(x, y, 1.1 * k, WHITE.fade(0.85 * a)),
+                Kind::Wave => {
+                    // `)` on the right, `(` on the left, growing as it travels.
+                    let side = p.vx.signum();
+                    let r = (3.0 + p.age / p.life * 7.0) * p.size * k;
+                    let pts = (0..=8)
+                        .map(|i| {
+                            let ang = (-0.75 + 1.5 * i as f32 / 8.0) * 0.9;
+                            (x + side * ang.cos() * r - side * r * 0.6, y + ang.sin() * r)
+                        })
+                        .collect();
+                    let fade = 1.0 - p.age / p.life;
+                    sc.polyline(pts, 1.3 * k, TEXT.fade(0.85 * fade));
+                }
+                Kind::Page => {
+                    let (w, h) = (5.0 * k, 6.4 * k);
+                    let tilt = (p.age * 3.0 + p.hue * 6.0).sin() * 0.25;
+                    let (c, sn) = (tilt.cos(), tilt.sin());
+                    let at = |u: f32, v: f32| (x + u * c - v * sn, y + u * sn + v * c);
+                    sc.poly(vec![at(-w / 2.0, -h / 2.0), at(w / 2.0, -h / 2.0), at(w / 2.0, h / 2.0), at(-w / 2.0, h / 2.0)], SCLERA.fade(a));
+                    for i in 0..3 {
+                        let v = -h / 2.0 + h * (0.3 + 0.2 * i as f32);
+                        let (x0, y0) = at(-w * 0.32, v);
+                        let (x1, y1) = at(w * if i == 2 { 0.05 } else { 0.32 }, v);
+                        sc.line(x0, y0, x1, y1, 0.6 * k, PUPIL.fade(0.7 * a));
+                    }
+                }
                 Kind::Rain => sc.line(x, y, x - 0.6 * k, y + 3.0 * k, 0.9 * k, Color::rgb(147, 197, 253).fade(a)),
                 Kind::Confetti => {
                     let r = p.age * 6.0 + p.hue * 6.0;
@@ -2688,5 +3282,114 @@ mod tests {
         run(&mut e, &w, 20.0);
         assert!(e.parts.len() <= 48);
         assert!(e.parts.iter().any(|p| p.kind == Kind::Firework) || e.parts.iter().any(|p| p.kind == Kind::Confetti));
+    }
+
+    #[test]
+    fn dancing_cycles_through_moves() {
+        let (mut e, mut w) = settled();
+        w.music = true;
+        w.track = Track { title: "Song".into(), artist: "Band".into(), playback: Playback::Playing, duration_ms: 200_000, ..Track::default() };
+        let mut seen = Vec::new();
+        for _ in 0..90 * 4 {
+            run(&mut e, &w, 0.25);
+            if !seen.contains(&e.dance_move()) {
+                seen.push(e.dance_move());
+            }
+        }
+        assert!(seen.len() >= 4, "only {seen:?}");
+        // Headbang only picks from its own moves.
+        w.track.title = "Heavy Metal Thunder".into();
+        run(&mut e, &w, 3.0);
+        assert!(Move::pool(Mood::Headbang, 0.5).iter().any(|&(m, _)| m == e.dance_move()));
+    }
+
+    #[test]
+    fn volume_gauge_tracks_the_level_and_lets_go() {
+        let (mut e, w) = settled();
+        e.gauge(Gauge::Volume, 0.2, false);
+        run(&mut e, &w, 0.6);
+        let quiet = e.pose().size;
+        e.gauge(Gauge::Volume, 0.7, false);
+        assert!(e.parts.iter().any(|p| p.kind == Kind::Wave), "turning it up sends sound waves");
+        run(&mut e, &w, 0.6);
+        assert!(e.pose().size > quiet + 0.1, "eyes grow with the volume");
+        assert!(e.pose().look.0 < 0.0, "eyes watch the bar on the left");
+        e.gauge(Gauge::Volume, 0.7, true);
+        run(&mut e, &w, 0.8);
+        assert!(e.pose().open < 0.1, "muted clamps the eyes shut");
+        run(&mut e, &w, GAUGE_HOLD + 0.5);
+        assert!(e.live_gauge().is_none());
+        assert!(e.pose().open > 0.8, "back to the mood once the HUD is gone");
+    }
+
+    #[test]
+    fn brightness_moves_the_pupils() {
+        let (mut e, w) = settled();
+        e.gauge(Gauge::Brightness, 0.05, false);
+        run(&mut e, &w, 0.6);
+        let dark = e.pose().pupil;
+        e.gauge(Gauge::Brightness, 1.0, false);
+        run(&mut e, &w, 0.6);
+        assert!(dark > e.pose().pupil + 0.5, "pupils dilate in the dark");
+        assert!(e.extras().shades);
+    }
+
+    #[test]
+    fn reactions_wait_out_a_gauge() {
+        let (mut e, w) = settled();
+        e.gauge(Gauge::Volume, 0.5, false);
+        e.react(React::Gulp);
+        run(&mut e, &w, 1.0);
+        assert_eq!(e.current(), None);
+        run(&mut e, &w, GAUGE_HOLD);
+        assert_eq!(e.current(), Some(React::Gulp));
+    }
+
+    #[test]
+    fn notes_written_while_open_play_after_collapse() {
+        let (mut e, w) = settled();
+        e.noted(400);
+        let mut s = w.senses();
+        s.visible = false;
+        // A long writing session: well past the usual 25 s staleness.
+        for _ in 0..60 * 40 {
+            e.tick(1.0 / 60.0, &s);
+        }
+        e.island_closed();
+        run(&mut e, &w, 0.05);
+        assert_eq!(e.current(), Some(React::Noted));
+        assert_eq!(e.parts.iter().filter(|p| p.kind == Kind::Page).count(), 3);
+    }
+
+    #[test]
+    fn jiggle_overshoots_then_settles() {
+        let mut j = Jiggle::default();
+        j.hop(60.0);
+        let mut low = 0.0f32;
+        let mut high = 0.0f32;
+        for _ in 0..120 {
+            j.step(1.0 / 60.0);
+            low = low.min(j.y);
+            high = high.max(j.y);
+        }
+        assert!(low < -0.5 && high > 0.0, "goes up and overshoots back down");
+        assert!(j.y.abs() < 0.05 && j.sq.abs() < 0.01);
+    }
+
+    #[test]
+    fn hud_face_draws_with_new_particles() {
+        let (mut e, w) = settled();
+        let body = Rect::new(20.0, 0.0, 310.0, 38.0);
+        let (cx, cy, scale) = place(Spot::Hud, body);
+        assert!(cx < body.right() && cx > body.x);
+        e.gauge(Gauge::Volume, 0.4, false);
+        e.gauge(Gauge::Volume, 0.95, false);
+        e.noted(10);
+        run(&mut e, &w, 0.2);
+        e.start(React::Noted);
+        run(&mut e, &w, 0.2);
+        let mut sc = Scene::new();
+        e.draw(&mut sc, &Paint { cx, cy, scale, bounds: body, style: EyeStyle::Round, tint: None, accent: None, props: false });
+        assert!(!sc.cmds.is_empty());
     }
 }
