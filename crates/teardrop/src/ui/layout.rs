@@ -441,8 +441,13 @@ fn hud(c: &mut Ctx, r: Rect, h: &teardrop_core::Hud, cy: f32) {
                 _ => (Icon::Note, TEXT),
             };
             icons::draw(&mut c.s, icon, left + 8.0, cy, 17.0, col);
+            let eyes = c.set.idle_look == IdleLook::Eyes;
+            let tail = if eyes { 14.0 + HUD_FACE_W } else { 14.0 };
             c.text(h.title.clone(), Rect::new(r.x + 42.0, cy - 10.0, 100.0, 20.0), 13.0, Weight::Medium, TEXT, Align::Left);
-            c.text(h.detail.clone(), Rect::new(r.right() - 14.0 - 120.0, cy - 10.0, 120.0, 20.0), 12.0, Weight::Regular, TEXT_2, Align::Right);
+            c.text(h.detail.clone(), Rect::new(r.right() - tail - 120.0, cy - 10.0, 120.0, 20.0), 12.0, Weight::Regular, TEXT_2, Align::Right);
+            if eyes {
+                face(c, r, Spot::Hud, None);
+            }
         }
     }
 }

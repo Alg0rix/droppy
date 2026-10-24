@@ -95,6 +95,8 @@ pub struct Ambient {
     pub quiet: bool,
     pub locked: bool,
     pub weather: Weather,
+    /// CAPS LOCK is on.
+    pub caps: bool,
 }
 
 /// Wall-clock time in the user's zone.

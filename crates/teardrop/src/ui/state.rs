@@ -381,6 +381,7 @@ impl UiState {
                 Volume | Muted | Brightness => 270.0,
                 Water => 310.0,
                 Meeting => 340.0,
+                _ if s.idle_look == IdleLook::Eyes => 290.0 + super::layout::HUD_FACE_W,
                 _ => 290.0,
             };
             return (w, 38.0);
@@ -437,7 +438,7 @@ impl UiState {
         }
         if let Some(h) = vm.live_hud(now_ms) {
             use teardrop_core::HudKind::*;
-            return matches!(h.kind, Volume | Muted | Brightness).then_some(Spot::Hud);
+            return matches!(h.kind, Volume | Muted | Brightness | Charging | Bluetooth | Timer).then_some(Spot::Hud);
         }
         if vm.meeting_soon().is_some() || vm.voice.phase == crate::voice::VoicePhase::Recording {
             None
@@ -473,6 +474,8 @@ impl UiState {
             env: &vm.env,
             set: s,
             area: eyes::area(spot.unwrap_or(Spot::Idle), body),
+            thinking: vm.ai.busy,
+            focus_left: (spot == Some(Spot::Focus) && vm.focus_running()).then(|| vm.focus_remaining_ms() as f32 / 1000.0),
         };
         self.eyes.tick(dt, &senses);
     }

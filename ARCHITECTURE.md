@@ -105,6 +105,16 @@ Each page is `core` state + a thin Windows sampler:
   power-setting notifications (built-in panels).
 - Things done while the island is open (a note saved, a task removed) queue
   reactions that don't go stale while hidden, so they play on collapse.
+  Every action has one: skips/seeks/calendar steps swipe, +/- and setting
+  toggles nod or shake, undo looks sheepish (`Oops`), clearing sweeps,
+  goals (all tasks, water goal, a focus block) `Celebrate`, joining a
+  meeting salutes, the meeting alert gasps, a fast speed test zooms.
+- Live, while collapsed: keystrokes anywhere (input with a still pointer)
+  switch to `Typing`; a busy AI to `Thinking`; the last ten seconds of a
+  focus timer tick-tock; the wheel over the island spins the pupils; a
+  window switch (shell hook) makes the eyes glance toward it; CAPS LOCK
+  shouts; long hovers giggle and leaving pouts; unplugging gasps, 10%
+  battery faints. Pausing mid-dance is a record scratch.
 
 Signals come from `ViewModel.env` (`Ambient`), filled by `services_env.rs`
 (idle via `GetLastInputInfo`, consent-store registry for mic/camera,
