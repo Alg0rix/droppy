@@ -7,7 +7,7 @@ use super::state::{Action, SettingKey};
 use super::theme::*;
 use crate::viewmodel::{local_naive, mmss, one_line, SpeedPhase};
 use chrono::{Datelike, NaiveDate};
-use teardrop_core::{EyeStyle, IdleLook, Page, Phase, Playback};
+use teardrop_core::{AiProvider, EyeStyle, IdleLook, Page, Phase, Playback};
 
 pub fn draw(c: &mut Ctx, page: Page, a: Rect) {
     match page {
@@ -21,6 +21,7 @@ pub fn draw(c: &mut Ctx, page: Page, a: Rect) {
         Page::Speed => speed(c, a),
         Page::Usage => usage(c, a),
         Page::Voice => voice(c, a),
+        Page::Ai => ai(c, a),
         Page::Settings => settings(c, a),
     }
 }
@@ -582,6 +583,28 @@ pub fn days_in_month(y: i32, m: u32) -> u32 {
     (next - first).num_days() as u32
 }
 
+/// Year and 1-based month for the calendar month offset from `today`.
+pub fn shown_year_month(today: NaiveDate, cal_offset: i32) -> (i32, u32) {
+    let idx = today.year() * 12 + today.month0() as i32 + cal_offset;
+    (idx.div_euclid(12), idx.rem_euclid(12) as u32 + 1)
+}
+
+/// Active list of events on `Page::Today`: either the events occurring on
+/// `selected_day` or the upcoming agenda when no day is selected.
+pub fn active_calendar_events<'a>(
+    vm: &'a crate::viewmodel::ViewModel,
+    selected_day: Option<(i32, u32, u32)>,
+) -> Vec<&'a crate::calendar::Event> {
+    match selected_day {
+        Some((y, m, d)) => vm.calendar.events_on_day(y, m, d),
+        None => vm.calendar.agenda(vm.now.timestamp(), 15),
+    }
+}
+
+pub fn today_max_scroll(count: usize) -> usize {
+    count.saturating_sub(3)
+}
+
 fn today(c: &mut Ctx, a: Rect) {
     let acc = accent(Page::Today);
     let vm = c.vm;
@@ -590,13 +613,13 @@ fn today(c: &mut Ctx, a: Rect) {
 
     // Month grid (Monday first), shifted by the browsing offset.
     let off_m = c.ui.cal_offset;
-    let idx = date.year() * 12 + date.month0() as i32 + off_m;
-    let (shown_y, shown_m) = (idx.div_euclid(12), idx.rem_euclid(12) as u32 + 1);
+    let (shown_y, shown_m) = shown_year_month(date, off_m);
     let cal = Rect::new(a.x, a.y, 214.0, a.h);
+    let has_filter = off_m != 0 || c.ui.cal_selected_day.is_some() || c.ui.cal_selected_event.is_some();
     let title = NaiveDate::from_ymd_opt(shown_y, shown_m, 1).unwrap().format("%B %Y").to_string();
     let title_r = Rect::new(cal.x, cal.y, cal.w - 56.0, 24.0);
     c.text(title, title_r, 14.0, Weight::Semibold, if off_m == 0 { TEXT } else { acc }, Align::Left);
-    if off_m != 0 {
+    if has_filter {
         c.hit(title_r, Action::CalToday);
     }
     c.icon_btn(Rect::new(cal.right() - 52.0, cal.y + 1.0, 24.0, 22.0), Action::CalStep(-1), Icon::Prev, 10.0, TEXT_2);
@@ -612,34 +635,82 @@ fn today(c: &mut Ctx, a: Rect) {
         let slot = off + d as usize - 1;
         let (col, row) = (slot % 7, slot / 7);
         let r = Rect::new(cal.x + col as f32 * cell_w, cal.y + 50.0 + row as f32 * 25.0, cell_w, 24.0);
+        let act = Action::CalDay(d as u8);
+        let hv = c.ui.hover_amt(act);
         let is_today = off_m == 0 && d == date.day();
+        let is_selected = c.ui.cal_selected_day == Some((shown_y, shown_m, d));
         if is_today {
             c.s.circle(r.cx(), r.cy(), 12.0, acc);
+            if is_selected {
+                c.s.ring(r.cx(), r.cy(), 13.3, 1.5, 0.0, std::f32::consts::TAU, ON_ACCENT.fade(0.75));
+            }
+        } else if is_selected {
+            c.s.circle(r.cx(), r.cy(), 12.0, acc.fade(0.24));
+            c.s.ring(r.cx(), r.cy(), 11.2, 1.5, 0.0, std::f32::consts::TAU, acc);
+        } else if hv > 0.01 {
+            c.s.circle(r.cx(), r.cy(), 11.5, SURFACE_HOVER.fade(hv));
         }
         if busy.contains(&d) {
             c.s.circle(r.cx(), r.y + r.h - 2.5, 1.9, if is_today { ON_ACCENT } else { acc });
         }
         let wk = col >= 5;
-        c.text(d.to_string(), r, 12.0, if is_today { Weight::Bold } else { Weight::Regular }, if is_today { ON_ACCENT } else if wk { TEXT_3 } else { TEXT_2 }, Align::Center);
+        let weight = if is_today || is_selected { Weight::Bold } else { Weight::Regular };
+        let fg = if is_today {
+            ON_ACCENT
+        } else if is_selected {
+            acc
+        } else if wk {
+            TEXT_3.mix(TEXT, hv * 0.5)
+        } else {
+            TEXT_2.mix(TEXT, hv * 0.6)
+        };
+        c.text(d.to_string(), r, 12.0, weight, fg, Align::Center);
+        c.hit(r, act);
     }
 
-    // Day + agenda + a one-line system summary.
+    // Day + agenda/detail + a one-line system summary.
     let x = a.x + 232.0;
     let w = a.w - 232.0;
-    c.text(date.format("%A").to_string(), Rect::new(x, a.y, w, 30.0), 23.0, Weight::Semibold, TEXT, Align::Left);
-    c.text(date.format("%-d %B").to_string(), Rect::new(x, a.y + 30.0, w, 20.0), 14.0, Weight::Regular, acc, Align::Left);
-    agenda(c, Rect::new(x, a.y + 58.0, w, 158.0), acc);
-    let sys = &vm.system;
+    let items = active_calendar_events(vm, c.ui.cal_selected_day);
+    if let Some(ev_idx) = c.ui.cal_selected_event {
+        if let Some(&ev) = items.get(ev_idx) {
+            event_detail(c, Rect::new(x, a.y, w, a.h - 20.0), ev_idx, ev, acc);
+            draw_today_sys_line(c, x, a.bottom() - 16.0, w);
+            return;
+        }
+    }
+    if let Some((sy, sm, sd)) = c.ui.cal_selected_day {
+        let sel_date = NaiveDate::from_ymd_opt(sy, sm, sd).unwrap_or(date);
+        c.text(sel_date.format("%A").to_string(), Rect::new(x, a.y, w - 68.0, 30.0), 21.0, Weight::Semibold, TEXT, Align::Left);
+        c.pill(Rect::new(x + w - 64.0, a.y + 4.0, 64.0, 22.0), Action::CalToday, "Upcoming", None, 10.0);
+        let sub = if sel_date == date {
+            format!("{} \u{00b7} Today", sel_date.format("%-d %B"))
+        } else if sy == date.year() {
+            sel_date.format("%-d %B").to_string()
+        } else {
+            sel_date.format("%-d %B %Y").to_string()
+        };
+        c.text(sub, Rect::new(x, a.y + 30.0, w, 20.0), 14.0, Weight::Regular, acc, Align::Left);
+    } else {
+        c.text(date.format("%A").to_string(), Rect::new(x, a.y, w, 30.0), 23.0, Weight::Semibold, TEXT, Align::Left);
+        c.text(date.format("%-d %B").to_string(), Rect::new(x, a.y + 30.0, w, 20.0), 14.0, Weight::Regular, acc, Align::Left);
+    }
+    agenda(c, Rect::new(x, a.y + 58.0, w, 158.0), &items, acc);
+    draw_today_sys_line(c, x, a.bottom() - 16.0, w);
+}
+
+fn draw_today_sys_line(c: &mut Ctx, x: f32, y: f32, w: f32) {
+    let sys = &c.vm.system;
     let mut line = format!("CPU {:.0}%  \u{00b7}  RAM {:.0}%  \u{00b7}  Disk {:.0}%", sys.cpu_pct, sys.mem_pct(), sys.disk_pct());
     if let Some(b) = sys.battery_pct {
         line.push_str(&format!("  \u{00b7}  {b}%{}", if sys.charging { "\u{26a1}" } else { "" }));
     }
-    c.text(line, Rect::new(x, a.bottom() - 16.0, w, 16.0), 9.5, Weight::Regular, TEXT_3, Align::Left);
+    c.text(line, Rect::new(x, y, w, 16.0), 9.5, Weight::Regular, TEXT_3, Align::Left);
 }
 
-/// Upcoming meetings from the connected calendars, or the prompt to connect one.
-fn agenda(c: &mut Ctx, r: Rect, acc: Color) {
-    use crate::calendar::{clock_label, countdown, day_label, FeedState};
+/// Upcoming meetings or selected day's events, or the prompt to connect a calendar.
+fn agenda(c: &mut Ctx, r: Rect, items: &[&crate::calendar::Event], acc: Color) {
+    use crate::calendar::{clock_label, countdown, day_label, time_range_label, FeedState};
     let vm = c.vm;
     let now = vm.now.timestamp();
     if vm.calendar_feeds == 0 {
@@ -651,32 +722,49 @@ fn agenda(c: &mut Ctx, r: Rect, acc: Color) {
         c.text("Copy the link first, then press it.", Rect::new(r.x, r.y + 114.0, r.w, 15.0), 10.0, Weight::Regular, TEXT_3, Align::Left);
         return;
     }
-    let items = vm.calendar.agenda(now, 3);
+    let day_mode = c.ui.cal_selected_day.is_some();
     if items.is_empty() {
         let (msg, col) = match vm.calendar.state {
             FeedState::Loading | FeedState::Idle => ("Loading your calendar\u{2026}".to_string(), TEXT_3),
             FeedState::Failed => (vm.calendar.error.clone(), AMBER),
-            FeedState::Ok => ("No meetings in the next 2 weeks".to_string(), TEXT_3),
+            FeedState::Ok if day_mode => ("No events on this day".to_string(), TEXT_3),
+            FeedState::Ok => ("No upcoming meetings".to_string(), TEXT_3),
         };
         c.text(msg, Rect::new(r.x, r.y + 6.0, r.w, 18.0), 12.0, Weight::Medium, col, Align::Left);
+        if day_mode && vm.calendar.state == FeedState::Ok {
+            c.text("Click another date on the calendar or press Upcoming.", Rect::new(r.x, r.y + 26.0, r.w, 15.0), 10.0, Weight::Regular, TEXT_3, Align::Left);
+        }
     }
-    for (i, ev) in items.iter().enumerate() {
-        let row = Rect::new(r.x, r.y + i as f32 * 44.0, r.w, 40.0);
-        c.s.rect(row, 10.0, SURFACE);
+    let scroll = c.ui.scroll_of(Page::Today).min(today_max_scroll(items.len()));
+    for (slot, (i, ev)) in items.iter().enumerate().skip(scroll).take(3).enumerate() {
+        let row = Rect::new(r.x, r.y + slot as f32 * 44.0, r.w, 40.0);
+        let ev_act = Action::CalEvent(i as u8);
+        let hv = c.ui.hover_amt(ev_act);
+        c.s.rect(row, 10.0, SURFACE.mix(SURFACE_HOVER, hv * 0.85));
+        if hv > 0.01 {
+            c.s.stroke(row, 10.0, 1.0, acc.fade(0.35 * hv));
+        }
         if i == 0 {
             c.s.rect(Rect::new(row.x, row.y + 8.0, 3.0, row.h - 16.0), 1.5, acc);
         }
         let join = ev.join.is_some();
         let tw = row.w - 20.0 - if join { 48.0 } else { 0.0 };
         c.text(ev.title.clone(), Rect::new(row.x + 12.0, row.y + 4.0, tw, 18.0), 12.5, Weight::Semibold, TEXT, Align::Left);
-        let day = day_label(ev, now);
-        let when = if ev.all_day { format!("{day} \u{00b7} All day") } else { format!("{day} {}", clock_label(ev)) };
+        let when = if day_mode {
+            time_range_label(ev)
+        } else {
+            let day = day_label(ev, now);
+            if ev.all_day { format!("{day} \u{00b7} All day") } else { format!("{day} {}", clock_label(ev)) }
+        };
         let tail = match (&ev.join, i) {
             (Some(j), _) => format!(" \u{00b7} {}", j.platform),
+            (None, _) if !ev.location.is_empty() => format!(" \u{00b7} {}", one_line(&ev.location)),
             (None, 0) if !ev.all_day => format!(" \u{00b7} {}", countdown(ev, now)),
             _ => String::new(),
         };
         c.text(format!("{when}{tail}"), Rect::new(row.x + 12.0, row.y + 22.0, tw, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+        let hit_w = if join { row.w - 48.0 } else { row.w };
+        c.hit(Rect::new(row.x, row.y, hit_w, row.h), ev_act);
         if join {
             c.pill(Rect::new(row.right() - 46.0, row.cy() - 11.0, 40.0, 22.0), Action::Join(i as u8), "Join", Some(acc), 10.5);
         }
@@ -684,6 +772,71 @@ fn agenda(c: &mut Ctx, r: Rect, acc: Color) {
     let fy = r.y + 3.0 * 44.0 + 4.0;
     c.pill(Rect::new(r.x, fy, 64.0, 20.0), Action::CalendarPaste, "Add link", None, 10.0);
     c.pill(Rect::new(r.x + 70.0, fy, 64.0, 20.0), Action::CalendarClear, "Remove", None, 10.0);
+    if items.len() > 3 {
+        c.text(
+            format!("{}\u{2013}{} of {}", scroll + 1, (scroll + 3).min(items.len()), items.len()),
+            Rect::new(r.x + 140.0, fy + 2.0, r.w - 140.0, 16.0),
+            9.5,
+            Weight::Regular,
+            TEXT_3,
+            Align::Right,
+        );
+    }
+}
+
+/// Full detail card for a clicked calendar event on `Page::Today`.
+fn event_detail(c: &mut Ctx, r: Rect, ev_idx: usize, ev: &crate::calendar::Event, acc: Color) {
+    use crate::calendar::{countdown, full_date_label, time_range_label};
+    c.pill(Rect::new(r.x, r.y, 58.0, 22.0), Action::CalCloseEvent, "\u{2190} Back", None, 10.5);
+    c.pill(Rect::new(r.right() - 54.0, r.y, 54.0, 22.0), Action::CalCopyEvent, "Copy", None, 10.5);
+    let status = if ev.all_day { "All day".to_string() } else { countdown(ev, c.vm.now.timestamp()) };
+    c.text(status, Rect::new(r.x + 62.0, r.y + 3.0, r.w - 122.0, 16.0), 10.5, Weight::Semibold, acc, Align::Right);
+
+    let card = Rect::new(r.x, r.y + 28.0, r.w, r.h - 28.0);
+    c.s.rect(card, 12.0, SURFACE);
+    c.s.rect(Rect::new(card.x, card.y + 10.0, 3.0, card.h - 20.0), 1.5, acc);
+
+    let ix = card.x + 12.0;
+    let iw = card.w - 24.0;
+    let mut y = card.y + 8.0;
+
+    for line in wrap_lines(&ev.title, iw, 13.0).into_iter().take(2) {
+        c.text(line, Rect::new(ix, y, iw, 17.0), 13.0, Weight::Semibold, TEXT, Align::Left);
+        y += 17.0;
+    }
+    y += 3.0;
+
+    let when = format!("{}  \u{00b7}  {}", full_date_label(ev), time_range_label(ev));
+    c.text(when, Rect::new(ix, y, iw, 15.0), 10.5, Weight::Medium, acc, Align::Left);
+    y += 17.0;
+
+    if !ev.location.is_empty() {
+        c.text(format!("Location: {}", one_line(&ev.location)), Rect::new(ix, y, iw, 14.0), 10.0, Weight::Regular, TEXT_2, Align::Left);
+        y += 15.0;
+    }
+
+    let bottom_limit = if ev.join.is_some() { card.bottom() - 34.0 } else { card.bottom() - 8.0 };
+    let max_desc_lines = ((bottom_limit - y).max(0.0) / 13.5).floor() as usize;
+    if max_desc_lines > 0 {
+        if !ev.description.is_empty() {
+            for line in wrap_lines(&ev.description, iw, 10.0).into_iter().take(max_desc_lines) {
+                c.text(line, Rect::new(ix, y, iw, 13.5), 10.0, Weight::Regular, TEXT_3, Align::Left);
+                y += 13.5;
+            }
+        } else if ev.location.is_empty() {
+            c.text("No location or notes attached.", Rect::new(ix, y, iw, 14.0), 10.0, Weight::Regular, TEXT_3, Align::Left);
+        }
+    }
+
+    if let Some(j) = &ev.join {
+        c.pill(
+            Rect::new(ix, card.bottom() - 28.0, iw, 22.0),
+            Action::Join(ev_idx as u8),
+            &format!("Join {}", j.platform),
+            Some(acc),
+            10.5,
+        );
+    }
 }
 
 // -------------------------------------------------------------------- speed
@@ -923,6 +1076,532 @@ fn voice(c: &mut Ctx, a: Rect) {
     };
     c.text(msg, Rect::new(a.x, a.y + 184.0, a.w, 18.0), 12.0, Weight::Medium, col, Align::Center);
     c.pill(Rect::new(a.right() - 112.0, a.bottom() - 26.0, 112.0, 24.0), Action::VoiceFolder, "Open folder", None, 11.0);
+}
+
+// ----------------------------------------------------------------------- ai
+
+/// Word-wrap `text` into visual lines whose estimated pixel width fits `max_w`.
+pub fn wrap_lines(text: &str, max_w: f32, size: f32) -> Vec<String> {
+    let mut out = Vec::new();
+    for para in text.lines() {
+        let para = para.trim_end();
+        if para.is_empty() {
+            continue;
+        }
+        let mut cur = String::new();
+        for word in para.split_whitespace() {
+            let candidate = if cur.is_empty() {
+                word.to_string()
+            } else {
+                format!("{cur} {word}")
+            };
+            if est_w(&candidate, size) * 1.12 <= max_w || cur.is_empty() {
+                cur = candidate;
+            } else {
+                out.push(cur);
+                cur = word.to_string();
+            }
+        }
+        if !cur.is_empty() {
+            out.push(cur);
+        }
+    }
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
+}
+
+pub const AI_HIST_ROWS: usize = 5;
+
+pub fn ai_hist_max_scroll(n: usize) -> usize {
+    n.saturating_sub(AI_HIST_ROWS)
+}
+
+fn ai(c: &mut Ctx, a: Rect) {
+    let acc = accent(Page::Ai);
+    let ai = &c.vm.ai;
+    let prov = c.set.ai_provider;
+    let model = c.set.active_ai_model();
+
+    // Top bar: Provider/Model badge on the left, New / History / Setup pills on the right.
+    let setup_r = Rect::new(a.right() - 52.0, a.y, 52.0, 24.0);
+    let hist_r = Rect::new(setup_r.x - 5.0 - 54.0, a.y, 54.0, 24.0);
+    let new_r = Rect::new(hist_r.x - 5.0 - 44.0, a.y, 44.0, 24.0);
+    c.pill(new_r, Action::AiNewChat, "New", None, 11.0);
+    c.pill(hist_r, Action::AiToggleHistory, "History", ai.show_history.then_some(acc), 11.0);
+    c.pill(setup_r, Action::AiToggleSetup, "Setup", ai.show_setup.then_some(acc), 11.0);
+
+    let badge_r = Rect::new(a.x, a.y, new_r.x - a.x - 8.0, 24.0);
+    let bh = c.hov(Action::AiToggleSetup);
+    c.s.rect(badge_r, 12.0, SURFACE.mix(SURFACE_HOVER, bh));
+    let ready = ai.configured || prov == AiProvider::Ollama || prov == AiProvider::OpenAiCompat;
+    c.s.circle(badge_r.x + 12.0, badge_r.cy(), 3.8, if ready { GREEN } else { AMBER });
+    let head = format!("{} \u{00b7} {}", prov.label(), model);
+    c.text(head, Rect::new(badge_r.x + 22.0, badge_r.y, badge_r.w - 28.0, badge_r.h), 11.5, Weight::Semibold, TEXT, Align::Left);
+    c.hit(badge_r, Action::AiToggleSetup);
+
+    if ai.show_setup {
+        ai_setup(c, a, acc);
+    } else if ai.show_history {
+        ai_history(c, a, acc);
+    } else {
+        ai_chat(c, a, acc);
+    }
+}
+
+fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
+    use crate::ai::AiFocusField;
+    let ai = &c.vm.ai;
+    let prov = c.set.ai_provider;
+
+    // 1. Provider segmented control (6 providers).
+    let seg_r = Rect::new(a.x, a.y + 30.0, a.w, 26.0);
+    let items = AiProvider::ALL.map(|p| (Action::AiSetProvider(p), p.short_label(), p == prov));
+    segmented(c, seg_r, &items, 11.0);
+
+    // 2. Provider auth / endpoint card.
+    let card = Rect::new(a.x, a.y + 62.0, a.w, 56.0);
+    c.s.rect(card, 12.0, SURFACE);
+    match prov {
+        AiProvider::ChatGpt => {
+            c.text(
+                "Sign in with ChatGPT \u{00b7} Codex Subscription OAuth",
+                Rect::new(card.x + 12.0, card.y + 6.0, card.w - 24.0, 18.0),
+                12.0,
+                Weight::Semibold,
+                TEXT,
+                Align::Left,
+            );
+            if ai.chatgpt_login_busy {
+                if !ai.chatgpt_user_code.is_empty() {
+                    c.text(
+                        format!("Code: {}", ai.chatgpt_user_code),
+                        Rect::new(card.x + 12.0, card.y + 27.0, card.w - 176.0, 22.0),
+                        13.5,
+                        Weight::Bold,
+                        acc,
+                        Align::Left,
+                    );
+                    c.pill(Rect::new(card.right() - 156.0, card.y + 26.0, 92.0, 24.0), Action::AiChatGptCopyCode, "Copy & Open", Some(acc), 11.0);
+                    c.pill(Rect::new(card.right() - 58.0, card.y + 26.0, 50.0, 24.0), Action::AiChatGptSignIn, "Cancel", None, 11.0);
+                } else {
+                    c.text(
+                        "Requesting device code from auth.openai.com\u{2026}",
+                        Rect::new(card.x + 12.0, card.y + 28.0, card.w - 86.0, 20.0),
+                        11.5,
+                        Weight::Regular,
+                        TEXT_2,
+                        Align::Left,
+                    );
+                    c.pill(Rect::new(card.right() - 66.0, card.y + 26.0, 58.0, 24.0), Action::AiChatGptSignIn, "Cancel", None, 11.0);
+                }
+            } else if ai.chatgpt_signed_in {
+                c.s.circle(card.x + 17.0, card.y + 37.0, 3.8, GREEN);
+                c.text(
+                    "Connected (DPAPI OAuth token)",
+                    Rect::new(card.x + 26.0, card.y + 27.0, card.w - 186.0, 20.0),
+                    11.5,
+                    Weight::Medium,
+                    TEXT_2,
+                    Align::Left,
+                );
+                c.pill(Rect::new(card.right() - 152.0, card.y + 26.0, 80.0, 24.0), Action::AiRefreshModels, "Sync models", None, 10.5);
+                c.pill(Rect::new(card.right() - 66.0, card.y + 26.0, 58.0, 24.0), Action::AiChatGptSignOut, "Sign out", None, 10.5);
+            } else {
+                c.text(
+                    "Use your ChatGPT Plus, Pro, or Team subscription",
+                    Rect::new(card.x + 12.0, card.y + 28.0, card.w - 166.0, 20.0),
+                    11.5,
+                    Weight::Regular,
+                    TEXT_3,
+                    Align::Left,
+                );
+                c.pill(
+                    Rect::new(card.right() - 148.0, card.y + 25.0, 140.0, 25.0),
+                    Action::AiChatGptSignIn,
+                    "Sign in with ChatGPT",
+                    Some(acc),
+                    11.0,
+                );
+            }
+        }
+        AiProvider::OpenCodeGo => {
+            c.text(
+                "OpenCode Go \u{00b7} https://opencode.ai/zen/go/v1",
+                Rect::new(card.x + 12.0, card.y + 6.0, card.w - 24.0, 18.0),
+                12.0,
+                Weight::Semibold,
+                TEXT,
+                Align::Left,
+            );
+            let sub = if ai.configured {
+                "Key saved (DPAPI) \u{00b7} Responses / Messages / Chat"
+            } else {
+                "Copy your OpenCode Go API key, then click Paste Key"
+            };
+            c.text(sub, Rect::new(card.x + 12.0, card.y + 28.0, card.w - 176.0, 20.0), 11.0, Weight::Regular, if ai.configured { TEXT_2 } else { TEXT_3 }, Align::Left);
+            c.pill(Rect::new(card.right() - 158.0, card.y + 25.0, 74.0, 25.0), Action::AiPasteKey, "Paste Key", (!ai.configured).then_some(acc), 11.0);
+            c.pill(Rect::new(card.right() - 78.0, card.y + 25.0, 70.0, 25.0), Action::AiRefreshModels, "Sync models", None, 10.5);
+        }
+        AiProvider::OpenAiCompat => {
+            let url_box = Rect::new(card.x + 10.0, card.y + 6.0, card.w - 174.0, 22.0);
+            let editing_url = c.ui.input.is_some() && ai.focus_field == AiFocusField::BaseUrl;
+            c.s.rect(url_box, 7.0, if editing_url { SURFACE_HOVER } else { Color::rgba(0, 0, 0, 0.25) });
+            if editing_url {
+                c.s.stroke(url_box, 7.0, 1.2, acc);
+            }
+            let shown_url = if editing_url {
+                c.ui.input.as_deref().unwrap_or("")
+            } else {
+                c.set.active_ai_url()
+            };
+            c.text(shown_url.to_string(), Rect::new(url_box.x + 8.0, url_box.y, url_box.w - 16.0, url_box.h), 11.0, Weight::Medium, TEXT, Align::Left);
+            c.hit_text(url_box, Action::AiFocusBaseUrl);
+            c.pill(Rect::new(card.right() - 158.0, card.y + 6.0, 72.0, 22.0), Action::AiPasteUrl, "Paste URL", None, 10.5);
+            c.pill(Rect::new(card.right() - 80.0, card.y + 6.0, 72.0, 22.0), Action::AiPasteKey, "Paste Key", (!ai.configured).then_some(acc), 10.5);
+
+            let note = if ai.configured {
+                "API key saved (DPAPI) \u{00b7} OpenAI / OpenRouter / Groq / vLLM"
+            } else {
+                "Key optional for local servers \u{00b7} Paste Key for cloud APIs"
+            };
+            c.text(note, Rect::new(card.x + 12.0, card.y + 32.0, card.w - 86.0, 18.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+            c.pill(Rect::new(card.right() - 68.0, card.y + 31.0, 60.0, 20.0), Action::AiRefreshModels, "Sync", None, 10.0);
+        }
+        AiProvider::Gemini | AiProvider::Claude => {
+            c.text(prov.full_name(), Rect::new(card.x + 12.0, card.y + 6.0, card.w - 110.0, 18.0), 12.0, Weight::Semibold, TEXT, Align::Left);
+            let sub = if ai.configured {
+                "API key saved (encrypted with Windows DPAPI)"
+            } else {
+                "Copy your API key to the clipboard, then click Paste Key"
+            };
+            c.text(sub, Rect::new(card.x + 12.0, card.y + 28.0, card.w - 110.0, 20.0), 11.0, Weight::Regular, if ai.configured { TEXT_2 } else { TEXT_3 }, Align::Left);
+            c.pill(Rect::new(card.right() - 90.0, card.y + 15.0, 82.0, 26.0), Action::AiPasteKey, "Paste Key", (!ai.configured).then_some(acc), 11.0);
+        }
+        AiProvider::Ollama => {
+            c.text("Local Ollama \u{00b7} runs offline on your PC", Rect::new(card.x + 12.0, card.y + 5.0, card.w - 24.0, 18.0), 12.0, Weight::Semibold, TEXT, Align::Left);
+            let url_box = Rect::new(card.x + 10.0, card.y + 27.0, card.w - 98.0, 22.0);
+            let editing_url = c.ui.input.is_some() && ai.focus_field == AiFocusField::BaseUrl;
+            c.s.rect(url_box, 7.0, if editing_url { SURFACE_HOVER } else { Color::rgba(0, 0, 0, 0.25) });
+            if editing_url {
+                c.s.stroke(url_box, 7.0, 1.2, acc);
+            }
+            let shown_url = if editing_url {
+                c.ui.input.as_deref().unwrap_or("")
+            } else {
+                c.set.active_ai_url()
+            };
+            c.text(shown_url.to_string(), Rect::new(url_box.x + 8.0, url_box.y, url_box.w - 16.0, url_box.h), 11.0, Weight::Medium, TEXT, Align::Left);
+            c.hit_text(url_box, Action::AiFocusBaseUrl);
+            c.pill(Rect::new(card.right() - 82.0, card.y + 27.0, 74.0, 22.0), Action::AiPasteUrl, "Paste URL", None, 10.5);
+        }
+    }
+
+    // 3. Model selector row: editable model field + Prev/Next + preset chips.
+    let my = a.y + 125.0;
+    c.text("Model", Rect::new(a.x, my, 42.0, 24.0), 11.5, Weight::Medium, TEXT_2, Align::Left);
+    let mbox = Rect::new(a.x + 44.0, my, 134.0, 24.0);
+    let editing_model = c.ui.input.is_some() && ai.focus_field == AiFocusField::Model;
+    c.s.rect(mbox, 8.0, if editing_model { SURFACE_HOVER } else { SURFACE });
+    if editing_model {
+        c.s.stroke(mbox, 8.0, 1.2, acc);
+    }
+    let shown_model = if editing_model {
+        c.ui.input.as_deref().unwrap_or("")
+    } else {
+        c.set.active_ai_model()
+    };
+    c.text(shown_model.to_string(), Rect::new(mbox.x + 8.0, mbox.y, mbox.w - 16.0, mbox.h), 11.5, Weight::Semibold, TEXT, Align::Left);
+    c.hit_text(mbox, Action::AiFocusModel);
+
+    c.icon_btn(Rect::new(mbox.right() + 4.0, my, 24.0, 24.0), Action::AiCycleModel(-1), Icon::Prev, 10.0, TEXT_2);
+    c.icon_btn(Rect::new(mbox.right() + 30.0, my, 24.0, 24.0), Action::AiCycleModel(1), Icon::Next, 10.0, TEXT_2);
+
+    let mut cx = mbox.right() + 58.0;
+    for (idx, m) in ai.available_models.iter().take(2).enumerate() {
+        let rem = a.right() - cx;
+        if rem < 60.0 {
+            break;
+        }
+        let w = (est_w(m, 10.5) * 1.12 + 20.0).clamp(60.0, (rem - 2.0).min(118.0));
+        let is_cur = m == c.set.active_ai_model();
+        c.pill(Rect::new(cx, my + 1.0, w, 22.0), Action::AiSelectModel(idx as u16), m, is_cur.then_some(acc), 10.0);
+        cx += w + 4.0;
+    }
+
+    // 4. Share my day toggle + learned memories badge.
+    let sy = a.y + 156.0;
+    c.text(
+        "Share my day (calendar, tasks, water, focus, PC stats)",
+        Rect::new(a.x, sy, a.w - 52.0, 22.0),
+        12.0,
+        Weight::Regular,
+        TEXT,
+        Align::Left,
+    );
+    c.switch(Rect::new(a.right() - 42.0, sy, 42.0, 22.0), SettingKey::AiShareDay, acc);
+
+    // 5. Status / footer note.
+    let fy = a.bottom() - 18.0;
+    let (foot, col) = if !ai.error.is_empty() {
+        (ai.error.clone(), AMBER)
+    } else if !ai.status_note.is_empty() {
+        (ai.status_note.clone(), acc)
+    } else {
+        (
+            format!(
+                "Secrets encrypted with Windows DPAPI \u{00b7} {} learned memor{}",
+                ai.memories_count,
+                if ai.memories_count == 1 { "y" } else { "ies" }
+            ),
+            TEXT_3,
+        )
+    };
+    c.text(foot, Rect::new(a.x, fy, a.w, 18.0), 10.5, Weight::Medium, col, Align::Left);
+}
+
+fn ai_history(c: &mut Ctx, a: Rect, acc: Color) {
+    let ai = &c.vm.ai;
+    let body = Rect::new(a.x, a.y + 32.0, a.w, a.h - 32.0);
+    if ai.history.is_empty() {
+        c.empty_state(body, Icon::Sparkle, acc, "No conversations yet", "Send a message to start chatting");
+        return;
+    }
+    let scroll = c.ui.scroll_of(Page::Ai).min(ai_hist_max_scroll(ai.history.len()));
+    for slot in 0..AI_HIST_ROWS {
+        let idx = scroll + slot;
+        let Some(item) = ai.history.get(idx) else { break };
+        let r = Rect::new(a.x, body.y + slot as f32 * 38.0, a.w, 34.0);
+        let sel = Action::AiSelectChat(item.id);
+        let del = Action::AiDeleteChat(item.id);
+        let hv = c.hov(sel).max(c.hov(del));
+        let active = item.id == ai.active_id;
+        c.s.rect(r, 10.0, if active { acc.fade(0.16) } else { SURFACE.mix(SURFACE_HOVER, hv) });
+        if active {
+            c.s.circle(r.x + 14.0, r.cy(), 3.5, acc);
+        }
+        let tx = if active { r.x + 26.0 } else { r.x + 14.0 };
+        c.text(item.title.clone(), Rect::new(tx, r.y, r.w - 110.0, r.h), 12.5, if active { Weight::Semibold } else { Weight::Regular }, TEXT, Align::Left);
+        c.text(
+            format!("{} msg{}", item.msg_count, if item.msg_count == 1 { "" } else { "s" }),
+            Rect::new(r.right() - 88.0, r.y, 52.0, r.h),
+            11.0,
+            Weight::Regular,
+            TEXT_3,
+            Align::Right,
+        );
+        c.hit(Rect::new(r.x, r.y, r.w - 32.0, r.h), sel);
+        c.ghost_icon(Rect::new(r.right() - 28.0, r.cy() - 12.0, 24.0, 24.0), del, Icon::Close, 11.5, TEXT_2);
+    }
+}
+
+fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
+    use crate::ai::{AiFocusField, Role, STARTER_PROMPTS};
+    let ai = &c.vm.ai;
+    let prov = c.set.ai_provider;
+
+    // Prompt input bar at the bottom.
+    let in_y = a.bottom() - 34.0;
+    let field = Rect::new(a.x, in_y, a.w - 40.0, 34.0);
+    let typing = c.ui.input.is_some() && ai.focus_field == AiFocusField::Prompt;
+    c.s.rect(field, 12.0, if typing { SURFACE_HOVER } else { c.surface_fill(Action::AiInput) });
+    if typing {
+        c.s.stroke(field, 12.0, 1.4, acc.fade(0.85));
+    }
+    icons::draw(&mut c.s, Icon::Sparkle, field.x + 16.0, field.cy(), 14.0, if typing { acc } else { TEXT_3 });
+    let tr = Rect::new(field.x + 32.0, field.y, field.w - 42.0, field.h);
+    let shown = if typing {
+        c.ui.input.as_deref().unwrap_or("")
+    } else {
+        ai.input.as_str()
+    };
+    if !shown.is_empty() {
+        c.text(shown.to_string(), tr, 12.5, Weight::Regular, TEXT, Align::Left);
+        if typing && (c.ui.clock_s * 1.8) % 2.0 < 1.0 {
+            let cx = (tr.x + est_w(shown, 12.5)).min(tr.right() - 4.0);
+            c.s.rect(Rect::new(cx + 1.0, field.cy() - 8.0, 1.5, 16.0), 0.7, acc);
+        }
+    } else {
+        let placeholder = if ai.busy {
+            "Thinking\u{2026}"
+        } else {
+            "Ask anything, add a task, or plan your day\u{2026}"
+        };
+        c.text(placeholder, tr, 12.5, Weight::Regular, TEXT_3, Align::Left);
+        if typing && (c.ui.clock_s * 1.8) % 2.0 < 1.0 {
+            c.s.rect(Rect::new(tr.x, field.cy() - 8.0, 1.5, 16.0), 0.7, acc);
+        }
+    }
+    c.hit_text(field, Action::AiInput);
+
+    // Send button.
+    let send_r = Rect::new(a.right() - 34.0, in_y, 34.0, 34.0);
+    let can_send = !shown.trim().is_empty() && !ai.busy;
+    c.s.rect(send_r, 17.0, if can_send { acc } else { SURFACE });
+    icons::draw(&mut c.s, Icon::Send, send_r.cx(), send_r.cy(), 15.0, if can_send { ON_ACCENT } else { TEXT_3 });
+    c.hit(send_r, Action::AiSend);
+
+    let body = Rect::new(a.x, a.y + 30.0, a.w, in_y - (a.y + 30.0) - 6.0);
+
+    // Empty chat state: optional setup banner + 4 starter suggestion cards.
+    if ai.messages.is_empty() && !ai.busy {
+        let mut grid_y = body.y;
+        let mut card_h = 68.0;
+        if !ai.configured && prov != AiProvider::Ollama && prov != AiProvider::OpenAiCompat {
+            let ban = Rect::new(body.x, body.y, body.w, 32.0);
+            c.s.rect(ban, 10.0, acc.fade(0.12));
+            let msg = match prov {
+                AiProvider::ChatGpt => "Sign in with your ChatGPT subscription to start",
+                _ => "Add your API key in Setup to start chatting",
+            };
+            c.text(msg, Rect::new(ban.x + 12.0, ban.y, ban.w - 134.0, ban.h), 11.5, Weight::Medium, TEXT, Align::Left);
+            let (cta_act, cta_lbl) = if prov == AiProvider::ChatGpt {
+                (Action::AiChatGptSignIn, "Sign in")
+            } else {
+                (Action::AiToggleSetup, "Open Setup")
+            };
+            c.pill(Rect::new(ban.right() - 112.0, ban.y + 4.0, 104.0, 24.0), cta_act, cta_lbl, Some(acc), 11.0);
+            grid_y += 38.0;
+            card_h = 56.0;
+        }
+        let cw = (body.w - 10.0) / 2.0;
+        for (i, (title, prompt)) in STARTER_PROMPTS.iter().enumerate() {
+            let (col, row) = (i % 2, i / 2);
+            let r = Rect::new(body.x + col as f32 * (cw + 10.0), grid_y + row as f32 * (card_h + 8.0), cw, card_h);
+            let act = Action::AiStarter(i as u8);
+            let hv = c.hov(act);
+            c.s.rect(r, 12.0, if c.pressed(act) { SURFACE_PRESS } else { SURFACE.mix(SURFACE_HOVER, hv) });
+            c.text(*title, Rect::new(r.x + 12.0, r.y + 7.0, r.w - 24.0, 18.0), 12.5, Weight::Semibold, TEXT, Align::Left);
+            let lines = wrap_lines(prompt, r.w - 24.0, 10.5);
+            for (li, l) in lines.iter().take(2).enumerate() {
+                c.text(l.clone(), Rect::new(r.x + 12.0, r.y + 26.0 + li as f32 * 13.0, r.w - 24.0, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+            }
+            c.hit(r, act);
+        }
+        return;
+    }
+
+    // Pre-layout conversation bubbles so we can bottom-align and scroll cleanly.
+    enum RowItem {
+        UserBubble(Vec<String>),
+        AssistantBubble { msg_idx: usize, lines: Vec<String> },
+        ActionRow { msg_idx: usize, act_idx: usize, label: String, can_undo: bool, undone: bool },
+        Thinking,
+        ErrorBanner(String),
+    }
+
+    let mut items = Vec::new();
+    for (mi, m) in ai.messages.iter().enumerate() {
+        match m.role {
+            Role::User => {
+                items.push(RowItem::UserBubble(wrap_lines(&m.text, body.w * 0.72, 12.0)));
+            }
+            Role::Assistant => {
+                items.push(RowItem::AssistantBubble {
+                    msg_idx: mi,
+                    lines: wrap_lines(&m.text, body.w - 64.0, 12.0),
+                });
+                for (ai_idx, act) in m.actions.iter().enumerate() {
+                    items.push(RowItem::ActionRow {
+                        msg_idx: mi,
+                        act_idx: ai_idx,
+                        label: act.label.clone(),
+                        can_undo: act.can_undo(),
+                        undone: act.undone,
+                    });
+                }
+            }
+        }
+    }
+    if ai.busy {
+        items.push(RowItem::Thinking);
+    }
+    if !ai.error.is_empty() {
+        items.push(RowItem::ErrorBanner(ai.error.clone()));
+    }
+
+    let item_h = |it: &RowItem| -> f32 {
+        match it {
+            RowItem::UserBubble(lines) => (lines.len() as f32 * 16.0 + 12.0).max(28.0) + 5.0,
+            RowItem::AssistantBubble { lines, .. } => (lines.len() as f32 * 16.0 + 14.0).max(30.0) + 5.0,
+            RowItem::ActionRow { .. } => 26.0,
+            RowItem::Thinking => 28.0,
+            RowItem::ErrorBanner(_) => 28.0,
+        }
+    };
+
+    let total_h: f32 = items.iter().map(&item_h).sum();
+    let max_scroll = (total_h - body.h).max(0.0);
+    let scroll_px = (ai.scroll as f32 * 24.0).min(max_scroll);
+    let mut y = if total_h <= body.h {
+        body.y
+    } else {
+        body.bottom() - total_h + scroll_px
+    };
+
+    c.s.clip(body);
+    for it in &items {
+        let h = item_h(it);
+        if y + h < body.y - 2.0 {
+            y += h;
+            continue;
+        }
+        if y > body.bottom() + 2.0 {
+            break;
+        }
+        match it {
+            RowItem::UserBubble(lines) => {
+                let bh = h - 5.0;
+                let max_line = lines.iter().map(|l| est_w(l, 12.0) * 1.12).fold(40.0_f32, f32::max);
+                let bw = (max_line + 22.0).clamp(64.0, body.w * 0.78);
+                let br = Rect::new(body.right() - bw, y, bw, bh);
+                c.s.rect(br, 11.0, acc.fade(0.22));
+                for (li, l) in lines.iter().enumerate() {
+                    c.text(l.clone(), Rect::new(br.x + 11.0, br.y + 6.0 + li as f32 * 16.0, br.w - 22.0, 16.0), 12.0, Weight::Regular, TEXT, Align::Left);
+                }
+            }
+            RowItem::AssistantBubble { msg_idx, lines } => {
+                let bh = h - 5.0;
+                let br = Rect::new(body.x, y, body.w, bh);
+                c.s.rect(br, 11.0, SURFACE);
+                for (li, l) in lines.iter().enumerate() {
+                    c.text(l.clone(), Rect::new(br.x + 11.0, br.y + 7.0 + li as f32 * 16.0, br.w - 58.0, 16.0), 12.0, Weight::Regular, TEXT, Align::Left);
+                }
+                let copy_r = Rect::new(br.right() - 44.0, br.y + 5.0, 38.0, 20.0);
+                if copy_r.y >= body.y && copy_r.bottom() <= body.bottom() {
+                    c.pill(copy_r, Action::AiCopyReply(*msg_idx as u16), "Copy", None, 9.5);
+                }
+            }
+            RowItem::ActionRow { msg_idx, act_idx, label, can_undo, undone } => {
+                let ar = Rect::new(body.x + 8.0, y, body.w - 8.0, 22.0);
+                c.s.rect(ar, 8.0, GREEN.fade(0.12));
+                icons::draw(&mut c.s, Icon::Check, ar.x + 12.0, ar.cy(), 11.0, GREEN);
+                let txt = if *undone { format!("{label} (undone)") } else { label.clone() };
+                c.text(txt, Rect::new(ar.x + 24.0, ar.y, ar.w - 84.0, ar.h), 11.0, Weight::Medium, if *undone { TEXT_3 } else { TEXT_2 }, Align::Left);
+                if *can_undo {
+                    let undo_r = Rect::new(ar.right() - 52.0, ar.y + 2.0, 48.0, 18.0);
+                    if undo_r.y >= body.y && undo_r.bottom() <= body.bottom() {
+                        c.pill(undo_r, Action::AiUndoAction(*msg_idx as u16, *act_idx as u8), "Undo", None, 9.5);
+                    }
+                }
+            }
+            RowItem::Thinking => {
+                let pulse = ((c.now_ms % 1200) as f32 / 1200.0 * std::f32::consts::TAU).sin() * 0.35 + 0.65;
+                let br = Rect::new(body.x, y, 124.0, 24.0);
+                c.s.rect(br, 11.0, SURFACE);
+                icons::draw(&mut c.s, Icon::Sparkle, br.x + 14.0, br.cy(), 12.0, acc.fade(pulse));
+                c.text("Thinking\u{2026}", Rect::new(br.x + 28.0, br.y, br.w - 32.0, br.h), 11.5, Weight::Medium, TEXT_2.fade(pulse), Align::Left);
+            }
+            RowItem::ErrorBanner(err) => {
+                let br = Rect::new(body.x, y, body.w, 24.0);
+                c.s.rect(br, 8.0, AMBER.fade(0.14));
+                c.text(err.clone(), Rect::new(br.x + 10.0, br.y, br.w - 20.0, br.h), 11.0, Weight::Medium, AMBER, Align::Left);
+            }
+        }
+        y += h;
+    }
+    c.s.pop_clip();
 }
 
 /// "Check for updates" / "Update to vX" button for the GitHub release check.

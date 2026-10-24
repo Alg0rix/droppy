@@ -19,6 +19,8 @@ pub enum Icon {
     Gauge,
     Chart,
     Mic,
+    Sparkle,
+    Send,
     Phone,
     Gear,
     Plus,
@@ -101,6 +103,27 @@ pub fn draw(s: &mut Scene, icon: Icon, cx: f32, cy: f32, size: f32, c: Color) {
             s.stroke(rect(5.6, 1.4, 4.8, 7.4), 2.4 * u, sw, c);
             s.ring(cx, cy + 0.4 * u, 5.0 * u, sw, 0.30, 0.70, c);
             s.line(p(8.0, 12.6).0, p(8.0, 12.6).1, p(8.0, 14.8).0, p(8.0, 14.8).1, sw, c);
+        }
+        Icon::Sparkle => {
+            // 4-point star + small companion star (AI Chat icon).
+            s.poly(
+                vec![
+                    p(7.5, 1.4),
+                    p(9.1, 5.9),
+                    p(13.6, 7.5),
+                    p(9.1, 9.1),
+                    p(7.5, 13.6),
+                    p(5.9, 9.1),
+                    p(1.4, 7.5),
+                    p(5.9, 5.9),
+                ],
+                c,
+            );
+            s.circle(p(13.0, 3.0).0, p(13.0, 3.0).1, 1.2 * u, c);
+        }
+        Icon::Send => {
+            s.line(p(8.0, 13.2).0, p(8.0, 13.2).1, p(8.0, 3.2).0, p(8.0, 3.2).1, sw * 1.15, c);
+            s.polyline(vec![p(3.8, 7.2), p(8.0, 3.0), p(12.2, 7.2)], sw * 1.15, c);
         }
         Icon::Phone => {
             s.stroke(rect(4.2, 1.2, 7.6, 13.6), 2.2 * u, sw, c);
@@ -200,7 +223,10 @@ mod tests {
     fn every_icon_draws() {
         use Icon::*;
         let mut s = Scene::new();
-        for i in [Play, Pause, Next, Prev, Note, Timer, Drop, Tray, Check, List, Clipboard, Calendar, Gauge, Chart, Mic, Phone, Gear, Plus, Minus, Close, Folder, Speaker, Muted, Bolt, Headphones, Undo, Reset, File] {
+        for i in [
+            Play, Pause, Next, Prev, Note, Timer, Drop, Tray, Check, List, Clipboard, Calendar, Gauge, Chart, Mic, Sparkle, Send,
+            Phone, Gear, Plus, Minus, Close, Folder, Speaker, Muted, Bolt, Headphones, Undo, Reset, File,
+        ] {
             let before = s.cmds.len();
             draw(&mut s, i, 10.0, 10.0, 16.0, Color::rgb(255, 255, 255));
             assert!(s.cmds.len() > before, "{i:?} drew nothing");

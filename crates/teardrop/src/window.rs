@@ -106,6 +106,7 @@ mod inner {
         static LAST_MEETING_TEXT: RefCell<String> = RefCell::new(String::new());
         static USAGE_REV: Cell<u32> = Cell::new(u32::MAX);
         static USAGE_STARTED: Cell<bool> = Cell::new(false);
+        static AI_REV: Cell<u32> = Cell::new(u32::MAX);
         static DRAG_OPENED: Cell<bool> = Cell::new(false);
         static HOVER_PENDING: Cell<bool> = Cell::new(false);
         static LAST_MOUSE: Cell<(f32, f32)> = Cell::new((-1.0, -1.0));
@@ -303,6 +304,7 @@ mod inner {
         sync_voice();
         sync_calendar();
         sync_usage();
+        sync_ai();
         let speed = crate::speedtest::snapshot();
         VIEW.with(|v| {
             let mut vm = v.borrow_mut();
@@ -506,6 +508,8 @@ mod inner {
             CPU.with(|c| vm.system = sample_all(&mut c.borrow_mut(), &vm.system));
             UI.with(|u| *u.borrow_mut() = UiState::new(vm.page));
         });
+        AI_REV.set(u32::MAX);
+        sync_ai();
     }
 
     // ------------------------------------------------------------- clipboard
@@ -655,6 +659,49 @@ mod inner {
         });
     }
 
+    fn send_ai_prompt(prompt: String) {
+        let prompt = prompt.trim().to_string();
+        if prompt.is_empty() {
+            return;
+        }
+        let set = SETTINGS.with(|s| s.borrow().clone());
+        let day_ctx = if set.ai_share_day {
+            Some(VIEW.with(|v| v.borrow().day_context_summary()))
+        } else {
+            None
+        };
+        UI.with(|u| u.borrow_mut().input = None);
+        crate::ai::send_prompt(prompt, set, day_ctx);
+        sync_ai();
+    }
+
+    fn commit_ai_field(send_if_prompt: bool) {
+        use crate::ai::AiFocusField;
+        let Some(text) = UI.with(|u| u.borrow().input.clone()) else { return };
+        let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+        let focus = crate::ai::snapshot(prov).focus_field;
+        match focus {
+            AiFocusField::Prompt => {
+                crate::ai::input_set(text.clone());
+                if send_if_prompt {
+                    send_ai_prompt(text);
+                }
+            }
+            AiFocusField::Model => {
+                SETTINGS.with(|s| s.borrow_mut().set_active_ai_model(text));
+                UI.with(|u| u.borrow_mut().input = None);
+                crate::ai::set_focus_field(AiFocusField::Prompt);
+                save_all();
+            }
+            AiFocusField::BaseUrl => {
+                SETTINGS.with(|s| s.borrow_mut().set_active_ai_url(text));
+                UI.with(|u| u.borrow_mut().input = None);
+                crate::ai::set_focus_field(AiFocusField::Prompt);
+                save_all();
+            }
+        }
+    }
+
     fn perform(hwnd: HWND, a: Action) {
         let now = Utc::now();
         let ms = now_ms();
@@ -708,9 +755,12 @@ mod inner {
                 toast("Calendars removed");
             }
             Action::Join(i) => {
+                let sel_day = UI.with(|u| u.borrow().cal_selected_day);
                 let url = VIEW.with(|v| {
                     let vm = v.borrow();
-                    vm.calendar.agenda(vm.now.timestamp(), 3).get(i as usize).and_then(|e| e.join.as_ref().map(|j| j.url.clone()))
+                    ui::pages::active_calendar_events(&vm, sel_day)
+                        .get(i as usize)
+                        .and_then(|e| e.join.as_ref().map(|j| j.url.clone()))
                 });
                 open_meeting(hwnd, url);
             }
@@ -740,7 +790,69 @@ mod inner {
                 save = false;
             }
             Action::CalToday => {
-                UI.with(|u| u.borrow_mut().cal_offset = 0);
+                UI.with(|u| {
+                    let mut ui = u.borrow_mut();
+                    ui.cal_offset = 0;
+                    ui.cal_selected_day = None;
+                    ui.cal_selected_event = None;
+                    ui.scroll[ui::state::page_index(Page::Today)] = 0;
+                });
+                save = false;
+            }
+            Action::CalDay(d) => {
+                let today = VIEW.with(|v| local_naive(v.borrow().now).date());
+                UI.with(|u| {
+                    let mut ui = u.borrow_mut();
+                    let (y, m) = ui::pages::shown_year_month(today, ui.cal_offset);
+                    let target = (y, m, d as u32);
+                    if ui.cal_selected_day == Some(target) && ui.cal_selected_event.is_none() {
+                        ui.cal_selected_day = None;
+                    } else {
+                        ui.cal_selected_day = Some(target);
+                    }
+                    ui.cal_selected_event = None;
+                    ui.scroll[ui::state::page_index(Page::Today)] = 0;
+                });
+                save = false;
+            }
+            Action::CalEvent(i) => {
+                UI.with(|u| u.borrow_mut().cal_selected_event = Some(i as usize));
+                save = false;
+            }
+            Action::CalCloseEvent => {
+                UI.with(|u| u.borrow_mut().cal_selected_event = None);
+                save = false;
+            }
+            Action::CalCopyEvent => {
+                let text = VIEW.with(|v| {
+                    let vm = v.borrow();
+                    let (sel_day, sel_ev) = UI.with(|u| {
+                        let ui = u.borrow();
+                        (ui.cal_selected_day, ui.cal_selected_event)
+                    });
+                    let items = ui::pages::active_calendar_events(&vm, sel_day);
+                    sel_ev.and_then(|idx| items.get(idx)).map(|ev| {
+                        let mut out = format!(
+                            "{}\n{} \u{00b7} {}",
+                            ev.title,
+                            crate::calendar::full_date_label(ev),
+                            crate::calendar::time_range_label(ev)
+                        );
+                        if !ev.location.is_empty() {
+                            out.push_str(&format!("\nLocation: {}", ev.location));
+                        }
+                        if let Some(j) = &ev.join {
+                            out.push_str(&format!("\n{}: {}", j.platform, j.url));
+                        }
+                        if !ev.description.is_empty() {
+                            out.push_str(&format!("\n\n{}", ev.description));
+                        }
+                        out
+                    })
+                });
+                if let Some(t) = text {
+                    toast(if write_clipboard_text(hwnd, &t) { "Event details copied" } else { "Couldn't copy" });
+                }
                 save = false;
             }
             Action::Gear => VIEW.with(|v| {
@@ -884,6 +996,200 @@ mod inner {
                 let mut vm = v.borrow_mut();
                 vm.water.goal_ml = (vm.water.goal_ml as i32 + 250 * d as i32).clamp(500, 6000) as u32;
             }),
+            Action::AiInput => {
+                let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+                crate::ai::set_focus_field(crate::ai::AiFocusField::Prompt);
+                let cur = crate::ai::snapshot(prov).input;
+                UI.with(|u| u.borrow_mut().input = Some(cur));
+                activate(hwnd);
+                sync_ai();
+                save = false;
+            }
+            Action::AiFocusModel => {
+                crate::ai::set_focus_field(crate::ai::AiFocusField::Model);
+                let cur = SETTINGS.with(|s| s.borrow().active_ai_model().to_string());
+                UI.with(|u| u.borrow_mut().input = Some(cur));
+                activate(hwnd);
+                sync_ai();
+                save = false;
+            }
+            Action::AiFocusBaseUrl => {
+                crate::ai::set_focus_field(crate::ai::AiFocusField::BaseUrl);
+                let cur = SETTINGS.with(|s| s.borrow().active_ai_url().to_string());
+                UI.with(|u| u.borrow_mut().input = Some(cur));
+                activate(hwnd);
+                sync_ai();
+                save = false;
+            }
+            Action::AiSend => {
+                let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+                let text = UI
+                    .with(|u| u.borrow().input.clone())
+                    .unwrap_or_else(|| crate::ai::snapshot(prov).input);
+                send_ai_prompt(text);
+                save = false;
+            }
+            Action::AiStarter(idx) => {
+                if let Some((_, prompt)) = crate::ai::STARTER_PROMPTS.get(idx as usize) {
+                    send_ai_prompt((*prompt).to_string());
+                }
+                save = false;
+            }
+            Action::AiNewChat => {
+                let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+                crate::ai::new_chat(prov);
+                sync_ai();
+                save = false;
+            }
+            Action::AiToggleHistory => {
+                crate::ai::toggle_history();
+                sync_ai();
+                save = false;
+            }
+            Action::AiSelectChat(id) => {
+                let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+                crate::ai::select_chat(id, prov);
+                sync_ai();
+                save = false;
+            }
+            Action::AiDeleteChat(id) => {
+                let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+                crate::ai::delete_chat(id, prov);
+                sync_ai();
+                save = false;
+            }
+            Action::AiToggleSetup => {
+                let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+                crate::ai::toggle_setup(prov);
+                sync_ai();
+                save = false;
+            }
+            Action::AiSetProvider(p) => {
+                SETTINGS.with(|s| s.borrow_mut().ai_provider = p);
+                crate::ai::set_provider(p);
+                sync_ai();
+            }
+            Action::AiCycleModel(delta) => {
+                let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+                let models = crate::ai::snapshot(prov).available_models;
+                if !models.is_empty() {
+                    let cur = SETTINGS.with(|s| s.borrow().active_ai_model().to_string());
+                    let pos = models.iter().position(|m| m == &cur).unwrap_or(0) as i32;
+                    let next = (pos + delta as i32).rem_euclid(models.len() as i32) as usize;
+                    SETTINGS.with(|s| s.borrow_mut().set_active_ai_model(models[next].clone()));
+                }
+                sync_ai();
+            }
+            Action::AiSelectModel(idx) => {
+                let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+                let models = crate::ai::snapshot(prov).available_models;
+                if let Some(m) = models.get(idx as usize) {
+                    SETTINGS.with(|s| s.borrow_mut().set_active_ai_model(m.clone()));
+                }
+                sync_ai();
+            }
+            Action::AiRefreshModels => {
+                let (prov, url) = SETTINGS.with(|s| {
+                    let st = s.borrow();
+                    (st.ai_provider, st.active_ai_url().to_string())
+                });
+                crate::ai::refresh_models(prov, url);
+                sync_ai();
+                save = false;
+            }
+            Action::AiPasteKey => {
+                let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+                match read_clipboard_text(hwnd) {
+                    Some(k) if !k.trim().is_empty() => {
+                        crate::ai::save_api_key(prov, &k);
+                        // Remove the secret API key from the clipboard ring so it is never displayed.
+                        VIEW.with(|v| v.borrow_mut().clipboard.remove(&k));
+                        toast("API key saved (DPAPI encrypted)");
+                    }
+                    _ => toast("Copy your API key to the clipboard first"),
+                }
+                sync_ai();
+                save = false;
+            }
+            Action::AiPasteUrl => {
+                match read_clipboard_text(hwnd) {
+                    Some(u) if u.starts_with("http://") || u.starts_with("https://") => {
+                        SETTINGS.with(|s| s.borrow_mut().set_active_ai_url(u));
+                        toast("Endpoint URL updated");
+                    }
+                    _ => toast("Copy an http:// or https:// URL first"),
+                }
+                sync_ai();
+            }
+            Action::AiChatGptSignIn => {
+                let busy = crate::ai::snapshot(teardrop_core::AiProvider::ChatGpt).chatgpt_login_busy;
+                if busy {
+                    crate::ai::cancel_chatgpt_login();
+                } else {
+                    crate::ai::start_chatgpt_login();
+                }
+                sync_ai();
+                save = false;
+            }
+            Action::AiChatGptCopyCode => {
+                let code = crate::ai::snapshot(teardrop_core::AiProvider::ChatGpt).chatgpt_user_code;
+                if !code.is_empty() {
+                    let _ = write_clipboard_text(hwnd, &code);
+                    crate::ai::open_browser(crate::ai::CHATGPT_DEVICE_VERIFY_URL);
+                    toast(&format!("Copied {code} \u{00b7} paste in browser"));
+                }
+                save = false;
+            }
+            Action::AiChatGptSignOut => {
+                let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+                crate::ai::sign_out_chatgpt(prov);
+                toast("Signed out of ChatGPT");
+                sync_ai();
+                save = false;
+            }
+            Action::AiCopyReply(idx) => {
+                let text = VIEW.with(|v| v.borrow().ai.messages.get(idx as usize).map(|m| m.text.clone()));
+                if let Some(t) = text {
+                    toast(if write_clipboard_text(hwnd, &t) { "Reply copied" } else { "Couldn't copy" });
+                }
+                save = false;
+            }
+            Action::AiUndoAction(msg_idx, act_idx) => {
+                let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+                if let Some(op) = crate::ai::mark_action_undone(msg_idx as usize, act_idx as usize, prov) {
+                    use crate::ai::UndoOp::*;
+                    VIEW.with(|v| {
+                        let mut vm = v.borrow_mut();
+                        match op {
+                            RemoveAddedTask(id) => {
+                                vm.tasks.remove(&id);
+                            }
+                            ReopenTask(id) => {
+                                if let Some(t) = vm.tasks.tasks.iter_mut().find(|t| t.id == id) {
+                                    t.done = false;
+                                }
+                            }
+                            RestoreDeletedTask(title, was_done) => {
+                                vm.tasks.add(&title, now);
+                                if was_done {
+                                    if let Some(last) = vm.tasks.tasks.last_mut() {
+                                        last.done = true;
+                                    }
+                                }
+                            }
+                            SubtractWater(ml) => {
+                                let day = vm.day();
+                                vm.water.sub(day, ml);
+                            }
+                            ForgetMemory(_) | None => {}
+                        }
+                    });
+                    toast("Action undone");
+                    sync_ai();
+                } else {
+                    save = false;
+                }
+            }
             Action::Quit => unsafe {
                 let _ = DestroyWindow(hwnd);
                 return;
@@ -1161,6 +1467,107 @@ mod inner {
         VIEW.with(|v| v.borrow_mut().usage = snap);
     }
 
+    /// Synchronize AI Chat state and apply any newly returned `[ACTION:...]` directives.
+    fn sync_ai() {
+        let rev = crate::ai::revision();
+        if AI_REV.replace(rev) == rev {
+            return;
+        }
+        let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+        let pending = crate::ai::take_pending_directives();
+        if !pending.is_empty() {
+            let now = Utc::now();
+            let mut mutated = false;
+            for (conv_id, msg_idx, dirs) in pending {
+                let mut badges = Vec::new();
+                let mut memories = Vec::new();
+                VIEW.with(|v| {
+                    let mut vm = v.borrow_mut();
+                    for d in dirs {
+                        use crate::ai::{AiActionBadge, ParsedDirective::*, UndoOp};
+                        match d {
+                            AddTask(title) => {
+                                let t = vm.tasks.add(&title, now);
+                                let id = t.id.clone();
+                                badges.push(AiActionBadge {
+                                    label: format!("Added task: {title}"),
+                                    undo: UndoOp::RemoveAddedTask(id),
+                                    undone: false,
+                                });
+                                mutated = true;
+                            }
+                            DoneTask(query) => {
+                                let q = query.to_lowercase();
+                                if let Some(t) = vm.tasks.tasks.iter_mut().find(|t| !t.done && t.title.to_lowercase().contains(&q)) {
+                                    t.done = true;
+                                    let id = t.id.clone();
+                                    let title = t.title.clone();
+                                    badges.push(AiActionBadge {
+                                        label: format!("Completed: {title}"),
+                                        undo: UndoOp::ReopenTask(id),
+                                        undone: false,
+                                    });
+                                    mutated = true;
+                                }
+                            }
+                            DelTask(query) => {
+                                let q = query.to_lowercase();
+                                if let Some(pos) = vm.tasks.tasks.iter().position(|t| t.title.to_lowercase().contains(&q)) {
+                                    let removed = vm.tasks.tasks.remove(pos);
+                                    badges.push(AiActionBadge {
+                                        label: format!("Deleted: {}", removed.title),
+                                        undo: UndoOp::RestoreDeletedTask(removed.title, removed.done),
+                                        undone: false,
+                                    });
+                                    mutated = true;
+                                }
+                            }
+                            LogWater(ml) => {
+                                let day = vm.day();
+                                vm.water.add(day, ml);
+                                vm.water.snooze(now);
+                                badges.push(AiActionBadge {
+                                    label: format!("Logged +{ml} ml water"),
+                                    undo: UndoOp::SubtractWater(ml),
+                                    undone: false,
+                                });
+                                mutated = true;
+                            }
+                            Focus(cmd) => {
+                                match cmd.as_str() {
+                                    "pause" => vm.pomo.pause(now),
+                                    "reset" | "stop" => vm.pomo.stop(),
+                                    _ => vm.pomo.start_focus(now),
+                                }
+                                badges.push(AiActionBadge {
+                                    label: format!("Focus timer: {cmd}"),
+                                    undo: UndoOp::None,
+                                    undone: false,
+                                });
+                                mutated = true;
+                            }
+                            Remember(fact) => {
+                                memories.push(fact.clone());
+                                badges.push(AiActionBadge {
+                                    label: format!("Remembered: {fact}"),
+                                    undo: UndoOp::ForgetMemory(fact),
+                                    undone: false,
+                                });
+                            }
+                        }
+                    }
+                });
+                crate::ai::record_action_badges(conv_id, msg_idx, badges, memories, prov);
+            }
+            if mutated {
+                save_all();
+            }
+            AI_REV.set(crate::ai::revision());
+        }
+        let snap = crate::ai::snapshot(prov);
+        VIEW.with(|v| v.borrow_mut().ai = snap);
+    }
+
     /// Copy the updater's state into the view model when it changes and
     /// announce a newly found release once.
     fn sync_update() {
@@ -1436,9 +1843,38 @@ mod inner {
             wake(hwnd);
             return;
         }
+        if page == Page::Ai && in_content {
+            let show_hist = VIEW.with(|v| v.borrow().ai.show_history);
+            let show_setup = VIEW.with(|v| v.borrow().ai.show_setup);
+            if show_hist {
+                let n = VIEW.with(|v| ui::pages::ai_hist_max_scroll(v.borrow().ai.history.len()));
+                UI.with(|u| u.borrow_mut().scroll_by(Page::Ai, dir, n));
+                wake(hwnd);
+                return;
+            } else if !show_setup {
+                let has_msgs = VIEW.with(|v| !v.borrow().ai.messages.is_empty());
+                if has_msgs {
+                    crate::ai::scroll_by(-dir);
+                    sync_ai();
+                    wake(hwnd);
+                    return;
+                }
+            }
+        }
         let n = VIEW.with(|v| {
             let vm = v.borrow();
             match page {
+                Page::Today => {
+                    let (sel_day, in_detail) = UI.with(|u| {
+                        let ui = u.borrow();
+                        (ui.cal_selected_day, ui.cal_selected_event.is_some())
+                    });
+                    if in_detail {
+                        0
+                    } else {
+                        ui::pages::today_max_scroll(ui::pages::active_calendar_events(&vm, sel_day).len())
+                    }
+                }
                 Page::Shelf => ui::pages::shelf_max_scroll(vm.shelf.items.len()),
                 Page::Tasks => ui::pages::tasks_max_scroll(vm.tasks.tasks.len()),
                 Page::Clipboard => ui::pages::clip_max_scroll(vm.clipboard.items().len()),
@@ -1462,14 +1898,57 @@ mod inner {
         if !typing {
             return;
         }
+        let page = VIEW.with(|v| v.borrow().page);
         match code {
-            13 => add_task_from_input(),
-            27 => UI.with(|u| u.borrow_mut().input = None),
-            8 => UI.with(|u| {
-                if let Some(s) = u.borrow_mut().input.as_mut() {
-                    s.pop();
+            13 => {
+                if page == Page::Ai {
+                    commit_ai_field(true);
+                } else {
+                    add_task_from_input();
                 }
-            }),
+            }
+            22 => {
+                // Ctrl+V paste into the active input field.
+                if let Some(clip) = read_clipboard_text(hwnd) {
+                    let clean: String = clip.lines().collect::<Vec<_>>().join(" ");
+                    let cap = if page == Page::Ai { 400 } else { 120 };
+                    UI.with(|u| {
+                        if let Some(s) = u.borrow_mut().input.as_mut() {
+                            for ch in clean.chars() {
+                                if s.chars().count() < cap {
+                                    s.push(ch);
+                                }
+                            }
+                        }
+                    });
+                    if page == Page::Ai {
+                        commit_ai_field(false);
+                        sync_ai();
+                    }
+                }
+            }
+            27 => {
+                if page == Page::Ai {
+                    commit_ai_field(false);
+                }
+                UI.with(|u| u.borrow_mut().input = None);
+            }
+            8 => {
+                UI.with(|u| {
+                    if let Some(s) = u.borrow_mut().input.as_mut() {
+                        s.pop();
+                    }
+                });
+                if page == Page::Ai {
+                    let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+                    if crate::ai::snapshot(prov).focus_field == crate::ai::AiFocusField::Prompt {
+                        if let Some(s) = UI.with(|u| u.borrow().input.clone()) {
+                            crate::ai::input_set(s);
+                            sync_ai();
+                        }
+                    }
+                }
+            }
             c if c >= 32 && c != 127 => {
                 let ch = if (0xD800..0xDC00).contains(&c) {
                     HIGH_SURR.set(c);
@@ -1481,13 +1960,23 @@ mod inner {
                     char::from_u32(c as u32)
                 };
                 if let Some(ch) = ch {
+                    let cap = if page == Page::Ai { 400 } else { 120 };
                     UI.with(|u| {
                         if let Some(s) = u.borrow_mut().input.as_mut() {
-                            if s.chars().count() < 120 {
+                            if s.chars().count() < cap {
                                 s.push(ch);
                             }
                         }
                     });
+                    if page == Page::Ai {
+                        let prov = SETTINGS.with(|s| s.borrow().ai_provider);
+                        if crate::ai::snapshot(prov).focus_field == crate::ai::AiFocusField::Prompt {
+                            if let Some(s) = UI.with(|u| u.borrow().input.clone()) {
+                                crate::ai::input_set(s);
+                                sync_ai();
+                            }
+                        }
+                    }
                 }
             }
             _ => {}
@@ -1719,11 +2208,18 @@ mod inner {
                 let (x, y) = mouse_xy(lp);
                 let act = hit_at(x, y).map(|h| h.action);
                 PRESS_AT.set(Some((x, y)));
+                let is_text_hit = matches!(
+                    act,
+                    Some(Action::TaskInput) | Some(Action::AiInput) | Some(Action::AiFocusModel) | Some(Action::AiFocusBaseUrl)
+                );
+                if !is_text_hit && VIEW.with(|v| v.borrow().page) == Page::Ai {
+                    commit_ai_field(false);
+                }
                 UI.with(|u| {
                     let mut ui = u.borrow_mut();
                     ui.pressed = act;
                     // Clicking away from the field ends text entry.
-                    if act != Some(Action::TaskInput) {
+                    if !is_text_hit {
                         ui.input = None;
                     }
                 });

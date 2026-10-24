@@ -4,7 +4,7 @@ members = ["crates/teardrop-core", "crates/teardrop"]
 default-members = ["crates/teardrop-core", "crates/teardrop"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 authors = ["Teardrop"]
 license = "MIT"
@@ -13,3 +13,12 @@ license = "MIT"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde", "clock"] }
+
+# Small binary: optimise for size, link-time optimise, abort on panic (the unwind
+# tables alone are ~300 KB). Untrusted input paths are fuzz-tested not to panic.
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

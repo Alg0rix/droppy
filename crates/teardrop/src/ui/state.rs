@@ -10,7 +10,7 @@ use super::scene::Rect;
 use super::theme::PAD;
 use crate::viewmodel::{local_naive, ViewModel};
 use std::collections::HashMap;
-use teardrop_core::{EyeStyle, IdleLook, Page, Settings};
+use teardrop_core::{AiProvider, EyeStyle, IdleLook, Page, Settings};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SettingKey {
@@ -23,10 +23,11 @@ pub enum SettingKey {
     StartWithWindows,
     MoodRing,
     WeatherMood,
+    AiShareDay,
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 9] = [
+    pub const ALL: [SettingKey; 10] = [
         SettingKey::OpenOnHover,
         SettingKey::Lyrics,
         SettingKey::WaterReminders,
@@ -36,6 +37,7 @@ impl SettingKey {
         SettingKey::StartWithWindows,
         SettingKey::MoodRing,
         SettingKey::WeatherMood,
+        SettingKey::AiShareDay,
     ];
 
     pub fn get(self, s: &Settings) -> bool {
@@ -49,6 +51,7 @@ impl SettingKey {
             SettingKey::StartWithWindows => s.start_with_windows,
             SettingKey::MoodRing => s.mood_ring,
             SettingKey::WeatherMood => s.weather_mood,
+            SettingKey::AiShareDay => s.ai_share_day,
         }
     }
 
@@ -64,6 +67,7 @@ impl SettingKey {
             SettingKey::StartWithWindows => s.start_with_windows = v,
             SettingKey::MoodRing => s.mood_ring = v,
             SettingKey::WeatherMood => s.weather_mood = v,
+            SettingKey::AiShareDay => s.ai_share_day = v,
         }
     }
 
@@ -78,6 +82,7 @@ impl SettingKey {
             SettingKey::StartWithWindows => "Start with Windows",
             SettingKey::MoodRing => "Mood ring",
             SettingKey::WeatherMood => "Weather",
+            SettingKey::AiShareDay => "Share my day",
         }
     }
 }
@@ -121,6 +126,14 @@ pub enum Action {
     CalStep(i8),
     /// Jump the Today calendar back to the current month.
     CalToday,
+    /// Select a day (`1..=31`) in the currently displayed calendar month.
+    CalDay(u8),
+    /// Open the detail view for the n-th event in the active calendar list.
+    CalEvent(u8),
+    /// Close the calendar event detail view back to the list.
+    CalCloseEvent,
+    /// Copy the currently opened calendar event's details to the clipboard.
+    CalCopyEvent,
     /// Run the internet speed test.
     SpeedTest,
     /// Look for a newer release on GitHub.
@@ -141,6 +154,48 @@ pub enum Action {
     Join(u8),
     /// Open the join link of the next meeting (from its alert).
     MeetingJoin,
+    /// Focus the AI chat prompt field.
+    AiInput,
+    /// Send the current AI chat prompt.
+    AiSend,
+    /// Send one of the 4 starter prompts (`0..4`).
+    AiStarter(u8),
+    /// Start a new AI conversation.
+    AiNewChat,
+    /// Toggle the AI conversation history drawer.
+    AiToggleHistory,
+    /// Open a conversation from the history drawer.
+    AiSelectChat(u64),
+    /// Delete a conversation from the history drawer.
+    AiDeleteChat(u64),
+    /// Toggle the AI provider & model setup panel.
+    AiToggleSetup,
+    /// Switch active AI provider.
+    AiSetProvider(AiProvider),
+    /// Cycle through available models (`-1` or `1`).
+    AiCycleModel(i8),
+    /// Select a model chip by index.
+    AiSelectModel(u16),
+    /// Fetch live models from the provider's `/models` endpoint.
+    AiRefreshModels,
+    /// Focus the custom model ID input in Setup.
+    AiFocusModel,
+    /// Focus the custom base URL input in Setup.
+    AiFocusBaseUrl,
+    /// Paste API key from clipboard (encrypted with DPAPI).
+    AiPasteKey,
+    /// Paste custom Base URL from clipboard.
+    AiPasteUrl,
+    /// Start or cancel `Sign in with ChatGPT` OAuth device flow.
+    AiChatGptSignIn,
+    /// Copy ChatGPT device code and open verification URL.
+    AiChatGptCopyCode,
+    /// Sign out of ChatGPT OAuth session.
+    AiChatGptSignOut,
+    /// Copy assistant message text at `msg_idx`.
+    AiCopyReply(u16),
+    /// Undo an AI-performed action `(msg_idx, action_idx)`.
+    AiUndoAction(u16, u8),
     Quit,
 }
 
@@ -153,7 +208,7 @@ pub struct Hit {
 }
 
 /// Per-page animation slots (every tab plus Settings, with headroom).
-pub const PAGE_SLOTS: usize = 12;
+pub const PAGE_SLOTS: usize = 13;
 
 pub fn page_index(p: Page) -> usize {
     Page::all().iter().position(|&x| x == p).unwrap_or(Page::all().len())
@@ -190,6 +245,10 @@ pub struct UiState {
     pub scroll: [usize; PAGE_SLOTS],
     /// Months the Today calendar is shifted from the current one.
     pub cal_offset: i32,
+    /// Selected calendar date `(year, month, day)` on `Page::Today` (`None` = upcoming agenda).
+    pub cal_selected_day: Option<(i32, u32, u32)>,
+    /// Selected event index in the active calendar list for the detail view (`None` = list view).
+    pub cal_selected_event: Option<usize>,
     /// Task text being typed (None = field not focused).
     pub input: Option<String>,
     pub toast: Option<(String, u64)>,
@@ -240,6 +299,8 @@ impl UiState {
             track_key: String::new(),
             scroll: [0; PAGE_SLOTS],
             cal_offset: 0,
+            cal_selected_day: None,
+            cal_selected_event: None,
             input: None,
             toast: None,
             clock_s: 0.0,
@@ -344,6 +405,7 @@ impl UiState {
                 Page::Speed => vm.speed.phase.running(),
                 Page::Voice => vm.voice.phase == crate::voice::VoicePhase::Recording,
                 Page::Usage => vm.usage.refreshing,
+                Page::Ai => vm.ai.busy || vm.ai.chatgpt_login_busy || vm.ai.models_loading || self.input.is_some(),
                 _ => false,
             } || self.toast.is_some();
         }

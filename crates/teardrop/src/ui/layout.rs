@@ -170,28 +170,30 @@ fn tab_icon(p: Page) -> Icon {
         Page::Speed => Icon::Gauge,
         Page::Usage => Icon::Chart,
         Page::Voice => Icon::Mic,
+        Page::Ai => Icon::Sparkle,
         Page::Settings => Icon::Gear,
     }
 }
 
 fn tab_label_w(p: Page) -> f32 {
     match p {
-        Page::Music => 90.0,
-        Page::Focus => 88.0,
-        Page::Water => 88.0,
-        Page::Shelf => 84.0,
-        Page::Tasks => 86.0,
-        Page::Clipboard => 108.0,
-        Page::Today => 86.0,
-        Page::Speed => 86.0,
-        Page::Usage => 86.0,
-        Page::Voice => 84.0,
+        Page::Music => 88.0,
+        Page::Focus => 86.0,
+        Page::Water => 86.0,
+        Page::Shelf => 82.0,
+        Page::Tasks => 84.0,
+        Page::Clipboard => 104.0,
+        Page::Today => 84.0,
+        Page::Speed => 84.0,
+        Page::Usage => 84.0,
+        Page::Voice => 82.0,
+        Page::Ai => 64.0,
         Page::Settings => 36.0,
     }
 }
 
-/// Width of an inactive tab: ten tabs plus the widest label must clear the gear.
-pub const TAB_W: f32 = 30.0;
+/// Width of an inactive tab: eleven tabs plus the widest label must clear the gear.
+pub const TAB_W: f32 = 27.0;
 pub const HEADER_H: f32 = 34.0;
 pub const HEADER_Y: f32 = 14.0;
 pub const CONTENT_TOP: f32 = 64.0;
@@ -217,9 +219,9 @@ fn header(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
             c.s.rect(r, HEADER_H / 2.0, SURFACE_HOVER.fade(h * (1.0 - amt)));
         }
         let ic = TEXT_2.mix(TEXT, h * 0.7).mix(acc, amt);
-        icons::draw(&mut c.s, tab_icon(p), r.x + 15.0 + 3.0 * amt, r.cy(), 16.0, ic);
+        icons::draw(&mut c.s, tab_icon(p), r.x + 13.5 + 3.0 * amt, r.cy(), 15.0, ic);
         if amt > 0.12 {
-            let lr = Rect::new(r.x + 35.0, r.y, (w - 35.0 - 6.0).max(0.0), r.h);
+            let lr = Rect::new(r.x + 32.0, r.y, (w - 32.0 - 6.0).max(0.0), r.h);
             c.s.text(p.title(), lr, 12.5, Weight::Semibold, acc.fade(smooth((amt - 0.2) / 0.8)), Align::Left);
         }
         c.hit(r, a);

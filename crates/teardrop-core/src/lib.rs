@@ -25,7 +25,7 @@ pub use lyrics::{line_at, line_progress, parse_lrc, LyricLine};
 pub use media::{Playback, Track};
 pub use pages::Page;
 pub use pomodoro::{Phase, Pomodoro};
-pub use settings::{EyeStyle, IdleLook, Settings};
+pub use settings::{AiProvider, EyeStyle, IdleLook, Settings};
 pub use shelf::{Shelf, ShelfItem};
 pub use spring::Spring;
 pub use system::SystemSnapshot;

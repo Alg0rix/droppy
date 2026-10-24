@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  Native Rust &middot; no web view, no runtime &middot; a single ~3 MB exe &middot; GPU-drawn and vsync-locked (60 to 240 Hz)<br>
+  Native Rust &middot; no web view, no runtime &middot; a single ~1 MB exe &middot; GPU-drawn and vsync-locked (60 to 240 Hz)<br>
   No accounts, no tracking: your data stays on your PC.<br>
   <sub><a href="docs/demo.mp4">Full-quality demo (MP4, 60 fps)</a></sub>
 </p>
@@ -95,8 +95,8 @@ Scroll the mouse wheel over the header, or use `←` `→`, to switch. Everythin
     <td><img src="docs/img/26-page-voice.png"><br><b>Voice</b> &mdash; one-tap microphone recorder with a live waveform. Saves a WAV file and puts it on your Shelf.</td>
   </tr>
   <tr>
+    <td><img src="docs/img/26-page-ai.png"><br><b>AI</b> &mdash; chat with an assistant that can see your day and act on it: add tasks, log water, start focus. Every action has an <b>Undo</b>. See <a href="#ai-chat">AI Chat</a>.</td>
     <td><img src="docs/img/27-page-settings.png"><br><b>Settings</b> &mdash; behind the gear: hover-open, lyrics, reminders, history, sounds, fullscreen, start with Windows, water goal, idle look, and <b>Check for updates</b>.</td>
-    <td></td>
   </tr>
 </table>
 
@@ -121,6 +121,14 @@ The **Usage** page reads data that's already on your PC and only starts when you
 - **Claude Code:** your plan and 5-hour / weekly utilization, from Anthropic's usage endpoint using your existing Claude Code sign-in. Your token is only ever sent to `api.anthropic.com`, is never stored or logged, and is never refreshed (so it can't sign you out of Claude Code). If it has expired, the page says *Open Claude Code to sign in again*.
 - **Codex:** 5-hour and weekly limits that Codex writes into its own session logs. No token is read, and the numbers are as of the last time you used Codex.
 - **OpenCode:** token and cost totals for today and the last 7 days, read from its local database.
+
+### AI Chat
+
+Bring your own account or key. Supported: **ChatGPT** (sign in with your subscription), **OpenCode Go**, any **OpenAI-compatible** server (OpenAI, OpenRouter, Groq, LM Studio, vLLM, llama.cpp), **Gemini**, **Claude**, and local **Ollama**. Open the **AI** page and press **Setup**.
+
+- API keys and sign-in tokens are encrypted with Windows DPAPI in `%APPDATA%\Teardrop\ai-secrets.json`, so they only decrypt for your Windows user. They're never shown or logged.
+- When *Share my day* is on (it's on by default), each message also carries a short summary of your day: upcoming calendar titles and times, open task titles, water and focus status, what's playing and basic PC stats. Turn it off to send only what you type. Nothing is sent until you press send.
+- Actions the assistant takes inside Teardrop (add a task, log water, start focus) show up under its reply with an **Undo** button.
 
 ### Voice recorder
 
@@ -159,6 +167,7 @@ Teardrop makes no accounts and sends no telemetry. It only talks to the network 
 | You connect a calendar | Only the iCal links you pasted |
 | You open the Usage page | Anthropic's usage endpoint, with your Claude Code sign-in |
 | Weather mood is on (opt-in) | [wttr.in](https://wttr.in) |
+| You send an AI Chat message | The provider you chose (see [AI Chat](#ai-chat) for what a message can include) |
 
 Clipboard history lives in memory only and skips items that password managers mark as private. The microphone is only used while you're recording. Files you send to Phone Link go through the standard Windows share window.
 

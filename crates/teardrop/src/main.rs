@@ -3,7 +3,7 @@
 //! Native Rust, no web view. One black droplet hangs from the top of the
 //! screen: collapsed it shows live activities (music, timer, HUDs); click
 //! or hover it and it stretches open like a teardrop into quick pages
-//! (music + synced lyrics, focus, water, shelf, tasks, clipboard, today).
+//! (music + synced lyrics, focus, water, shelf, tasks, clipboard, today, AI).
 #![windows_subsystem = "windows"]
 
 #[cfg(windows)]
@@ -14,24 +14,28 @@ mod drop_target;
 mod share;
 #[cfg(windows)]
 mod shelf_drag;
-mod lyrics_service;
-mod media_smtc;
+mod ai;
 mod calendar;
 mod http;
+mod lyrics_service;
+mod media_smtc;
 mod paths;
+mod recur;
 mod render_d2d;
 mod selftest;
 mod services_env;
-mod speedtest;
 mod services_system;
+mod speedtest;
+mod sqlite;
 mod startup;
+mod state;
+mod store;
+mod tz;
+mod ui;
 mod update;
 mod usage;
-mod voice;
-mod state;
-mod ui;
-mod store;
 mod viewmodel;
+mod voice;
 mod volume;
 mod window;
 

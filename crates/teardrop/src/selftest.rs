@@ -110,21 +110,30 @@ fn shot(name: &'static str, open: f32, page: Page) -> Shot {
 fn demo_calendar(vm: &mut ViewModel, _: &mut Settings, _: &mut UiState, _: u64) {
     use crate::calendar::{CalendarView, Event, FeedState, Join};
     let now = vm.now.timestamp();
-    let ev = |uid: &str, title: &str, start: i64, mins: i64, join: Option<(&str, &str)>| Event {
+    let ev = |uid: &str, title: &str, loc: &str, desc: &str, start: i64, mins: i64, join: Option<(&str, &str)>| Event {
         uid: uid.into(),
         start,
         end: start + mins * 60,
         title: title.into(),
-        location: String::new(),
+        location: loc.into(),
+        description: desc.into(),
         all_day: false,
         join: join.map(|(p, u)| Join { platform: p.into(), url: u.into() }),
     };
     vm.calendar_feeds = 1;
     vm.calendar = CalendarView {
         events: vec![
-            ev("a", "Design review", now + 12 * 60, 45, Some(("Google Meet", "https://meet.google.com/abc-defg-hij"))),
-            ev("b", "1:1 with Rina", now + 3 * 3600, 30, Some(("Zoom", "https://zoom.us/j/123"))),
-            ev("c", "Sprint planning", now + 26 * 3600, 60, Some(("Teams", "https://teams.microsoft.com/l/meetup-join/x"))),
+            ev(
+                "a",
+                "Design review",
+                "Studio B / Google Meet",
+                "Walk through the updated calendar day filter and event detail drawer.",
+                now + 12 * 60,
+                45,
+                Some(("Google Meet", "https://meet.google.com/abc-defg-hij")),
+            ),
+            ev("b", "1:1 with Rina", "Zoom", "Weekly sync and roadmap check-in.", now + 3 * 3600, 30, Some(("Zoom", "https://zoom.us/j/123"))),
+            ev("c", "Sprint planning", "Room 402", "Prioritize backlog items for next sprint.", now + 26 * 3600, 60, Some(("Teams", "https://teams.microsoft.com/l/meetup-join/x"))),
         ],
         state: FeedState::Ok,
         error: String::new(),
@@ -183,6 +192,21 @@ fn shots() -> Vec<Shot> {
         shot("25-page-clipboard", 1.0, Page::Clipboard),
         shot("26-page-today", 1.0, Page::Today),
         Shot { setup: demo_calendar, ..shot("26i-today-agenda", 1.0, Page::Today) },
+        Shot {
+            setup: |vm, set, ui, ms| {
+                demo_calendar(vm, set, ui, ms);
+                let d = crate::viewmodel::local_naive(vm.now).date() + chrono::Duration::days(1);
+                ui.cal_selected_day = Some((chrono::Datelike::year(&d), chrono::Datelike::month(&d), chrono::Datelike::day(&d)));
+            },
+            ..shot("26i2-today-day-selected", 1.0, Page::Today)
+        },
+        Shot {
+            setup: |vm, set, ui, ms| {
+                demo_calendar(vm, set, ui, ms);
+                ui.cal_selected_event = Some(0);
+            },
+            ..shot("26i3-today-event-detail", 1.0, Page::Today)
+        },
         Shot {
             setup: |vm, _, _, _| {
                 demo_calendar(vm, &mut Settings::default(), &mut UiState::new(Page::Music), 0);
@@ -251,6 +275,57 @@ fn shots() -> Vec<Shot> {
                 vm.voice = crate::voice::VoiceView { phase: crate::voice::VoicePhase::Recording, elapsed_ms: 83_400, level: 0.6, saved: None, error: String::new() };
             },
             ..shot("26h-collapsed-recording", 0.0, Page::Music)
+        },
+        shot("26l-page-ai-starters", 1.0, Page::Ai),
+        Shot {
+            setup: |vm, _, _, _| {
+                use crate::ai::{AiActionBadge, ChatMessage, Role, UndoOp};
+                vm.ai.messages = vec![
+                    ChatMessage {
+                        role: Role::User,
+                        text: "Add a task 'Deep work block' and log 250 ml of water.".into(),
+                        actions: Vec::new(),
+                        timestamp: 0,
+                    },
+                    ChatMessage {
+                        role: Role::Assistant,
+                        text: "All set! Added your deep work block and logged 250 ml of water \u{2014} you're at 1,500 / 2,000 ml today.".into(),
+                        actions: vec![
+                            AiActionBadge {
+                                label: "Added task: Deep work block".into(),
+                                undo: UndoOp::RemoveAddedTask("1".into()),
+                                undone: false,
+                            },
+                            AiActionBadge {
+                                label: "Logged +250 ml water".into(),
+                                undo: UndoOp::SubtractWater(250),
+                                undone: false,
+                            },
+                        ],
+                        timestamp: 0,
+                    },
+                ];
+            },
+            ..shot("26m-page-ai-chat", 1.0, Page::Ai)
+        },
+        Shot {
+            setup: |vm, set, _, _| {
+                set.ai_provider = teardrop_core::AiProvider::ChatGpt;
+                vm.ai.show_setup = true;
+                vm.ai.chatgpt_signed_in = false;
+                vm.ai.configured = false;
+            },
+            ..shot("26n-page-ai-setup-chatgpt", 1.0, Page::Ai)
+        },
+        Shot {
+            setup: |vm, set, _, _| {
+                set.ai_provider = teardrop_core::AiProvider::OpenCodeGo;
+                vm.ai.show_setup = true;
+                vm.ai.configured = true;
+                vm.ai.memories_count = 3;
+                vm.ai.available_models = crate::ai::default_models_for(teardrop_core::AiProvider::OpenCodeGo);
+            },
+            ..shot("26o-page-ai-setup-opencode", 1.0, Page::Ai)
         },
         Shot { setup: |_, _, ui, _| { ui.drag_files = 2; ui.drop_amt = 1.0; ui.clock_s = 0.3; }, ..shot("23b-shelf-drag-over", 1.0, Page::Shelf) },
         Shot { setup: |_, _, ui, _| { ui.drag_files = 2; ui.drop_amt = 1.0; ui.clock_s = 0.3; ui.drag_zone = 1; ui.zone_amt = 1.0; }, ..shot("23c-drag-over-phone", 1.0, Page::Shelf) },
@@ -468,7 +543,7 @@ pub fn run(dir: &str) -> i32 {
     if vm.pomo.remaining_ms(now) == 0 {
         failures.push("focus start failed".into());
     }
-    if Page::Music.step(1) != Page::Focus || Page::Voice.step(1) != Page::Music || Page::Settings.step(1) != Page::Music {
+    if Page::Music.step(1) != Page::Focus || Page::Voice.step(1) != Page::Ai || Page::Ai.step(1) != Page::Music || Page::Settings.step(1) != Page::Music {
         failures.push("page stepping wrong".into());
     }
     interactions.push(json!({"action": "tasks/focus/page-step", "open": vm.tasks.open_count()}));

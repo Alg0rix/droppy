@@ -5,20 +5,21 @@
 //!   the view model, a log line or an error message.
 //! * Feed text is untrusted: join links are only offered for known meeting
 //!   hosts over https.
-//! * Recurring events are expanded by the `rrule` crate into a window around
-//!   now; time zones come from the IANA name (Google) or a Windows-name table
-//!   (Outlook), falling back to the PC's own zone.
+//! * Recurring events are expanded by our own small RRULE engine (`recur.rs`) into a
+//!   window around now; time zones come from Windows itself (`tz.rs`), so there is
+//!   no bundled time-zone database. An unknown zone falls back to the PC's own.
 //! * The last good result is cached so the agenda shows at startup and offline.
 
 use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use crate::tz::{self, Zone};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 
 /// How far around "now" occurrences are expanded.
-const PAST_DAYS: i64 = 1;
-const AHEAD_DAYS: i64 = 14;
+const PAST_DAYS: i64 = 62;
+const AHEAD_DAYS: i64 = 180;
 const FEED_LIMIT: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -35,6 +36,8 @@ pub struct Event {
     pub end: i64,
     pub title: String,
     pub location: String,
+    #[serde(default)]
+    pub description: String,
     pub all_day: bool,
     pub join: Option<Join>,
 }
@@ -133,86 +136,22 @@ pub fn unescape(s: &str) -> String {
     out
 }
 
-/// Windows time-zone name -> IANA (the common ones; Outlook feeds use these).
-pub fn windows_zone(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "UTC" | "Coordinated Universal Time" => "UTC",
-        "Dateline Standard Time" => "Etc/GMT+12",
-        "Hawaiian Standard Time" => "Pacific/Honolulu",
-        "Alaskan Standard Time" => "America/Anchorage",
-        "Pacific Standard Time" => "America/Los_Angeles",
-        "Mountain Standard Time" => "America/Denver",
-        "US Mountain Standard Time" => "America/Phoenix",
-        "Central Standard Time" => "America/Chicago",
-        "Canada Central Standard Time" => "America/Regina",
-        "Central America Standard Time" => "America/Guatemala",
-        "Mexico Standard Time" => "America/Mexico_City",
-        "Eastern Standard Time" => "America/New_York",
-        "SA Pacific Standard Time" => "America/Bogota",
-        "Atlantic Standard Time" => "America/Halifax",
-        "Venezuela Standard Time" => "America/Caracas",
-        "Pacific SA Standard Time" => "America/Santiago",
-        "Newfoundland Standard Time" => "America/St_Johns",
-        "E. South America Standard Time" => "America/Sao_Paulo",
-        "Argentina Standard Time" => "America/Argentina/Buenos_Aires",
-        "Greenwich Standard Time" => "Atlantic/Reykjavik",
-        "GMT Standard Time" => "Europe/London",
-        "Morocco Standard Time" => "Africa/Casablanca",
-        "W. Europe Standard Time" => "Europe/Berlin",
-        "Central Europe Standard Time" => "Europe/Budapest",
-        "Romance Standard Time" => "Europe/Paris",
-        "Central European Standard Time" => "Europe/Warsaw",
-        "W. Central Africa Standard Time" => "Africa/Lagos",
-        "GTB Standard Time" => "Europe/Bucharest",
-        "E. Europe Standard Time" => "Europe/Chisinau",
-        "FLE Standard Time" => "Europe/Kiev",
-        "Turkey Standard Time" => "Europe/Istanbul",
-        "Egypt Standard Time" => "Africa/Cairo",
-        "South Africa Standard Time" => "Africa/Johannesburg",
-        "Israel Standard Time" => "Asia/Jerusalem",
-        "Russian Standard Time" => "Europe/Moscow",
-        "E. Africa Standard Time" => "Africa/Nairobi",
-        "Arab Standard Time" => "Asia/Riyadh",
-        "Arabian Standard Time" => "Asia/Dubai",
-        "Iran Standard Time" => "Asia/Tehran",
-        "Pakistan Standard Time" => "Asia/Karachi",
-        "West Asia Standard Time" => "Asia/Tashkent",
-        "India Standard Time" => "Asia/Kolkata",
-        "Nepal Standard Time" => "Asia/Kathmandu",
-        "Central Asia Standard Time" => "Asia/Almaty",
-        "Bangladesh Standard Time" => "Asia/Dhaka",
-        "Myanmar Standard Time" => "Asia/Yangon",
-        "SE Asia Standard Time" => "Asia/Bangkok",
-        "China Standard Time" => "Asia/Shanghai",
-        "Singapore Standard Time" => "Asia/Singapore",
-        "W. Australia Standard Time" => "Australia/Perth",
-        "Taipei Standard Time" => "Asia/Taipei",
-        "Tokyo Standard Time" => "Asia/Tokyo",
-        "Korea Standard Time" => "Asia/Seoul",
-        "AUS Eastern Standard Time" => "Australia/Sydney",
-        "E. Australia Standard Time" => "Australia/Brisbane",
-        "New Zealand Standard Time" => "Pacific/Auckland",
-        _ => return None,
-    })
-}
-
 /// A parsed DTSTART / DTEND / EXDATE value.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Dt {
     Date(NaiveDate),
     Utc(DateTime<Utc>),
     /// Wall-clock time in a zone (`None` = this PC's zone).
-    Zoned(NaiveDateTime, Option<chrono_tz::Tz>),
+    Zoned(NaiveDateTime, Option<Zone>),
 }
 
 fn parse_naive(v: &str) -> Option<NaiveDateTime> {
     NaiveDateTime::parse_from_str(v.trim_end_matches('Z'), "%Y%m%dT%H%M%S").ok()
 }
 
-/// Resolve a TZID (IANA, Windows name, quoted or not) to a zone; unknown = None (local).
-pub fn zone_of(tzid: Option<&str>) -> Option<chrono_tz::Tz> {
-    let t = tzid?.trim_matches('"');
-    t.parse::<chrono_tz::Tz>().ok().or_else(|| windows_zone(t).and_then(|z| z.parse().ok()))
+/// Resolve a TZID (IANA, Windows name, quoted or not) to a zone; unknown = None (this PC's zone).
+pub fn zone_of(tzid: Option<&str>) -> Option<Zone> {
+    tz::resolve(tzid?)
 }
 
 pub fn parse_dt(p: &Prop) -> Option<Dt> {
@@ -242,7 +181,7 @@ pub fn parse_duration(v: &str) -> Option<i64> {
             '0'..='9' => num.push(ch),
             'W' | 'D' | 'H' | 'M' | 'S' => {
                 let n: i64 = std::mem::take(&mut num).parse().ok()?;
-                total += n * match (ch, in_time) {
+                let unit: i64 = match (ch, in_time) {
                     ('W', _) => 604_800,
                     ('D', _) => 86_400,
                     ('H', _) => 3_600,
@@ -250,6 +189,7 @@ pub fn parse_duration(v: &str) -> Option<i64> {
                     ('M', false) => return None,
                     _ => 1,
                 };
+                total = total.checked_add(n.checked_mul(unit)?)?;
             }
             _ => return None,
         }
@@ -364,48 +304,81 @@ pub fn find_join(fields: &[&str]) -> Option<Join> {
 
 // ------------------------------------------------------------------ expansion
 
-fn local_tz() -> rrule::Tz {
-    rrule::Tz::LOCAL
-}
-
-fn rr_tz(z: Option<chrono_tz::Tz>) -> rrule::Tz {
-    z.map(rrule::Tz::Tz).unwrap_or_else(local_tz)
-}
-
-/// A value as an instant in `tz` (dates = local midnight).
-fn to_instant(d: Dt, fallback: Option<chrono_tz::Tz>) -> Option<DateTime<rrule::Tz>> {
+/// A value as Unix seconds. Dates are local midnight; a time without a zone
+/// uses `fallback`, else this PC's zone.
+fn to_secs(d: Dt, fallback: Option<Zone>) -> Option<i64> {
     match d {
-        Dt::Utc(u) => Some(u.with_timezone(&rrule::Tz::UTC)),
-        Dt::Date(date) => local_tz().from_local_datetime(&date.and_hms_opt(0, 0, 0)?).earliest(),
-        Dt::Zoned(n, z) => rr_tz(z.or(fallback)).from_local_datetime(&n).earliest(),
+        Dt::Utc(u) => Some(u.timestamp()),
+        Dt::Date(date) => tz::to_utc_secs(date.and_hms_opt(0, 0, 0)?, None),
+        Dt::Zoned(n, z) => tz::to_utc_secs(n, z.or(fallback)),
     }
 }
 
-fn secs(d: DateTime<rrule::Tz>) -> i64 {
-    d.timestamp()
+/// Expand feed events into concrete instances overlapping `[from, to]` (Unix seconds).
+/// Strip HTML markup / angle-bracketed URLs and collapse whitespace so
+/// `Event::description` is clean for the detail card.
+pub fn clean_description(raw: &str) -> String {
+    let s = raw
+        .replace("<br>", "\n")
+        .replace("<br/>", "\n")
+        .replace("<br />", "\n")
+        .replace("<BR>", "\n")
+        .replace("</p>", "\n")
+        .replace("</div>", "\n")
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'");
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s.as_str();
+    while let Some(lt) = rest.find('<') {
+        out.push_str(&rest[..lt]);
+        let after = &rest[lt + 1..];
+        if let Some(gt) = after.find('>') {
+            let inner = &after[..gt];
+            if inner.starts_with("https://") || inner.starts_with("http://") {
+                out.push_str(inner);
+            }
+            rest = &after[gt + 1..];
+        } else {
+            out.push('<');
+            rest = after;
+        }
+    }
+    out.push_str(rest);
+    let cleaned = out
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    cleaned.chars().take(600).collect()
 }
 
-/// Expand feed events into concrete instances overlapping `[from, to]` (Unix seconds).
 pub fn expand(raw: &[RawEvent], from: i64, to: i64) -> Vec<Event> {
     // Overrides (RECURRENCE-ID) replace or cancel a single instance of their series.
     let mut overrides: HashMap<(String, i64), &RawEvent> = HashMap::new();
     for e in raw.iter().filter(|e| e.recurrence_id.is_some()) {
-        if let Some(rid) = e.recurrence_id.and_then(|d| to_instant(d, None)) {
-            overrides.insert((e.uid.clone(), secs(rid)), e);
+        if let Some(rid) = e.recurrence_id.and_then(|d| to_secs(d, None)) {
+            overrides.insert((e.uid.clone(), rid), e);
         }
     }
     let mut out = Vec::new();
     for e in raw.iter().filter(|e| e.recurrence_id.is_none()) {
         let Some(start_dt) = e.start else { continue };
         let all_day = matches!(start_dt, Dt::Date(_));
+        // The zone the event's wall-clock times live in (None = this PC's).
         let zone = match start_dt {
             Dt::Zoned(_, z) => z,
-            _ => None,
+            Dt::Utc(_) => Some(Zone::Utc),
+            Dt::Date(_) => None,
         };
-        let Some(start) = to_instant(start_dt, None) else { continue };
+        let Some(start) = to_secs(start_dt, None) else { continue };
         // Length: DTEND, else DURATION, else a day (dates) / nothing (date-times).
-        let len = match (e.end.and_then(|d| to_instant(d, zone)), e.duration) {
-            (Some(end), _) => (secs(end) - secs(start)).max(0),
+        let len = match (e.end.and_then(|d| to_secs(d, zone)), e.duration) {
+            (Some(end), _) => (end - start).max(0),
             (None, Some(d)) => d.max(0),
             (None, None) => if all_day { 86_400 } else { 0 },
         };
@@ -416,32 +389,33 @@ pub fn expand(raw: &[RawEvent], from: i64, to: i64) -> Vec<Event> {
             end: s + len,
             title: if e_.summary.is_empty() { "(No title)".into() } else { e_.summary.clone() },
             location: e_.location.clone(),
+            description: clean_description(&e_.description),
             all_day,
             join: join.clone(),
         };
         let overlaps = |s: i64| s + len.max(1) > from && s <= to;
 
         let Some(rule) = &e.rrule else {
-            if !e.cancelled && overlaps(secs(start)) {
-                out.push(make(secs(start), e));
+            if !e.cancelled && overlaps(start) {
+                out.push(make(start, e));
             }
             continue;
         };
-        // Recurring: iterate from DTSTART (COUNT counts from the first instance).
-        let exdates: Vec<i64> = e.exdates.iter().filter_map(|d| to_instant(*d, zone)).map(secs).collect();
-        let mut starts: Vec<i64> = Vec::new();
-        let parsed = rule.parse::<rrule::RRule<rrule::Unvalidated>>().ok().and_then(|r| r.validate(start).ok());
-        match parsed {
-            Some(r) => {
-                let set = rrule::RRuleSet::new(start)
-                    .rrule(r)
-                    .after(chrono::DateTime::from_timestamp(from - len, 0).unwrap_or_default().with_timezone(&rrule::Tz::UTC))
-                    .before(chrono::DateTime::from_timestamp(to, 0).unwrap_or_default().with_timezone(&rrule::Tz::UTC));
-                starts = set.all(2_000).dates.into_iter().map(secs).collect();
-            }
+        // Recurring: walk from DTSTART (COUNT counts from the first instance) in
+        // wall-clock time, converting each occurrence so DST is applied per date.
+        let exdates: Vec<i64> = e.exdates.iter().filter_map(|d| to_secs(*d, zone)).collect();
+        let wall_start = match start_dt {
+            Dt::Zoned(n, _) => n,
+            Dt::Utc(u) => u.naive_utc(),
+            Dt::Date(d) => d.and_hms_opt(0, 0, 0).unwrap_or_default(),
+        };
+        let horizon = DateTime::from_timestamp(to + 2 * 86_400, 0).unwrap_or_default().naive_utc();
+        let convert = |n: NaiveDateTime| tz::to_utc_secs(n, zone);
+        let starts: Vec<i64> = match crate::recur::occurrences(wall_start, rule, horizon, &convert) {
+            Some(v) => v.into_iter().filter_map(convert).collect(),
             // A rule we can't read still shows its first instance.
-            None => starts.push(secs(start)),
-        }
+            None => vec![start],
+        };
         for s in starts {
             if exdates.contains(&s) {
                 continue;
@@ -449,9 +423,9 @@ pub fn expand(raw: &[RawEvent], from: i64, to: i64) -> Vec<Event> {
             match overrides.get(&(e.uid.clone(), s)) {
                 Some(o) if o.cancelled => {}
                 Some(o) => {
-                    let ns = o.start.and_then(|d| to_instant(d, None)).map(secs).unwrap_or(s);
+                    let ns = o.start.and_then(|d| to_secs(d, None)).unwrap_or(s);
                     if overlaps(ns) {
-                        let nlen = o.end.and_then(|d| to_instant(d, None)).map(|en| (secs(en) - ns).max(0)).unwrap_or(len);
+                        let nlen = o.end.and_then(|d| to_secs(d, None)).map(|en| (en - ns).max(0)).unwrap_or(len);
                         let mut ev = make(ns, o);
                         ev.end = ns + nlen;
                         out.push(ev);
@@ -494,6 +468,14 @@ impl CalendarView {
     }
 
     /// Upcoming timed events, then today's all-day ones, soonest first.
+    /// All events occurring on the local calendar date `(year, month, day)`.
+    pub fn events_on_day(&self, year: i32, month: u32, day: u32) -> Vec<&Event> {
+        let Some(date) = NaiveDate::from_ymd_opt(year, month, day) else {
+            return Vec::new();
+        };
+        self.events.iter().filter(|e| event_on_date(e, date)).collect()
+    }
+
     pub fn agenda(&self, now: i64, limit: usize) -> Vec<&Event> {
         self.events.iter().filter(|e| e.end.max(e.start + 60) > now).take(limit).collect()
     }
@@ -663,7 +645,58 @@ pub fn clock_label(ev: &Event) -> String {
 }
 
 /// Days of `year`/`month` (1-based) that have an event, for dots on the grid.
+/// Formatted time range (`"09:00 – 09:15"` or `"All day"`) in local time.
+pub fn time_range_label(ev: &Event) -> String {
+    if ev.all_day {
+        return "All day".into();
+    }
+    let fmt = |t: i64| Local.timestamp_opt(t, 0).single().map(|d| d.format("%H:%M").to_string());
+    match (fmt(ev.start), (ev.end > ev.start).then(|| fmt(ev.end)).flatten()) {
+        (Some(s), Some(e)) if s != e => format!("{s} \u{2013} {e}"),
+        (Some(s), _) => s,
+        _ => String::new(),
+    }
+}
+
+/// Full local date label for an event (`"Wed, 28 Oct 2026"`).
+pub fn full_date_label(ev: &Event) -> String {
+    Local
+        .timestamp_opt(ev.start, 0)
+        .single()
+        .map(|d| d.format("%a, %-d %b %Y").to_string())
+        .unwrap_or_default()
+}
+
+/// Whether `e` occurs on the local calendar date `date` (including multi-day spans).
+pub fn event_on_date(e: &Event, date: NaiveDate) -> bool {
+    let Some(s) = Local.timestamp_opt(e.start, 0).single().map(|d| d.date_naive()) else {
+        return false;
+    };
+    let end_ts = (e.end - 1).max(e.start);
+    let e_date = Local
+        .timestamp_opt(end_ts, 0)
+        .single()
+        .map(|d| d.date_naive())
+        .unwrap_or(s);
+    date >= s && date <= e_date
+}
+
+/// Days of `year`/`month` (1-based) that have an event, for dots on the grid.
 pub fn busy_days(events: &[Event], year: i32, month: u32) -> Vec<u32> {
+    let mut days = Vec::new();
+    for d in 1..=31u32 {
+        let Some(date) = NaiveDate::from_ymd_opt(year, month, d) else {
+            break;
+        };
+        if events.iter().any(|e| event_on_date(e, date)) {
+            days.push(d);
+        }
+    }
+    days
+}
+
+#[allow(dead_code)]
+fn busy_days_legacy_unused(events: &[Event], year: i32, month: u32) -> Vec<u32> {
     let mut days: Vec<u32> = events
         .iter()
         .filter_map(|e| Local.timestamp_opt(e.start, 0).single())
@@ -711,7 +744,7 @@ mod tests {
         let timed: Vec<_> = evs.iter().filter(|e| !e.all_day).collect();
         // Mon 26 Oct is excluded, Wed 28 Oct moved to 10:00, then Mon 2 and Wed 4 Nov.
         assert_eq!(timed.len(), 3, "{timed:#?}");
-        let jakarta = |y, m, d, h| chrono_tz::Asia::Jakarta.with_ymd_and_hms(y, m, d, h, 0, 0).unwrap().timestamp();
+        let jakarta = |y, m, d, h| chrono::FixedOffset::east_opt(7 * 3600).unwrap().with_ymd_and_hms(y, m, d, h, 0, 0).unwrap().timestamp();
         assert_eq!(timed[0].start, jakarta(2026, 10, 28, 10));
         assert_eq!(timed[0].title, "Standup (moved)");
         assert_eq!(timed[1].start, jakarta(2026, 11, 2, 9));
@@ -732,7 +765,7 @@ mod tests {
         let evs = expand(&parse_ics(OUTLOOK.as_bytes()), from, to);
         assert_eq!(evs.len(), 1, "{evs:#?}");
         // Last weekday of October 2026 is Friday the 30th, 14:00 in Bangkok (UTC+7).
-        let want = chrono_tz::Asia::Bangkok.with_ymd_and_hms(2026, 10, 30, 14, 0, 0).unwrap().timestamp();
+        let want = chrono::FixedOffset::east_opt(7 * 3600).unwrap().with_ymd_and_hms(2026, 10, 30, 14, 0, 0).unwrap().timestamp();
         assert_eq!(evs[0].start, want);
         let j = evs[0].join.as_ref().unwrap();
         assert_eq!(j.platform, "Teams");
@@ -759,10 +792,46 @@ mod tests {
         assert_eq!(parse_duration("P1DT2H"), Some(93_600));
         assert_eq!(parse_duration("P1W"), Some(604_800));
         assert_eq!(parse_duration("nonsense"), None);
+        assert_eq!(parse_duration("P99999999999999999999D"), None);
+        assert_eq!(parse_duration("P9999999999999999D"), None, "overflow is refused, not wrapped");
         let raw = b"BEGIN:VEVENT\r\nUID:d\r\nDTSTART:20261025T100000Z\r\nDURATION:PT45M\r\nSUMMARY:x\r\nEND:VEVENT\r\n";
         let (from, to) = window();
         let ev = &expand(&parse_ics(raw), from, to)[0];
         assert_eq!(ev.end - ev.start, 2700);
+    }
+
+    #[test]
+    fn garbage_feeds_never_panic() {
+        // Deterministic pseudo-random mixes of valid and broken calendar lines.
+        let lines = [
+            "BEGIN:VCALENDAR", "BEGIN:VEVENT", "END:VEVENT", "END:VCALENDAR", "BEGIN:VALARM", "END:VALARM", "UID:a", "UID:", "SUMMARY:x\\,y\\nz", "SUMMARY:\\",
+            "DTSTART:20261025T100000Z", "DTSTART;TZID=\"SE Asia Standard Time\":20261025T100000", "DTSTART;TZID=Nowhere/Land:20261025T100000", "DTSTART;VALUE=DATE:20261025",
+            "DTSTART:99999999T999999Z", "DTSTART:00010101", "DTSTART:", "DTEND:20250101T000000Z", "DTEND;VALUE=DATE:19000101", "DURATION:P99999999999999999999W", "DURATION:-PT5M",
+            "RRULE:FREQ=DAILY;INTERVAL=2", "RRULE:FREQ=MONTHLY;BYDAY=-1FR;BYSETPOS=-1", "RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29", "RRULE:FREQ=WEEKLY;COUNT=99999999999", "RRULE:\u{0}",
+            "EXDATE:20261026T100000Z,garbage,", "EXDATE;TZID=x:", "RECURRENCE-ID:20261025T100000Z", "RECURRENCE-ID;VALUE=DATE:20261025", "STATUS:CANCELLED", ":::", ";;;:", "=", "",
+            "DESCRIPTION:see https://meet.google.com/abc and https://", "LOCATION:https://zoom.us/j/1", "X-GOOGLE-CONFERENCE:https://\u{e9}", " folded", "\tfolded",
+        ];
+        let mut seed: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let (from, to) = window();
+        for _ in 0..400 {
+            let mut feed = String::new();
+            for _ in 0..(next() % 40) {
+                feed.push_str(lines[(next() % lines.len() as u64) as usize]);
+                feed.push_str(if next() % 5 == 0 { "\n" } else { "\r\n" });
+            }
+            let _ = expand(&parse_ics(feed.as_bytes()), from, to);
+        }
+        // Raw bytes, including invalid UTF-8.
+        for _ in 0..200 {
+            let bytes: Vec<u8> = (0..(next() % 300)).map(|_| next() as u8).collect();
+            let _ = expand(&parse_ics(&bytes), from, to);
+        }
     }
 
     #[test]
@@ -795,7 +864,30 @@ mod tests {
     }
 
     fn ev(uid: &str, s: i64, e: i64) -> Event {
-        Event { uid: uid.into(), start: s, end: e, title: uid.into(), location: String::new(), all_day: false, join: None }
+        Event {
+            uid: uid.into(),
+            start: s,
+            end: e,
+            title: uid.into(),
+            location: String::new(),
+            description: String::new(),
+            all_day: false,
+            join: None,
+        }
+    }
+
+    #[test]
+    fn events_on_day_and_description_work() {
+        let (from, to) = window();
+        let evs = expand(&parse_ics(OUTLOOK.as_bytes()), from, to);
+        assert!(evs[0].description.contains("https://teams.microsoft.com/l/meetup-join/"));
+        let view = CalendarView { events: evs, state: FeedState::Ok, ..Default::default() };
+        let start_local = Local.timestamp_opt(view.events[0].start, 0).single().unwrap().date_naive();
+        let on_day = view.events_on_day(start_local.year(), start_local.month(), start_local.day());
+        assert_eq!(on_day.len(), 1);
+        assert_eq!(on_day[0].title, "Monthly review");
+        let empty_day = view.events_on_day(start_local.year(), start_local.month(), 1);
+        assert!(empty_day.is_empty());
     }
 
     #[test]

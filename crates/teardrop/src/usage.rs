@@ -326,12 +326,17 @@ const SPEND_SQL: &str = "SELECT COALESCE(json_extract(data,'$.providerID'),'?'),
      COALESCE(SUM(json_extract(data,'$.tokens.total')),0), COALESCE(SUM(json_extract(data,'$.cost')),0.0) \
      FROM message WHERE time_created >= ?1 AND json_extract(data,'$.role') = 'assistant' GROUP BY 1, 2";
 
-fn spend_since(db: &rusqlite::Connection, since_ms: i64) -> rusqlite::Result<Vec<Spend>> {
-    let mut st = db.prepare(SPEND_SQL)?;
-    let rows = st.query_map([since_ms], |r| {
-        Ok(Spend { label: format!("{}/{}", r.get::<_, String>(0)?, r.get::<_, String>(1)?), tokens: r.get::<_, i64>(2)?.max(0) as u64, cost: r.get::<_, f64>(3)?.max(0.0) })
-    })?;
-    Ok(rows.filter_map(|r| r.ok()).collect())
+fn spend_since(db: &crate::sqlite::Conn, since_ms: i64) -> Result<Vec<Spend>, crate::sqlite::Error> {
+    let rows = db.query_i64(SPEND_SQL, since_ms)?;
+    Ok(rows
+        .into_iter()
+        .filter(|r| r.len() == 4)
+        .map(|r| Spend {
+            label: format!("{}/{}", r[0], r[1]),
+            tokens: r[2].parse::<f64>().unwrap_or(0.0).max(0.0) as u64,
+            cost: r[3].parse::<f64>().unwrap_or(0.0).max(0.0),
+        })
+        .collect())
 }
 
 /// Fold per-model rows into totals and the busiest few.
@@ -350,15 +355,16 @@ pub fn summarize(today: &[Spend], week: &[Spend]) -> OpenCode {
 }
 
 fn read_opencode() -> OpenCode {
-    use rusqlite::{Connection, OpenFlags};
+    use crate::sqlite::{Conn, Error};
     let Some(path) = opencode_db_path().filter(|p| p.exists()) else {
         return OpenCode { note: "OpenCode isn't installed".into(), ..Default::default() };
     };
     // Read-only: opencode owns this database and is usually running on it.
-    let Ok(db) = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX) else {
-        return OpenCode { note: "OpenCode's database is busy".into(), ..Default::default() };
+    let db = match Conn::open_readonly(&path) {
+        Ok(db) => db,
+        Err(Error::Unavailable) => return OpenCode { note: "Needs Windows 10 1809 or newer".into(), ..Default::default() },
+        Err(_) => return OpenCode { note: "OpenCode's database is busy".into(), ..Default::default() },
     };
-    let _ = db.busy_timeout(std::time::Duration::from_millis(1500));
     let now = chrono::Local::now();
     let midnight = now.date_naive().and_hms_opt(0, 0, 0).and_then(|d| d.and_local_timezone(chrono::Local).single()).map(|d| d.timestamp_millis()).unwrap_or(0);
     let week = now.timestamp_millis() - 7 * 86_400_000;
@@ -444,6 +450,13 @@ mod live {
         };
         show("claude", &super::read_claude());
         show("codex", &super::read_codex());
+        // All-time check that the system SQLite really reads the live database.
+        if let Some(path) = super::opencode_db_path().filter(|p| p.exists()) {
+            let db = crate::sqlite::Conn::open_readonly(&path).expect("open opencode db");
+            let all = super::spend_since(&db, 0).expect("query");
+            println!("opencode all-time: {} models, {} tokens", all.len(), all.iter().map(|s| s.tokens).sum::<u64>());
+            assert!(!all.is_empty());
+        }
         let o = super::read_opencode();
         println!("opencode: today={} tok ${:.2}, week={} tok ${:.2}, top={:?}, note={:?}", o.today_tokens, o.today_cost, o.week_tokens, o.week_cost, o.top.iter().map(|s| (&s.label, s.tokens)).collect::<Vec<_>>(), o.note);
     }

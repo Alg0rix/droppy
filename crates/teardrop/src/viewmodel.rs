@@ -29,6 +29,7 @@ pub struct ViewModel {
     pub calendar: crate::calendar::CalendarView,
     /// Connected calendar feeds (the links themselves stay in Settings).
     pub calendar_feeds: usize,
+    pub ai: crate::ai::AiView,
     pub now: DateTime<Utc>,
 }
 
@@ -155,6 +156,14 @@ impl ViewModel {
             voice: Default::default(),
             calendar: Default::default(),
             calendar_feeds: 0,
+            ai: crate::ai::AiView {
+                active_id: 1,
+                title: "Morning planning".into(),
+                configured: true,
+                chatgpt_signed_in: true,
+                available_models: crate::ai::default_models_for(teardrop_core::AiProvider::ChatGpt),
+                ..Default::default()
+            },
             now,
         }
     }
@@ -181,8 +190,87 @@ impl ViewModel {
             voice: Default::default(),
             calendar: Default::default(),
             calendar_feeds: 0,
+            ai: Default::default(),
             now,
         }
+    }
+
+    /// Build the day summary shared with AI Chat when `ai_share_day` is enabled.
+    pub fn day_context_summary(&self) -> String {
+        let local = local_naive(self.now);
+        let mut lines = Vec::new();
+        lines.push(format!("Now: {}", local.format("%A, %Y-%m-%d %H:%M")));
+
+        // Calendar events (up to 6 upcoming events).
+        let now_ts = self.now.timestamp();
+        let agenda = self.calendar.agenda(now_ts, 6);
+        if agenda.is_empty() {
+            lines.push("Calendar: no upcoming events".into());
+        } else {
+            let ev_list: Vec<String> = agenda
+                .iter()
+                .map(|ev| {
+                    let day = crate::calendar::day_label(ev, now_ts);
+                    let when = if ev.all_day {
+                        format!("{day} All day")
+                    } else {
+                        format!("{day} {}", crate::calendar::clock_label(ev))
+                    };
+                    format!("{} ({})", ev.title, when)
+                })
+                .collect();
+            lines.push(format!("Calendar: {}", ev_list.join("; ")));
+        }
+
+        // Tasks
+        let open_tasks: Vec<&str> = self.tasks.tasks.iter().filter(|t| !t.done).map(|t| t.title.as_str()).collect();
+        let done_count = self.tasks.tasks.iter().filter(|t| t.done).count();
+        if open_tasks.is_empty() {
+            lines.push(format!("Tasks: 0 open ({done_count} completed)"));
+        } else {
+            lines.push(format!("Open tasks ({}): {} ({done_count} completed)", open_tasks.len(), open_tasks.join(", ")));
+        }
+
+        // Water
+        let day = self.day();
+        let today_ml = self.water.today(day);
+        lines.push(format!("Water today: {} / {} ml", today_ml, self.water.goal_ml));
+
+        // Pomodoro
+        let pomo_state = match self.pomo.phase {
+            Phase::Idle => format!("Idle ({} focus sessions completed)", self.pomo.completed_focus),
+            p => format!(
+                "{:?} ({}, {} remaining, {} sessions completed)",
+                p,
+                if self.focus_running() { "running" } else { "paused" },
+                mmss(self.focus_remaining_ms()),
+                self.pomo.completed_focus
+            ),
+        };
+        lines.push(format!("Pomodoro: {pomo_state}"));
+
+        // Music
+        if self.music_active() {
+            lines.push(format!("Now playing: {} — {}", self.track.title, self.track.display_artist()));
+        }
+
+        // System stats
+        let sys = &self.system;
+        let free_disk = (sys.disk_total_gb - sys.disk_used_gb).max(0.0);
+        let mut sys_line = format!(
+            "PC: CPU {:.0}%, RAM {:.1}/{:.1} GB ({:.0}%), Free Disk {:.0} GB",
+            sys.cpu_pct,
+            sys.mem_used_gb,
+            sys.mem_total_gb,
+            sys.mem_pct(),
+            free_disk
+        );
+        if let Some(bat) = sys.battery_pct {
+            sys_line.push_str(&format!(", Battery {bat}%{}", if sys.charging { " (charging)" } else { "" }));
+        }
+        lines.push(sys_line);
+
+        lines.join("\n")
     }
 
     /// The local calendar day, disguised as a UTC instant so `WaterLog`
@@ -345,5 +433,8 @@ mod tests {
         assert!(vm.tasks.tasks.len() >= 4);
         assert!(vm.shelf.items.len() >= 4);
         assert!(vm.clipboard.items().len() >= 3);
+        let summary = vm.day_context_summary();
+        assert!(summary.contains("Ship the island redesign"));
+        assert!(summary.contains("1250 / 2000 ml"));
     }
 }
