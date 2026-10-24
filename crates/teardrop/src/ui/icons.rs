@@ -39,6 +39,7 @@ pub enum Icon {
     Reset,
     File,
     Pin,
+    Search,
 }
 
 /// Draw `icon` centred at (cx, cy) inside a `size`px box.
@@ -215,6 +216,13 @@ pub fn draw(s: &mut Scene, icon: Icon, cx: f32, cy: f32, size: f32, c: Color) {
             let (x6, y6) = p(13.8, 2.2);
             s.line(x5, y5, x6, y6, sw, c);
         }
+        Icon::Search => {
+            let (rx, ry) = p(6.5, 6.5);
+            s.ring(rx, ry, 3.8 * u, sw, 0.0, 1.0, c);
+            let (h1x, h1y) = p(9.2, 9.2);
+            let (h2x, h2y) = p(13.2, 13.2);
+            s.line(h1x, h1y, h2x, h2y, sw * 1.1, c);
+        }
     }
 }
 
@@ -258,7 +266,7 @@ mod tests {
         let mut s = Scene::new();
         for i in [
             Play, Pause, Next, Prev, Note, Timer, Drop, Tray, Check, List, Notes, Clipboard, Calendar, Gauge, Chart, Mic, Sparkle, Send,
-            Phone, Gear, Plus, Minus, Close, Folder, Speaker, Muted, Bolt, Headphones, Undo, Reset, File, Pin,
+            Phone, Gear, Plus, Minus, Close, Folder, Speaker, Muted, Bolt, Headphones, Undo, Reset, File, Pin, Search,
         ] {
             let before = s.cmds.len();
             draw(&mut s, i, 10.0, 10.0, 16.0, Color::rgb(255, 255, 255));

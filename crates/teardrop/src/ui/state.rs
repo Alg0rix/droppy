@@ -10,7 +10,7 @@ use super::scene::Rect;
 use super::theme::PAD;
 use crate::viewmodel::{local_naive, ViewModel};
 use std::collections::HashMap;
-use teardrop_core::{AiProvider, EyeStyle, IdleLook, Page, Settings};
+use teardrop_core::{AiProvider, EyeStyle, IdleLook, NoteDateFilter, Page, Settings};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SettingKey {
@@ -123,6 +123,14 @@ pub enum Action {
     NoteRemove(u16),
     /// Save the open note and go back to the list.
     NoteClose,
+    /// Select all text inside the note editor.
+    NoteSelectAll,
+    /// Focus the note search input.
+    NoteSearchInput,
+    /// Clear the note search input.
+    NoteSearchClear,
+    /// Set the note date filter.
+    NoteDateFilter(NoteDateFilter),
     ClipCopy(u16),
     ClipClear,
     Toggle(SettingKey),
@@ -263,6 +271,12 @@ pub struct UiState {
     /// Id of the note the input buffer belongs to (`None` while typing a brand
     /// new note that does not exist yet, or when `input` is not a note).
     pub note_edit: Option<String>,
+    /// Whether all text in the note editor is selected (block selection).
+    pub note_selected_all: bool,
+    /// Active query in the note search box (`None` = search not focused).
+    pub note_search: Option<String>,
+    /// Active date filter for notes.
+    pub note_date_filter: NoteDateFilter,
     pub toast: Option<(String, u64)>,
     pub clock_s: f32,
     pub water_level: f32,
@@ -315,6 +329,9 @@ impl UiState {
             cal_selected_event: None,
             input: None,
             note_edit: None,
+            note_selected_all: false,
+            note_search: None,
+            note_date_filter: NoteDateFilter::All,
             toast: None,
             clock_s: 0.0,
             water_level: 0.0,
