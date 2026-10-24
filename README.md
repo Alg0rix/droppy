@@ -204,6 +204,18 @@ teardrop.exe --demo docs                 # re-render demo.gif / demo.mp4 (needs 
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for threads, the rendering model, page contracts and data files.
 
+### CI
+
+Workflows only run for the files they care about, so editing the README or docs doesn't start a Windows build:
+
+| Changed | Runs |
+|---|---|
+| `crates/`, `Cargo.toml`/`Cargo.lock`, `installer/`, `tools/` | **CI**: clippy (bug classes: `correctness`, `suspicious`), tests, release build, installer build, headless selftest |
+| `*.md`, `docs/` | **Docs**: every relative link, image and `#anchor` must resolve (`python tools/check_docs.py` to run it locally) |
+| A published GitHub release | **Release**: builds and attaches the installer, portable exe/zip and checksums |
+
+Run the same lint locally with `cargo clippy --workspace --all-targets -- -D clippy::correctness -D clippy::suspicious`.
+
 ## Status
 
 Early. Developed and tested on Windows 11. The Shelf drags files out with OLE `DoDragDrop`, the music progress bar seeks through Windows media controls, and Phone Link hand-off uses the Windows share window (Phone Link has no public API for sending files or reporting progress).
