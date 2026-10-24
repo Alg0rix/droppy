@@ -84,18 +84,21 @@ Scroll the mouse wheel over the header, or use `←` `→`, to switch. Everythin
   </tr>
   <tr>
     <td><img src="docs/img/24-page-tasks-typing.png"><br><b>Tasks</b> &mdash; type to add, click to tick off, hover to delete.</td>
+    <td><img src="docs/img/26-page-notes.png"><br><b>Notes</b> &mdash; a scratchpad with real paragraphs: the first line is the row title, the rest is the preview. Enter starts a new line, <b>Esc</b> closes (everything autosaves).</td>
+  </tr>
+  <tr>
     <td><img src="docs/img/25-page-clipboard.png"><br><b>Clipboard</b> &mdash; recent text, in memory only. Click a row to copy it back.</td>
-  </tr>
-  <tr>
     <td><img src="docs/img/26-page-today.png"><br><b>Today</b> &mdash; a month calendar you can browse, with a dot on days that have meetings, and your next meetings with <b>Join</b> buttons. See <a href="#calendar">Calendar</a>.</td>
+  </tr>
+  <tr>
     <td><img src="docs/img/26-page-speed.png"><br><b>Speed</b> &mdash; an internet speed test in the style of Ookla's Speedtest: a dial and needle, a round <b>GO</b> button, and Ping / Download / Upload cards.</td>
-  </tr>
-  <tr>
     <td><img src="docs/img/26-page-usage.png"><br><b>Usage</b> &mdash; your Claude Code and Codex 5-hour and weekly limits, plus OpenCode token and cost totals. See <a href="#ai-tool-usage">AI tool usage</a>.</td>
-    <td><img src="docs/img/26-page-voice.png"><br><b>Voice</b> &mdash; one-tap microphone recorder with a live waveform. Saves a WAV file and puts it on your Shelf.</td>
   </tr>
   <tr>
-    <td><img src="docs/img/26-page-ai.png"><br><b>AI</b> &mdash; chat with an assistant that can see your day and act on it: add tasks, log water, start focus. Every action has an <b>Undo</b>. See <a href="#ai-chat">AI Chat</a>.</td>
+    <td><img src="docs/img/26-page-voice.png"><br><b>Voice</b> &mdash; one-tap microphone recorder with a live waveform. Saves a WAV file and puts it on your Shelf.</td>
+    <td><img src="docs/img/26-page-ai.png"><br><b>AI</b> &mdash; chat with an assistant that can see your day and act on it: add tasks, save notes, log water, start focus. Every action has an <b>Undo</b>. See <a href="#ai-chat">AI Chat</a>.</td>
+  </tr>
+  <tr>
     <td><img src="docs/img/27-page-settings.png"><br><b>Settings</b> &mdash; behind the gear: hover-open, lyrics, reminders, history, sounds, fullscreen, start with Windows, water goal, idle look, and <b>Check for updates</b>.</td>
   </tr>
 </table>
@@ -129,7 +132,7 @@ Bring your own account or key. Supported: **ChatGPT** (sign in with your subscri
 - API keys and sign-in tokens are encrypted with Windows DPAPI in `%APPDATA%\Teardrop\ai-secrets.json`, so they only decrypt for your Windows user. They're never shown or logged.
 - **ChatGPT** signs in with the Codex device-code flow, and reuses the tokens already in `~/.codex/auth.json` when it has none or they're newer, so a Codex CLI login counts as a Teardrop login. Tokens refresh in the background before they expire.
 - **Sync models** asks the provider for its live catalog (`/models`) and remembers it in `%APPDATA%\Teardrop\ai-models.json`; the page also syncs on launch, so the picker shows the current model list (today that's `gpt-6.1-sol` first) instead of a bundled fallback. If a sync fails, the footer says why and the last known catalog stays in place.
-- When *Share my day* is on (it's on by default), each message also carries a short summary of your day: upcoming calendar titles and times, open task titles, water and focus status, what's playing and basic PC stats. Turn it off to send only what you type. Nothing is sent until you press send.
+- When *Share my day* is on (it's on by default), each message also carries a short summary of your day: upcoming calendar titles and times, open task titles, your latest note titles (never the note bodies), water and focus status, what's playing and basic PC stats. Turn it off to send only what you type. Nothing is sent until you press send.
 - Actions the assistant takes inside Teardrop (add a task, log water, start focus) show up under its reply with an **Undo** button.
 
 ### Voice recorder
@@ -147,6 +150,7 @@ While the island is open and focused:
 | `S`, `P`, `R` | Focus: start, pause/resume, reset |
 | `W` | +250 ml water (works on any page) |
 | `A` | New task (type, `Enter` to add, `Esc` to cancel) |
+| `N` | Notes: new note (type, `Enter` for a new line, `Esc` when done) |
 | `C` | Clear done tasks / clear clipboard history |
 | `1`&ndash;`6` | Open a shelf file / copy a clipboard item |
 

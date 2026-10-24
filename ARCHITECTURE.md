@@ -69,6 +69,9 @@ Each page is `core` state + a thin Windows sampler:
 - Water: `water::WaterLog` (+250 ml action, week history, `reminder_due`).
 - Shelf: `shelf::Shelf` (drop files → pin, click/drag out).
 - Tasks: `tasks::TaskList` tiny todos.
+- Notes: `notes::NoteList` newest-first scratch notes; the first line is the
+  row title, `title_of`/`preview_of` derive both, and the editor wraps text
+  with `ui::pages::wrap_note_lines`. Autosaves on every keystroke.
 - Clipboard: `clipboard::ClipboardRing` in-memory only; skips items flagged
   `ExcludeClipboardContentFromMonitorProcessing`; click a row to copy it back.
 - Today: month calendar + `system::SystemSnapshot` (CPU/mem/disk/battery).
@@ -101,7 +104,7 @@ headset battery, water reminder with one-click action.
 ## Data files
 
 - `%APPDATA%\Teardrop\`: `settings.json`, `water.json`, `tasks.json`,
-  `shelf.json` — kept on uninstall. AI Chat adds `chats.json`,
+  `notes.json`, `shelf.json` — kept on uninstall. AI Chat adds `chats.json`,
   `ai-secrets.json` (DPAPI ciphertext only) and `ai-models.json` (last synced
   model catalog per provider; safe to delete, it re-syncs on launch).
 - `%LOCALAPPDATA%\Teardrop\`: `teardrop.log`, `lyrics\` cache — safe to delete.

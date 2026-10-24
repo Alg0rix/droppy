@@ -16,6 +16,7 @@ pub fn draw(c: &mut Ctx, page: Page, a: Rect) {
         Page::Water => water(c, a),
         Page::Shelf => shelf(c, a),
         Page::Tasks => tasks(c, a),
+        Page::Notes => notes(c, a),
         Page::Clipboard => clipboard(c, a),
         Page::Today => today(c, a),
         Page::Speed => speed(c, a),
@@ -59,62 +60,71 @@ fn music(c: &mut Ctx, a: Rect) {
     let t = &vm.track;
     let has = !t.title.is_empty();
 
-    let art = Rect::new(a.x, a.y, 108.0, 108.0);
+    let left_w = (a.w * 0.48).min(320.0);
+
+    // Album art
+    let art_size = 92.0;
+    let art = Rect::new(a.x, a.y + 4.0, art_size, art_size);
     if has {
         let (c1, c2) = art_colors(&t.title);
-        c.s.rect(art, 22.0, Fill::DGrad(c1, c2));
-        c.s.rect(Rect::new(art.x, art.y, art.w, art.h * 0.55), 22.0, Fill::VGrad(Color::rgba(255, 255, 255, 0.22), Color::rgba(255, 255, 255, 0.0)));
-        icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy() - 8.0, 40.0, WHITE.fade(0.92));
+        c.s.rect(art, 20.0, Fill::DGrad(c1, c2));
+        c.s.rect(Rect::new(art.x, art.y, art.w, art.h * 0.55), 20.0, Fill::VGrad(Color::rgba(255, 255, 255, 0.22), Color::rgba(255, 255, 255, 0.0)));
+        icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy() - 6.0, 36.0, WHITE.fade(0.92));
         // Visualizer along the bottom of the tile.
-        let n = 14;
-        let (bw, gap) = (4.5, 3.0);
+        let n = 12;
+        let (bw, gap) = (4.0, 2.5);
         let x0 = art.cx() - (n as f32 * bw + (n - 1) as f32 * gap) / 2.0;
         for (i, b) in c.ui.viz.sample(n).iter().enumerate() {
-            let h = 3.0 + b * 30.0;
-            c.s.rect(Rect::new(x0 + i as f32 * (bw + gap), art.bottom() - 12.0 - h, bw, h), 2.2, WHITE.fade(0.85));
+            let h = 3.0 + b * 24.0;
+            c.s.rect(Rect::new(x0 + i as f32 * (bw + gap), art.bottom() - 10.0 - h, bw, h), 2.0, WHITE.fade(0.85));
         }
     } else {
-        c.s.rect(art, 22.0, SURFACE);
-        icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy(), 40.0, TEXT_3);
+        c.s.rect(art, 20.0, SURFACE);
+        icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy(), 36.0, TEXT_3);
     }
 
-    let x = a.x + 126.0;
-    let w = a.w - 126.0;
-    let chip = if has { t.app.to_uppercase() } else { "NOTHING PLAYING".to_string() };
-    c.text(chip, Rect::new(x, a.y + 1.0, w, 16.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    // Track info to the right of album art
+    let tx = art.right() + 14.0;
+    let tw = (a.x + left_w - tx).max(0.0);
     let title = if has { t.title.clone() } else { "Play something".to_string() };
-    c.text(title, Rect::new(x, a.y + 17.0, w, 28.0), 19.0, Weight::Semibold, if has { TEXT } else { TEXT_2 }, Align::Left);
+    c.text(title, Rect::new(tx, a.y + 10.0, tw, 26.0), 18.0, Weight::Semibold, if has { TEXT } else { TEXT_2 }, Align::Left);
     let sub = if !has {
-        "Any app that uses Windows media controls shows up here".to_string()
+        "Nothing playing".to_string()
     } else if t.album.is_empty() {
         t.display_artist().to_string()
     } else {
         format!("{} \u{00b7} {}", t.display_artist(), t.album)
     };
-    c.text(sub, Rect::new(x, a.y + 45.0, w, 20.0), 13.0, Weight::Regular, TEXT_2, Align::Left);
+    c.text(sub, Rect::new(tx, a.y + 38.0, tw, 20.0), 13.0, Weight::Regular, TEXT_2, Align::Left);
 
-    // Lyrics: current line lights up as it is sung, next line waits dim.
-    let lr = Rect::new(x, a.y + 72.0, w, 36.0);
-    if !c.set.lyrics_enabled {
-        c.text("Lyrics are off", Rect::new(lr.x, lr.y + 9.0, lr.w, 18.0), 12.5, Weight::Regular, TEXT_3, Align::Left);
-    } else if let (true, Some(i)) = (has, vm.lyric_idx) {
-        if let Some(l) = vm.lyric_lines.get(i) {
-            let frac = teardrop_core::line_progress(&vm.lyric_lines, i, t.position_ms);
-            c.s.text_karaoke(l.text.clone(), Rect::new(lr.x, lr.y, lr.w, 18.0), 13.5, Weight::Semibold, TEXT_2, TEXT, frac);
-        }
-        if let Some(l) = vm.lyric_lines.get(i + 1) {
-            c.text(l.text.clone(), Rect::new(lr.x, lr.y + 18.0, lr.w, 18.0), 12.5, Weight::Regular, TEXT_3, Align::Left);
-        }
+    // App badge (colored dot + source app name)
+    let app_name = if has && !t.app.is_empty() {
+        t.app.clone()
     } else {
-        let msg = if has { "No synced lyrics for this track" } else { "Lyrics appear here while music plays" };
-        c.text(msg, Rect::new(lr.x, lr.y + 9.0, lr.w, 18.0), 12.5, Weight::Regular, TEXT_3, Align::Left);
-    }
+        "Windows Media".to_string()
+    };
+    let dot_col = if app_name.to_lowercase().contains("spotify") {
+        Color::rgb(30, 215, 96)
+    } else if has {
+        acc
+    } else {
+        TEXT_3
+    };
+    c.s.circle(tx + 4.0, a.y + 68.0, 3.5, dot_col);
+    c.text(app_name, Rect::new(tx + 14.0, a.y + 60.0, tw - 14.0, 16.0), 11.5, Weight::Semibold, TEXT_3, Align::Left);
 
-    // Seek bar. Click to seek once a track with a known length is showing.
-    let sy = a.y + 130.0;
-    c.text(fmt_ms(t.position_ms), Rect::new(a.x, sy - 9.0, 42.0, 18.0), 11.0, Weight::Medium, TEXT_3, Align::Left);
-    c.text(fmt_ms(t.duration_ms), Rect::new(a.right() - 42.0, sy - 9.0, 42.0, 18.0), 11.0, Weight::Medium, TEXT_3, Align::Right);
-    let bar = Rect::new(a.x + 50.0, sy - 2.5, a.w - 100.0, 5.0);
+    // Seek bar
+    let sy = a.y + 128.0;
+    let pos_str = fmt_ms(t.position_ms);
+    let rem_ms = t.duration_ms.saturating_sub(t.position_ms);
+    let rem_str = if has && t.duration_ms > 0 { format!("-{}", fmt_ms(rem_ms)) } else { fmt_ms(t.duration_ms) };
+
+    c.text(pos_str, Rect::new(a.x, sy - 8.0, 36.0, 16.0), 11.0, Weight::Medium, TEXT_3, Align::Left);
+    c.text(rem_str, Rect::new(a.x + left_w - 42.0, sy - 8.0, 42.0, 16.0), 11.0, Weight::Medium, TEXT_3, Align::Right);
+
+    let bar_x = a.x + 42.0;
+    let bar_w = (left_w - 90.0).max(10.0);
+    let bar = Rect::new(bar_x, sy - 2.5, bar_w, 5.0);
     let seekable = has && t.duration_ms > 0;
     let sh = if seekable { c.hov(Action::SeekBar) } else { 0.0 };
     let bh = 5.0 + sh * 3.0;
@@ -131,19 +141,46 @@ fn music(c: &mut Ctx, a: Rect) {
         c.hit(Rect::new(bar.x, sy - 12.0, bar.w, 24.0), Action::SeekBar);
     }
 
-    // Transport.
+    // Transport buttons centered in the left column
+    let cx = a.x + left_w * 0.5;
     let cy = a.y + 178.0;
-    let cx = a.cx();
-    c.ghost_icon(Rect::new(cx - 92.0, cy - 20.0, 40.0, 40.0), Action::MediaPrev, Icon::Prev, 20.0, TEXT);
-    c.ghost_icon(Rect::new(cx + 52.0, cy - 20.0, 40.0, 40.0), Action::MediaNext, Icon::Next, 20.0, TEXT);
+    c.ghost_icon(Rect::new(cx - 76.0, cy - 20.0, 40.0, 40.0), Action::MediaPrev, Icon::Prev, 19.0, TEXT);
+    c.ghost_icon(Rect::new(cx + 36.0, cy - 20.0, 40.0, 40.0), Action::MediaNext, Icon::Next, 19.0, TEXT);
     let pa = Action::MediaPlayPause;
-    let r = 27.0 + c.hov(pa) * 1.5;
+    let r = 26.0 + c.hov(pa) * 1.5;
     let fill = if c.pressed(pa) { WHITE.mix(Color::rgb(0, 0, 0), 0.2) } else { WHITE };
     c.s.circle(cx, cy, r, fill);
     let icon = if t.playback == Playback::Playing { Icon::Pause } else { Icon::Play };
     let nudge = if icon == Icon::Play { 1.5 } else { 0.0 };
-    icons::draw(&mut c.s, icon, cx + nudge, cy, 24.0, ON_ACCENT);
+    icons::draw(&mut c.s, icon, cx + nudge, cy, 22.0, ON_ACCENT);
     c.hit(Rect::new(cx - 28.0, cy - 28.0, 56.0, 56.0), pa);
+
+    // Right Column: Synced Karaoke Lyrics
+    let lx = a.x + left_w + 36.0;
+    let lw = (a.right() - lx).max(0.0);
+
+    if !c.set.lyrics_enabled {
+        c.text("Lyrics are turned off", Rect::new(lx, a.y + 90.0, lw, 24.0), 13.5, Weight::Regular, TEXT_3, Align::Left);
+    } else if let (true, Some(i)) = (has, vm.lyric_idx) {
+        // Line 1: Previous line (dimmed)
+        if i > 0 {
+            if let Some(prev) = vm.lyric_lines.get(i - 1) {
+                c.text(prev.text.clone(), Rect::new(lx, a.y + 46.0, lw, 24.0), 13.5, Weight::Regular, TEXT_3, Align::Left);
+            }
+        }
+        // Line 2: Current active line (karaoke highlighted)
+        if let Some(curr) = vm.lyric_lines.get(i) {
+            let frac = teardrop_core::line_progress(&vm.lyric_lines, i, t.position_ms);
+            c.s.text_karaoke(curr.text.clone(), Rect::new(lx, a.y + 82.0, lw, 36.0), 18.0, Weight::Bold, TEXT_2, WHITE, frac);
+        }
+        // Line 3: Next line (dimmed)
+        if let Some(next) = vm.lyric_lines.get(i + 1) {
+            c.text(next.text.clone(), Rect::new(lx, a.y + 128.0, lw, 24.0), 13.5, Weight::Regular, TEXT_3, Align::Left);
+        }
+    } else {
+        let msg = if has { "No synced lyrics for this track" } else { "Lyrics appear here while music plays" };
+        c.text(msg, Rect::new(lx, a.y + 90.0, lw, 24.0), 13.5, Weight::Regular, TEXT_3, Align::Left);
+    }
 }
 
 // -------------------------------------------------------------------- focus
@@ -528,6 +565,215 @@ fn tasks(c: &mut Ctx, a: Rect) {
     if done > 0 {
         c.pill(Rect::new(a.right() - 104.0, a.bottom() - 24.0, 104.0, 24.0), Action::TaskClearDone, &format!("Clear {done} done"), None, 11.0);
     }
+}
+
+// -------------------------------------------------------------------- notes
+
+pub const NOTE_ROWS: usize = 4;
+const NOTE_ROW_H: f32 = 40.0;
+
+pub fn notes_max_scroll(n: usize) -> usize {
+    n.saturating_sub(NOTE_ROWS)
+}
+
+/// Greedy word wrap that keeps explicit newlines (blank lines stay blank).
+pub fn wrap_note_lines(text: &str, width: f32, size: f32) -> Vec<String> {
+    let mut out = Vec::new();
+    for raw in text.split('\n') {
+        if raw.is_empty() {
+            out.push(String::new());
+            continue;
+        }
+        let mut line = String::new();
+        for word in raw.split(' ') {
+            let candidate = if line.is_empty() { word.to_string() } else { format!("{line} {word}") };
+            if !line.is_empty() && est_w(&candidate, size) > width {
+                out.push(std::mem::take(&mut line));
+                line.push_str(word);
+            } else {
+                line = candidate;
+            }
+        }
+        out.push(line);
+    }
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
+}
+
+/// Short "when" label for a note row: now, 5m, 3h, 2d, then the date.
+pub fn note_age(updated: chrono::DateTime<chrono::Utc>, now: chrono::DateTime<chrono::Utc>) -> String {
+    let secs = (now - updated).num_seconds().max(0);
+    if secs < 60 {
+        "now".into()
+    } else if secs < 3600 {
+        format!("{}m", secs / 60)
+    } else if secs < 86_400 {
+        format!("{}h", secs / 3600)
+    } else if secs < 7 * 86_400 {
+        format!("{}d", secs / 86_400)
+    } else {
+        updated.with_timezone(&chrono::Local).format("%b %d").to_string()
+    }
+}
+
+fn notes(c: &mut Ctx, a: Rect) {
+    let acc = accent(Page::Notes);
+    if c.ui.input.is_some() {
+        note_editor(c, a, acc);
+    } else {
+        note_list(c, a, acc);
+    }
+}
+
+fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
+    let vm = c.vm;
+    let field = Rect::new(a.x, a.y, a.w, 40.0);
+    c.s.rect(field, 14.0, c.surface_fill(Action::NoteNew));
+    icons::draw(&mut c.s, Icon::Plus, field.x + 22.0, field.cy(), 15.0, TEXT_3);
+    c.text("Write a note", Rect::new(field.x + 42.0, field.y, field.w - 54.0, field.h), 14.0, Weight::Regular, TEXT_3, Align::Left);
+    c.hit(field, Action::NoteNew);
+
+    let n = vm.notes.notes.len();
+    let list_y = a.y + 50.0;
+    if n == 0 {
+        c.empty_state(Rect::new(a.x, list_y, a.w, a.h - 50.0), Icon::Notes, acc, "No notes yet", "Click above or press N");
+        return;
+    }
+    let scroll = c.ui.scroll_of(Page::Notes).min(notes_max_scroll(n));
+    for slot in 0..NOTE_ROWS {
+        let idx = scroll + slot;
+        let Some(note) = vm.notes.notes.get(idx) else { break };
+        let r = Rect::new(a.x, list_y + slot as f32 * NOTE_ROW_H, a.w, NOTE_ROW_H - 4.0);
+        let open = Action::NoteOpen(idx as u16);
+        let del = Action::NoteRemove(idx as u16);
+        let hv = c.hov(open).max(c.hov(del));
+        if hv > 0.01 {
+            c.s.rect(r, 10.0, SURFACE.fade(hv));
+        }
+        let title = teardrop_core::title_of(&note.text);
+        let title = if title.is_empty() { "Untitled".to_string() } else { title };
+        let preview = teardrop_core::preview_of(&note.text);
+        let right = if hv > 0.05 { 60.0 } else { 48.0 };
+        c.text(
+            one_line(&title),
+            Rect::new(r.x + 10.0, r.y + 3.0, r.w - 20.0 - right, 18.0),
+            13.5,
+            Weight::Semibold,
+            TEXT,
+            Align::Left,
+        );
+        if !preview.is_empty() {
+            c.text(
+                one_line(&preview),
+                Rect::new(r.x + 10.0, r.y + 20.0, r.w - 20.0 - right, 14.0),
+                11.0,
+                Weight::Regular,
+                TEXT_3,
+                Align::Left,
+            );
+        }
+        c.text(
+            note_age(note.updated_at, vm.now),
+            Rect::new(r.right() - 48.0, r.y, 38.0, r.h),
+            10.5,
+            Weight::Regular,
+            TEXT_3,
+            Align::Right,
+        );
+        c.hit(Rect::new(r.x, r.y, r.w - 32.0, r.h), open);
+        if hv > 0.05 {
+            c.ghost_icon(Rect::new(r.right() - 30.0, r.cy() - 12.0, 24.0, 24.0), del, Icon::Close, 12.0, TEXT_2);
+        }
+    }
+    let count = if n == 1 { "1 note".to_string() } else { format!("{n} notes") };
+    c.text(count, Rect::new(a.x + 2.0, a.bottom() - 20.0, 120.0, 18.0), 11.5, Weight::Medium, TEXT_3, Align::Left);
+}
+
+fn note_editor(c: &mut Ctx, a: Rect, acc: Color) {
+    let text = c.ui.input.clone().unwrap_or_default();
+    let idx = c.ui.note_edit.as_ref().and_then(|id| c.vm.notes.notes.iter().position(|n| &n.id == id));
+
+    c.text("Note", Rect::new(a.x, a.y, 60.0, 24.0), 12.0, Weight::Medium, TEXT_2, Align::Left);
+    if let Some(i) = idx {
+        c.pill(Rect::new(a.right() - 132.0, a.y, 64.0, 24.0), Action::NoteRemove(i as u16), "Delete", None, 11.0);
+    }
+    c.pill(Rect::new(a.right() - 62.0, a.y, 62.0, 24.0), Action::NoteClose, "Done", Some(acc), 11.0);
+
+    let body = Rect::new(a.x, a.y + 32.0, a.w, a.h - 60.0);
+    c.s.rect(body, 14.0, SURFACE);
+    let inner_w = body.w - 24.0;
+    let line_h = 19.0;
+    let lines = wrap_note_lines(&text, inner_w, 13.5);
+    let visible = (((body.h - 20.0) / line_h).floor() as usize).max(1);
+    let start = lines.len().saturating_sub(visible);
+    let mut y = body.y + 10.0;
+    for line in lines.iter().skip(start) {
+        if !line.is_empty() {
+            c.text(line.clone(), Rect::new(body.x + 12.0, y, inner_w, line_h), 13.5, Weight::Regular, TEXT, Align::Left);
+        }
+        y += line_h;
+    }
+    if text.is_empty() {
+        c.text(
+            "Start typing \u{2014} Enter starts a new line",
+            Rect::new(body.x + 12.0, body.y + 10.0, inner_w, line_h),
+            13.5,
+            Weight::Regular,
+            TEXT_3,
+            Align::Left,
+        );
+    }
+    let blink = (c.ui.clock_s * 1.8) % 2.0 < 1.0;
+    let mut y = body.y + 10.0;
+    for (i, line) in lines.iter().skip(start).enumerate() {
+        let last = i + 1 == lines.len() - start;
+        if !line.is_empty() {
+            // The live field: let the renderer put the caret right after the
+            // last glyph instead of guessing a width.
+            if last && blink {
+                c.s.text_caret(
+                    line.clone(),
+                    Rect::new(body.x + 12.0, y, inner_w, line_h),
+                    13.5,
+                    Weight::Regular,
+                    TEXT,
+                    Align::Left,
+                    acc,
+                );
+            } else {
+                c.text(line.clone(), Rect::new(body.x + 12.0, y, inner_w, line_h), 13.5, Weight::Regular, TEXT, Align::Left);
+            }
+        }
+        y += line_h;
+    }
+    if text.is_empty() {
+        c.text(
+            "Start typing \u{2014} Enter starts a new line",
+            Rect::new(body.x + 12.0, body.y + 10.0, inner_w, line_h),
+            13.5,
+            Weight::Regular,
+            TEXT_3,
+            Align::Left,
+        );
+    }
+    // Caret on an empty line (new note, or a trailing newline) has no glyph
+    // to measure, so draw it at the line start.
+    let last_line = lines.last().cloned().unwrap_or_default();
+    if blink && last_line.is_empty() {
+        let row = (lines.len() - start).saturating_sub(1) as f32;
+        let cy = body.y + 10.0 + row * line_h;
+        c.s.rect(Rect::new(body.x + 12.0, cy + 2.0, 1.6, 16.0), 0.8, acc);
+    }
+    c.text(
+        "Enter adds a line \u{00b7} Esc when done",
+        Rect::new(a.x + 2.0, a.bottom() - 18.0, a.w, 16.0),
+        11.0,
+        Weight::Regular,
+        TEXT_3,
+        Align::Left,
+    );
 }
 
 // ---------------------------------------------------------------- clipboard
@@ -1772,5 +2018,33 @@ mod tests {
         assert_eq!(seek_permille(r, 300.0), 1000);
         assert_eq!(seek_permille(r, 0.0), 0, "left of the bar clamps to the start");
         assert_eq!(seek_permille(r, 999.0), 1000, "right of the bar clamps to the end");
+    }
+
+    #[test]
+    fn note_wrap_keeps_paragraph_breaks_and_wraps_long_lines() {
+        // Narrow enough that "alpha beta" cannot share a line.
+        let lines = wrap_note_lines("alpha beta gamma", 40.0, 14.0);
+        assert!(lines.len() >= 2, "{lines:?}");
+        assert_eq!(lines[0], "alpha");
+        assert_eq!(lines.join(" "), "alpha beta gamma");
+
+        // Blank lines survive, so paragraphs keep their spacing.
+        let lines = wrap_note_lines("one\n\ntwo", 400.0, 14.0);
+        assert_eq!(lines, vec!["one".to_string(), String::new(), "two".to_string()]);
+
+        // Empty text still yields one caret line.
+        assert_eq!(wrap_note_lines("", 400.0, 14.0), vec![String::new()]);
+    }
+
+    #[test]
+    fn note_age_is_short_and_readable() {
+        use chrono::{TimeZone, Utc};
+        let now = Utc.timestamp_opt(1_800_000_000, 0).unwrap();
+        let ago = |secs: i64| note_age(now - chrono::Duration::seconds(secs), now);
+        assert_eq!(ago(5), "now");
+        assert_eq!(ago(90), "1m");
+        assert_eq!(ago(3 * 3600 + 120), "3h");
+        assert_eq!(ago(2 * 86_400 + 60), "2d");
+        assert_eq!(note_age(now, now), "now");
     }
 }

@@ -38,7 +38,7 @@ pub struct DropletGeom {
 
 impl Default for DropletGeom {
     fn default() -> Self {
-        Self { pill_w: 180.0, pill_h: 36.0, card_w: 480.0, card_h: 318.0, card_radius: 26.0 }
+        Self { pill_w: 180.0, pill_h: 36.0, card_w: 680.0, card_h: 318.0, card_radius: 26.0 }
     }
 }
 

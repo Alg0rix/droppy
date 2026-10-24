@@ -189,6 +189,16 @@ fn shots() -> Vec<Shot> {
         shot("22-page-water", 1.0, Page::Water),
         shot("23-page-shelf", 1.0, Page::Shelf),
         Shot { setup: |_, _, ui, _| ui.input = Some("Draft the launch notes".into()), ..shot("24-page-tasks-typing", 1.0, Page::Tasks) },
+        shot("24n-page-notes", 1.0, Page::Notes),
+        Shot {
+            setup: |vm, _, ui, _| {
+                if let Some(n) = vm.notes.notes.first() {
+                    ui.input = Some(n.text.clone());
+                    ui.note_edit = Some(n.id.clone());
+                }
+            },
+            ..shot("24o-page-notes-editor", 1.0, Page::Notes)
+        },
         shot("25-page-clipboard", 1.0, Page::Clipboard),
         shot("26-page-today", 1.0, Page::Today),
         Shot { setup: demo_calendar, ..shot("26i-today-agenda", 1.0, Page::Today) },
@@ -351,6 +361,7 @@ fn shots() -> Vec<Shot> {
         Shot { hover: Some(Action::ShelfOpen(1)), ..shot("32-hover-shelf-tile", 1.0, Page::Shelf) },
         Shot { setup: |vm, _, _, _| vm.shelf.items.clear(), ..shot("33-empty-shelf", 1.0, Page::Shelf) },
         Shot { setup: |vm, _, _, _| vm.tasks.tasks.clear(), ..shot("34-empty-tasks", 1.0, Page::Tasks) },
+        Shot { setup: |vm, _, _, _| vm.notes.notes.clear(), ..shot("34b-empty-notes", 1.0, Page::Notes) },
         Shot { setup: |_, _, ui, ms| ui.toast("Copied", ms), ..shot("35-toast-copied", 1.0, Page::Clipboard) },
         Shot { hover: Some(Action::SeekBar), ..shot("36-hover-seek", 1.0, Page::Music) },
         Shot { setup: |vm, set, _, _| eyes(vm, set, EyeStyle::Round, true), ..shot("40-eyes-dance", 0.0, Page::Music) },

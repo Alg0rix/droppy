@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone, Utc};
 use teardrop_core::pomodoro::Phase;
-use teardrop_core::{ClipboardRing, Hud, HudKind, IdleLook, Page, Playback, Pomodoro, Shelf, SystemSnapshot, TaskList, Track, WaterLog};
+use teardrop_core::{ClipboardRing, Hud, HudKind, IdleLook, NoteList, Page, Playback, Pomodoro, Shelf, SystemSnapshot, TaskList, Track, WaterLog};
 
 #[derive(Debug, Clone)]
 pub struct ViewModel {
@@ -16,6 +16,7 @@ pub struct ViewModel {
     pub pomo: Pomodoro,
     pub water: WaterLog,
     pub tasks: TaskList,
+    pub notes: NoteList,
     pub shelf: Shelf,
     pub clipboard: ClipboardRing,
     pub system: SystemSnapshot,
@@ -30,6 +31,7 @@ pub struct ViewModel {
     /// Connected calendar feeds (the links themselves stay in Settings).
     pub calendar_feeds: usize,
     pub ai: crate::ai::AiView,
+    pub pinned: bool,
     pub now: DateTime<Utc>,
 }
 
@@ -116,6 +118,10 @@ impl ViewModel {
         shelf.add("C:\\Work\\mockup-final.png", now);
         shelf.add("C:\\Work\\budget.xlsx", now);
         shelf.add("C:\\Work\\notes.md", now);
+        let mut notes = NoteList::default();
+        notes.add("Ideas\n- Wrapped text in the editor\n- Keyboard-only flow: N, type, Esc", now - chrono::Duration::days(2));
+        notes.add("Coffee with Ana\nThursday 10:00, bring the prototype deck.", now - chrono::Duration::hours(3));
+        notes.add("Ship notes before the weekend\nThe first line is the row title, the rest is the preview underneath.", now);
         let mut clipboard = ClipboardRing::new();
         clipboard.push("cargo test -p teardrop-core");
         clipboard.push("https://example.com/design/tokens?theme=dark");
@@ -136,6 +142,7 @@ impl ViewModel {
             pomo: Pomodoro::default(),
             water,
             tasks,
+            notes,
             shelf,
             clipboard,
             system: SystemSnapshot {
@@ -164,6 +171,7 @@ impl ViewModel {
                 available_models: crate::ai::default_models_for(teardrop_core::AiProvider::ChatGpt),
                 ..Default::default()
             },
+            pinned: false,
             now,
         }
     }
@@ -178,6 +186,7 @@ impl ViewModel {
             pomo: Pomodoro::default(),
             water: WaterLog::default(),
             tasks: TaskList::default(),
+            notes: NoteList::default(),
             shelf: Shelf::new(),
             clipboard: ClipboardRing::new(),
             system: SystemSnapshot::default(),
@@ -191,6 +200,7 @@ impl ViewModel {
             calendar: Default::default(),
             calendar_feeds: 0,
             ai: Default::default(),
+            pinned: false,
             now,
         }
     }
@@ -229,6 +239,21 @@ impl ViewModel {
             lines.push(format!("Tasks: 0 open ({done_count} completed)"));
         } else {
             lines.push(format!("Open tasks ({}): {} ({done_count} completed)", open_tasks.len(), open_tasks.join(", ")));
+        }
+
+        // Notes (titles only — bodies stay local unless the user asks)
+        if !self.notes.notes.is_empty() {
+            let titles: Vec<String> = self
+                .notes
+                .notes
+                .iter()
+                .take(3)
+                .map(|n| {
+                    let t = teardrop_core::title_of(&n.text);
+                    if t.is_empty() { "(untitled)".to_string() } else { t.chars().take(60).collect() }
+                })
+                .collect();
+            lines.push(format!("Notes: {} saved ({})", self.notes.notes.len(), titles.join(", ")));
         }
 
         // Water

@@ -7,7 +7,7 @@ use super::pages;
 use super::scene::{Align, Color, Fill, Rect, Scene, Weight};
 use super::state::{Action, Hit, UiState};
 use super::theme::*;
-use crate::viewmodel::{mmss, ViewModel};
+use crate::viewmodel::{local_naive, mmss, ViewModel};
 use teardrop_core::{DropletGeom, HudKind, IdleLook, Page, Settings};
 
 /// Morph input from the island spring.
@@ -165,6 +165,7 @@ fn tab_icon(p: Page) -> Icon {
         Page::Water => Icon::Drop,
         Page::Shelf => Icon::Tray,
         Page::Tasks => Icon::List,
+        Page::Notes => Icon::Notes,
         Page::Clipboard => Icon::Clipboard,
         Page::Today => Icon::Calendar,
         Page::Speed => Icon::Gauge,
@@ -182,6 +183,7 @@ fn tab_label_w(p: Page) -> f32 {
         Page::Water => 86.0,
         Page::Shelf => 82.0,
         Page::Tasks => 84.0,
+        Page::Notes => 82.0,
         Page::Clipboard => 104.0,
         Page::Today => 84.0,
         Page::Speed => 84.0,
@@ -242,6 +244,25 @@ fn header(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
         c.s.circle(gr.right() - 6.0, gr.y + 7.0, 4.5, accent(Page::Speed));
     }
     c.hit(gr, Action::Gear);
+
+    // Live clock and date (e.g. "Sat 24 Oct  13:49").
+    let local = local_naive(c.vm.now);
+    let date_str = local.format("%a %d %b  %H:%M").to_string();
+    let tr = Rect::new(gr.x - 128.0, HEADER_Y + 7.0, 120.0, 20.0);
+    c.s.text(date_str, tr, 11.5, Weight::Medium, TEXT_2, Align::Right);
+
+    // Pin toggle button.
+    let pr = Rect::new(tr.x - 30.0, HEADER_Y + 3.0, 26.0, HEADER_H - 6.0);
+    let ph = c.hov(Action::Pin);
+    let pin_on = c.vm.pinned;
+    if pin_on {
+        c.s.rect(pr, (HEADER_H - 6.0) / 2.0, accent(Page::Focus).fade(0.22));
+    } else if ph > 0.01 {
+        c.s.rect(pr, (HEADER_H - 6.0) / 2.0, SURFACE_HOVER.fade(ph));
+    }
+    let pin_ic = if pin_on { accent(Page::Focus) } else { TEXT_2.mix(TEXT, ph * 0.7) };
+    icons::draw(&mut c.s, Icon::Pin, pr.cx(), pr.cy(), 13.5, pin_ic);
+    c.hit(pr, Action::Pin);
 }
 
 // ---------------------------------------------------------------- collapsed

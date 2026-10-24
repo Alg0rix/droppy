@@ -139,6 +139,9 @@ pub enum Cmd {
         color: Color,
         align: Align,
         karaoke: Option<(f32, Color)>,
+        /// Draw a text caret right after the last glyph (measured by the
+        /// renderer, so it lands exactly at the end of the string).
+        caret: Option<Color>,
     },
     Clip(Rect),
     PopClip,
@@ -246,7 +249,17 @@ impl Scene {
             return;
         }
         let (r, color) = (self.r(r), self.c(color));
-        self.cmds.push(Cmd::Text { s: s.into(), r, size, weight, color, align, karaoke: None });
+        self.cmds.push(Cmd::Text { s: s.into(), r, size, weight, color, align, karaoke: None, caret: None });
+    }
+
+    /// Like [`Scene::text`] but the renderer also draws a caret at the exact
+    /// end of the string — used by input fields instead of an estimated width.
+    pub fn text_caret(&mut self, s: impl Into<String>, r: Rect, size: f32, weight: Weight, color: Color, align: Align, caret: Color) {
+        if self.alpha <= 0.003 {
+            return;
+        }
+        let (r, color, caret) = (self.r(r), self.c(color), self.c(caret));
+        self.cmds.push(Cmd::Text { s: s.into(), r, size, weight, color, align, karaoke: None, caret: Some(caret) });
     }
 
     pub fn text_karaoke(&mut self, s: impl Into<String>, r: Rect, size: f32, weight: Weight, base: Color, lit: Color, frac: f32) {
@@ -254,7 +267,7 @@ impl Scene {
             return;
         }
         let (r, base, lit) = (self.r(r), self.c(base), self.c(lit));
-        self.cmds.push(Cmd::Text { s: s.into(), r, size, weight, color: base, align: Align::Left, karaoke: Some((frac.clamp(0.0, 1.0), lit)) });
+        self.cmds.push(Cmd::Text { s: s.into(), r, size, weight, color: base, align: Align::Left, karaoke: Some((frac.clamp(0.0, 1.0), lit)), caret: None });
     }
 
     pub fn clip(&mut self, r: Rect) {

@@ -267,7 +267,7 @@ pub mod d2d {
                     solid.SetColor(&d2d_color(*color));
                     rt.DrawGeometry(&g, solid, *width, &self.round);
                 }
-                Cmd::Text { s, r, size, weight, color, align, karaoke } => {
+                Cmd::Text { s, r, size, weight, color, align, karaoke, caret } => {
                     if s.is_empty() {
                         return;
                     }
@@ -282,6 +282,20 @@ pub mod d2d {
                         solid.SetColor(&d2d_color(*lit));
                         rt.DrawText(&wide, &fmt, &rc(*r), solid, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
                         rt.PopAxisAlignedClip();
+                    }
+                    if let Some(caret) = caret {
+                        // Measured, not estimated: the caret sits right after
+                        // the last glyph, respecting the field's alignment.
+                        let tw = self.text_width(&wide, &fmt).min(r.w);
+                        let x = match align {
+                            Align::Left => r.x,
+                            Align::Center => r.x + (r.w - tw) / 2.0,
+                            Align::Right => r.right() - tw,
+                        };
+                        let h = (size * 1.15).min(r.h - 2.0).max(2.0);
+                        let top = r.y + (r.h - h) / 2.0;
+                        solid.SetColor(&d2d_color(*caret));
+                        rt.FillRectangle(&D2D_RECT_F { left: x + 1.0, top, right: x + 2.6, bottom: top + h }, solid);
                     }
                 }
                 Cmd::Clip(r) => {

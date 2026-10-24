@@ -93,6 +93,7 @@ pub enum Action {
     Island,
     Tab(Page),
     Gear,
+    Pin,
     MediaPrev,
     MediaPlayPause,
     MediaNext,
@@ -114,6 +115,14 @@ pub enum Action {
     TaskRemove(u16),
     TaskInput,
     TaskClearDone,
+    /// Start a new note and focus the editor.
+    NoteNew,
+    /// Open the n-th note in the editor.
+    NoteOpen(u16),
+    /// Delete the n-th note (or close the editor if it is the open one).
+    NoteRemove(u16),
+    /// Save the open note and go back to the list.
+    NoteClose,
     ClipCopy(u16),
     ClipClear,
     Toggle(SettingKey),
@@ -251,6 +260,9 @@ pub struct UiState {
     pub cal_selected_event: Option<usize>,
     /// Task text being typed (None = field not focused).
     pub input: Option<String>,
+    /// Id of the note the input buffer belongs to (`None` while typing a brand
+    /// new note that does not exist yet, or when `input` is not a note).
+    pub note_edit: Option<String>,
     pub toast: Option<(String, u64)>,
     pub clock_s: f32,
     pub water_level: f32,
@@ -302,6 +314,7 @@ impl UiState {
             cal_selected_day: None,
             cal_selected_event: None,
             input: None,
+            note_edit: None,
             toast: None,
             clock_s: 0.0,
             water_level: 0.0,
@@ -402,6 +415,7 @@ impl UiState {
                 Page::Water => true,
                 Page::Music => vm.track.playback == teardrop_core::Playback::Playing,
                 Page::Tasks => self.input.is_some(),
+                Page::Notes => self.input.is_some(),
                 Page::Speed => vm.speed.phase.running(),
                 Page::Voice => vm.voice.phase == crate::voice::VoicePhase::Recording,
                 Page::Usage => vm.usage.refreshing,
@@ -497,6 +511,7 @@ impl UiState {
             self.page_t = 0.0;
             self.page_dir = if page_index(vm.page) >= page_index(self.prev_page) { 1.0 } else { -1.0 };
             self.input = None;
+            self.note_edit = None;
         }
         if self.page_t < 1.0 {
             self.page_t = (self.page_t + dt * 5.5).min(1.0);

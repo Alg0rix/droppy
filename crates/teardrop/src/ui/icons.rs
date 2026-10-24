@@ -14,6 +14,8 @@ pub enum Icon {
     Tray,
     Check,
     List,
+    /// A page with text lines — the Notes tab (List is the to-do tab).
+    Notes,
     Clipboard,
     Calendar,
     Gauge,
@@ -34,6 +36,7 @@ pub enum Icon {
     Undo,
     Reset,
     File,
+    Pin,
 }
 
 /// Draw `icon` centred at (cx, cy) inside a `size`px box.
@@ -78,6 +81,13 @@ pub fn draw(s: &mut Scene, icon: Icon, cx: f32, cy: f32, size: f32, c: Color) {
                 let _ = i;
                 s.circle(p(3.2, *y).0, p(3.2, *y).1, 1.0 * u, c);
                 s.line(p(6.2, *y).0, p(6.2, *y).1, p(13.4, *y).0, p(13.4, *y).1, sw, c);
+            }
+        }
+        Icon::Notes => {
+            s.polyline(vec![p(4.2, 1.8), p(9.6, 1.8), p(12.6, 4.8), p(12.6, 14.2), p(4.2, 14.2), p(4.2, 1.8)], sw, c);
+            s.polyline(vec![p(9.4, 1.8), p(9.4, 5.0), p(12.6, 5.0)], sw * 0.9, c);
+            for y in [8.2, 10.6, 12.4] {
+                s.line(p(6.4, y).0, p(6.4, y).1, p(10.6, y).0, p(10.6, y).1, sw * 0.8, c);
             }
         }
         Icon::Clipboard => {
@@ -182,6 +192,18 @@ pub fn draw(s: &mut Scene, icon: Icon, cx: f32, cy: f32, size: f32, c: Color) {
             s.polyline(vec![p(3.6, 1.8), p(9.4, 1.8), p(12.6, 5.0), p(12.6, 14.2), p(3.6, 14.2), p(3.6, 1.8)], sw, c);
             s.polyline(vec![p(9.2, 1.8), p(9.2, 5.2), p(12.6, 5.2)], sw, c);
         }
+        Icon::Pin => {
+            let (x1, y1) = p(7.0, 9.0);
+            let (x2, y2) = p(2.5, 13.5);
+            s.line(x1, y1, x2, y2, sw, c);
+            let (x3, y3) = p(5.0, 5.0);
+            let (x4, y4) = p(11.0, 11.0);
+            s.line(x3, y3, x4, y4, sw * 1.5, c);
+            s.polyline(vec![p(5.0, 5.0), p(6.8, 3.2), p(12.8, 9.2), p(11.0, 11.0)], sw, c);
+            let (x5, y5) = p(9.8, 6.2);
+            let (x6, y6) = p(13.8, 2.2);
+            s.line(x5, y5, x6, y6, sw, c);
+        }
     }
 }
 
@@ -224,8 +246,8 @@ mod tests {
         use Icon::*;
         let mut s = Scene::new();
         for i in [
-            Play, Pause, Next, Prev, Note, Timer, Drop, Tray, Check, List, Clipboard, Calendar, Gauge, Chart, Mic, Sparkle, Send,
-            Phone, Gear, Plus, Minus, Close, Folder, Speaker, Muted, Bolt, Headphones, Undo, Reset, File,
+            Play, Pause, Next, Prev, Note, Timer, Drop, Tray, Check, List, Notes, Clipboard, Calendar, Gauge, Chart, Mic, Sparkle, Send,
+            Phone, Gear, Plus, Minus, Close, Folder, Speaker, Muted, Bolt, Headphones, Undo, Reset, File, Pin,
         ] {
             let before = s.cmds.len();
             draw(&mut s, i, 10.0, 10.0, 16.0, Color::rgb(255, 255, 255));

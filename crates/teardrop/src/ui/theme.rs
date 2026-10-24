@@ -30,6 +30,7 @@ pub fn accent(page: Page) -> Color {
         Page::Water => Color::rgb(61, 200, 245),
         Page::Shelf => Color::rgb(167, 139, 250),
         Page::Tasks => Color::rgb(74, 222, 128),
+        Page::Notes => Color::rgb(129, 140, 248),
         Page::Clipboard => Color::rgb(251, 191, 36),
         Page::Today => Color::rgb(96, 165, 250),
         Page::Speed => Color::rgb(45, 212, 191),

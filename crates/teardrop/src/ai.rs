@@ -88,8 +88,10 @@ pub enum UndoOp {
     RestoreDeletedTask(String, bool),
     /// Subtract logged water in ml (undo of `WATER`).
     SubtractWater(u32),
-    /// Remove a learned memory string (undo of `REMEMBER`).
+    /// Remove the learned memory string (undo of `REMEMBER`).
     ForgetMemory(String),
+    /// Remove the note with this id (undo of `NOTE`).
+    RemoveAddedNote(String),
     /// Non-reversible action (e.g. Pomodoro control).
     None,
 }
@@ -188,6 +190,8 @@ pub enum ParsedDirective {
     LogWater(u32),
     Focus(String),
     Remember(String),
+    /// Save a scratch note (single line; the notes page holds the bodies).
+    Note(String),
 }
 
 // --------------------------------------------------------- DPAPI & Secrets
@@ -816,6 +820,7 @@ pub fn extract_directives(raw: &str) -> (String, Vec<ParsedDirective>) {
                     }
                     "FOCUS" if !arg.is_empty() => directives.push(ParsedDirective::Focus(arg.to_ascii_lowercase())),
                     "REMEMBER" if !arg.is_empty() => directives.push(ParsedDirective::Remember(arg.to_string())),
+                    "NOTE" if !arg.is_empty() => directives.push(ParsedDirective::Note(arg.to_string())),
                     _ => {}
                 }
             }
@@ -848,6 +853,7 @@ pub fn build_system_prompt(day_context: Option<&str>, memories: &[String]) -> St
          - Log water intake (in ml): [ACTION:WATER:250]\n\
          - Control Pomodoro focus timer: [ACTION:FOCUS:start] or [ACTION:FOCUS:pause] or [ACTION:FOCUS:reset]\n\
          - Save a durable user preference, habit, or personal fact for future chats: [ACTION:REMEMBER:concise fact]\n\
+         - Jot something down in the Notes page: [ACTION:NOTE:one-line note, no newlines]\n\
          Only emit [ACTION:...] tags when the user's request calls for an action or shares a lasting preference.",
     );
 
@@ -2192,7 +2198,8 @@ mod tests {
         let reply = "I've added that task and logged a glass of water for you!\n\
                      [ACTION:ADD_TASK:Write unit tests]\n\
                      [ACTION:WATER:250]\n\
-                     [ACTION:REMEMBER:Prefers Rust over Python]";
+                     [ACTION:REMEMBER:Prefers Rust over Python]\n\
+                     [ACTION:NOTE:Call Ana about the prototype]";
         let (clean, dirs) = extract_directives(reply);
         assert_eq!(clean, "I've added that task and logged a glass of water for you!");
         assert_eq!(
@@ -2201,6 +2208,7 @@ mod tests {
                 ParsedDirective::AddTask("Write unit tests".into()),
                 ParsedDirective::LogWater(250),
                 ParsedDirective::Remember("Prefers Rust over Python".into()),
+                ParsedDirective::Note("Call Ana about the prototype".into()),
             ]
         );
     }

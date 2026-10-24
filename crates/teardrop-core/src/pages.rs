@@ -9,6 +9,7 @@ pub enum Page {
     Water,
     Shelf,
     Tasks,
+    Notes,
     Clipboard,
     Today,
     Speed,
@@ -26,7 +27,7 @@ impl Default for Page {
 }
 
 impl Page {
-    /// The eleven tab pages in header order (Settings is reached via the gear).
+    /// The twelve tab pages in header order (Settings is reached via the gear).
     pub fn all() -> &'static [Page] {
         &[
             Page::Music,
@@ -34,6 +35,7 @@ impl Page {
             Page::Water,
             Page::Shelf,
             Page::Tasks,
+            Page::Notes,
             Page::Clipboard,
             Page::Today,
             Page::Speed,
@@ -50,6 +52,7 @@ impl Page {
             Page::Water => "Water",
             Page::Shelf => "Shelf",
             Page::Tasks => "Tasks",
+            Page::Notes => "Notes",
             Page::Clipboard => "Clipboard",
             Page::Today => "Today",
             Page::Speed => "Speed",
