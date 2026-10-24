@@ -23,11 +23,12 @@ pub enum SettingKey {
     StartWithWindows,
     MoodRing,
     WeatherMood,
+    FocusApps,
     AiShareDay,
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 10] = [
+    pub const ALL: [SettingKey; 11] = [
         SettingKey::OpenOnHover,
         SettingKey::Lyrics,
         SettingKey::WaterReminders,
@@ -37,6 +38,7 @@ impl SettingKey {
         SettingKey::StartWithWindows,
         SettingKey::MoodRing,
         SettingKey::WeatherMood,
+        SettingKey::FocusApps,
         SettingKey::AiShareDay,
     ];
 
@@ -51,6 +53,7 @@ impl SettingKey {
             SettingKey::StartWithWindows => s.start_with_windows,
             SettingKey::MoodRing => s.mood_ring,
             SettingKey::WeatherMood => s.weather_mood,
+            SettingKey::FocusApps => s.focus_app_eyes,
             SettingKey::AiShareDay => s.ai_share_day,
         }
     }
@@ -67,6 +70,7 @@ impl SettingKey {
             SettingKey::StartWithWindows => s.start_with_windows = v,
             SettingKey::MoodRing => s.mood_ring = v,
             SettingKey::WeatherMood => s.weather_mood = v,
+            SettingKey::FocusApps => s.focus_app_eyes = v,
             SettingKey::AiShareDay => s.ai_share_day = v,
         }
     }
@@ -82,6 +86,7 @@ impl SettingKey {
             SettingKey::StartWithWindows => "Start with Windows",
             SettingKey::MoodRing => "Mood ring",
             SettingKey::WeatherMood => "Weather",
+            SettingKey::FocusApps => "Focus apps",
             SettingKey::AiShareDay => "Share my day",
         }
     }
@@ -105,6 +110,8 @@ pub enum Action {
     FocusReset,
     FocusMinus,
     FocusPlus,
+    /// Step the eye theme for the app in front (wheel steps back).
+    FocusAppTheme,
     WaterAdd(u32),
     WaterUndo,
     HudWater,
@@ -495,6 +502,7 @@ impl UiState {
             area: eyes::area(spot.unwrap_or(Spot::Idle), body),
             thinking: vm.ai.busy,
             focus_left: (spot == Some(Spot::Focus) && vm.focus_running()).then(|| vm.focus_remaining_ms() as f32 / 1000.0),
+            app: vm.focus_app(s).and_then(|a| a.theme).filter(|_| spot == Some(Spot::Focus)),
         };
         self.eyes.tick(dt, &senses);
     }

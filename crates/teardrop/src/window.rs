@@ -17,14 +17,14 @@ mod inner {
     use crate::ui::scene::{Color, Fill, Scene};
     use crate::ui::state::{Action, Hit, SettingKey, UiState};
     use crate::ui::{self, icons};
-    use crate::viewmodel::{hud_brightness, hud_volume, hud_water_due, hud_water_logged, local_naive, shift_birthday, ViewModel, Weather};
+    use crate::viewmodel::{hud_brightness, hud_volume, hud_water_due, hud_water_logged, local_naive, shift_birthday, FocusApp, ViewModel, Weather};
     use crate::{lyrics_service, media_smtc, paths, shelf_drag, startup, store, volume};
     use chrono::{Datelike, Utc};
     use std::cell::{Cell, RefCell};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Mutex;
     use std::time::Instant;
-    use teardrop_core::{line_at, Hud, HudKind, IdleLook, LyricLine, Page, Playback, Settings};
+    use teardrop_core::{apps, line_at, Hud, HudKind, IdleLook, LyricLine, Page, Playback, Settings};
     use windows::core::{w, PCWSTR};
     use windows::Win32::Foundation::{HANDLE, HGLOBAL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
     use windows::Win32::Graphics::Dwm::DwmFlush;
@@ -1239,6 +1239,7 @@ mod inner {
                     with_eyes(|e| e.react(React::Wake));
                 }
             }
+            Action::FocusAppTheme => step_app_theme(hwnd, true),
             Action::EyeStyle(st) => {
                 SETTINGS.with(|s| s.borrow_mut().eye_style = st);
                 with_eyes(|e| e.react(React::Sparkle));
@@ -1989,6 +1990,44 @@ mod inner {
         }
     }
 
+    /// During a Focus block, what kind of app is in front (the eyes act it
+    /// out). Our own window, menus and the desktop keep the last app.
+    fn poll_focus_app(hwnd: HWND) {
+        let want = eyes_on() && SETTINGS.with(|s| s.borrow().focus_app_eyes) && VIEW.with(|v| v.borrow().focus_working());
+        if !want {
+            VIEW.with(|v| v.borrow_mut().env.app = None);
+            return;
+        }
+        let fg = unsafe { GetForegroundWindow() };
+        if fg.0.is_null() || fg == hwnd || is_shell_window(fg) {
+            return;
+        }
+        let Some((exe, title)) = env::window_app(fg) else { return };
+        let (theme, source) = SETTINGS.with(|s| {
+            let s = s.borrow();
+            apps::classify(&exe, &title, &s.app_themes, &s.eye_themes)
+        });
+        let app = FocusApp { exe: apps::exe_stem(&exe), theme, source };
+        VIEW.with(|v| v.borrow_mut().env.app = Some(app));
+    }
+
+    /// Step the eye theme for the app in front (Focus page chip: click
+    /// forward, wheel either way). Saved as a per-exe mapping.
+    fn step_app_theme(hwnd: HWND, forward: bool) {
+        let Some(exe) = VIEW.with(|v| v.borrow().env.app.as_ref().map(|a| a.exe.clone())) else { return };
+        let (theme, source) = SETTINGS.with(|s| {
+            let mut st = s.borrow_mut();
+            let themes = st.eye_themes.clone();
+            apps::step_override(&mut st.app_themes, &exe, forward, &themes);
+            // The island has focus now, so re-classify the remembered exe; the
+            // title isn't kept, the next poll in the app refines it.
+            apps::classify(&exe, "", &st.app_themes, &st.eye_themes)
+        });
+        VIEW.with(|v| v.borrow_mut().env.app = Some(FocusApp { exe, theme, source }));
+        with_eyes(|e| e.react(React::Sparkle));
+        wake(hwnd);
+    }
+
     fn slow_tick(hwnd: HWND) {
         let n = TICKS.get().wrapping_add(1);
         TICKS.set(n);
@@ -2025,6 +2064,7 @@ mod inner {
         if eyes_on() {
             poll_env(n);
         }
+        poll_focus_app(hwnd);
         poll_volume();
         if VIEW.with(|v| v.borrow().page) == Page::Usage && !USAGE_STARTED.replace(true) {
             crate::usage::refresh();
@@ -2160,6 +2200,12 @@ mod inner {
         let (_, y) = LAST_MOUSE.get();
         let page = VIEW.with(|v| v.borrow().page);
         let in_content = y >= CONTENT_TOP;
+        if hit_at(LAST_MOUSE.get().0, y).map(|h| h.action) == Some(Action::FocusAppTheme) {
+            step_app_theme(hwnd, dir > 0);
+            save_all();
+            wake(hwnd);
+            return;
+        }
         if hit_at(LAST_MOUSE.get().0, y).map(|h| h.action) == Some(Action::Birthday) {
             SETTINGS.with(|s| {
                 let mut st = s.borrow_mut();
@@ -2937,6 +2983,8 @@ mod inner {
                         with_eyes(|e| e.glance((cx - sw / 2.0) / (sw / 2.0), (cy / sh) * 1.6 - 0.3));
                         wake(hwnd);
                     }
+                    // Switch the work theme right away instead of on the next tick.
+                    poll_focus_app(hwnd);
                 }
                 let r = match code {
                     HSHELL_FLASH => Some(React::Perk),

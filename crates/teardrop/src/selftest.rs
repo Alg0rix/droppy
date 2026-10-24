@@ -545,7 +545,38 @@ fn shots() -> Vec<Shot> {
             },
             ..shot("28-page-settings-eyes", 1.0, Page::Settings)
         },
+        Shot {
+            setup: |vm, set, _, _| focus_app(vm, set, "Code.exe", "main.rs - teardrop - Visual Studio Code"),
+            ..shot("53-eyes-focus-coding", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, _, _| focus_app(vm, set, "chrome.exe", "Q3 plan - Google Docs - Google Chrome"),
+            ..shot("54-eyes-focus-writing", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, _, _| focus_app(vm, set, "Figma.exe", "Untitled"),
+            ..shot("55-eyes-focus-design", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, _, _| {
+                focus_app(vm, set, "EXCEL.EXE", "Budget.xlsx - Excel");
+                set.app_themes.insert("excel".into(), "data".into());
+                let app = vm.env.app.as_mut().unwrap();
+                app.theme = Some(teardrop_core::AppTheme { cat: teardrop_core::AppCategory::Data, tint: None });
+                app.source = teardrop_core::apps::Source::User;
+            },
+            ..shot("56-page-focus-app", 1.0, Page::Focus)
+        },
     ]
+}
+
+/// Eyes on, a focus block running and `exe` in front.
+fn focus_app(vm: &mut ViewModel, set: &mut Settings, exe: &str, title: &str) {
+    eyes(vm, set, EyeStyle::Round, false);
+    let now = vm.now;
+    vm.pomo.start_focus(now - chrono::Duration::minutes(6));
+    let (theme, source) = teardrop_core::apps::classify(exe, title, &set.app_themes, &set.eye_themes);
+    vm.env.app = Some(crate::viewmodel::FocusApp { exe: teardrop_core::apps::exe_stem(exe), theme, source });
 }
 
 /// Eyes as the idle look; `music` keeps the demo track playing.

@@ -135,6 +135,21 @@ Bring your own account or key. Supported: **ChatGPT** (sign in with your subscri
 - When *Share my day* is on (it's on by default), each message also carries a short summary of your day: upcoming calendar titles and times, open task titles, your latest note titles (never the note bodies), water and focus status, what's playing and basic PC stats. Turn it off to send only what you type. Nothing is sent until you press send.
 - Actions the assistant takes inside Teardrop (add a task, log water, start focus) show up under its reply with an **Undo** button.
 
+### Focus eyes
+
+With the **Eyes** idle look, a running Focus block makes Droppy act out the kind of app you're working in: reading code line by line, watching the prompt in a terminal, tracing a pen while you write, hopping between spreadsheet cells, presenting slides, ticking off tasks, riding a chart up in a data tool, skimming search results, turning pages in a PDF, squinting like an artist in a design tool, ping-ponging in a chat, reading mail, nodding along in a call, lighting up while it learns, watching a video, scrubbing a timeline in an editor. Breaks keep the relaxed look.
+
+Around 850 executable names are recognised, from the big names (VS Code, Word, Excel, Figma, Slack, Zoom) to smaller ones (Neovide, Zettlr, Gnumeric, Aseprite, jamovi, Mnemosyne, REAPER). In a browser, the tab title decides (Google Docs, GitHub, Gmail, Khan Academy, YouTube and hundreds more); any other site counts as research. Apps it doesn't know keep the plain focused look.
+
+To change what an app plays, click the **Eyes** chip on the Focus page while it's in front (the mouse wheel steps back); it cycles through every category, your own themes, and *none*. For more, edit `settings.json`:
+
+```json
+"app_themes": { "notepad": "coding", "title:jira": "Sprint", "vlc": "none" },
+"eye_themes": [ { "name": "Sprint", "base": "planning", "tint": "#22c55e" } ]
+```
+
+Keys are an executable name or `title:` plus words from a window title; values are a category (`coding`, `terminal`, `writing`, `spreadsheet`, `slides`, `planning`, `data`, `research`, `reading`, `design`, `chat`, `email`, `meeting`, `learning`, `media`, `studio`), one of your `eye_themes` (a category's animation with your own eye colour), or `none`. **Focus apps** in Settings turns the whole thing off. The window title is read once a second during Focus to pick the theme and is never stored, logged or sent anywhere.
+
 ### Voice recorder
 
 Recording only starts when you press the button. It captures your default microphone, saves a 16-bit WAV to `Music\Teardrop Recordings` and adds it to the Shelf so you can drag it into a chat or a folder. Nothing is uploaded. If Windows denies microphone access, the page says so. Recordings stop on their own after two hours.

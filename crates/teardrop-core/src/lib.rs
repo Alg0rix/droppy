@@ -4,6 +4,7 @@
 //! `crates/teardrop` only handles Win32 / Direct2D / WinRT plumbing
 //! and delegates all decisions to these types.
 
+pub mod apps;
 pub mod clipboard;
 pub mod droplet;
 pub mod hud;
@@ -19,6 +20,7 @@ pub mod system;
 pub mod tasks;
 pub mod water;
 
+pub use apps::{AppCategory, AppTheme, EyeTheme};
 pub use clipboard::ClipboardRing;
 pub use droplet::{DropletGeom, OutlinePt};
 pub use hud::{Hud, HudKind};
