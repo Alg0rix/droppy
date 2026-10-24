@@ -361,6 +361,22 @@ fn shots() -> Vec<Shot> {
             },
             ..shot("26h-collapsed-recording", 0.0, Page::Music)
         },
+        Shot {
+            setup: |vm, set, _, _| {
+                set.idle_look = IdleLook::Eyes;
+                vm.idle_look = IdleLook::Eyes;
+                vm.voice = crate::voice::VoiceView { phase: crate::voice::VoicePhase::Recording, elapsed_ms: 83_400, level: 0.7, saved: None, error: String::new() };
+            },
+            ..shot("26h2-collapsed-rec-eyes-talk", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, _, _| {
+                set.idle_look = IdleLook::Eyes;
+                vm.idle_look = IdleLook::Eyes;
+                vm.voice = crate::voice::VoiceView { phase: crate::voice::VoicePhase::Recording, elapsed_ms: 83_400, level: 0.0, saved: None, error: String::new() };
+            },
+            ..shot("26h3-collapsed-rec-eyes-quiet", 0.0, Page::Music)
+        },
         shot("26l-page-ai-starters", 1.0, Page::Ai),
         Shot {
             setup: |vm, _, _, _| {

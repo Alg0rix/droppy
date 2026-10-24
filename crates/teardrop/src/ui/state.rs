@@ -402,7 +402,7 @@ impl UiState {
             return (w, 38.0);
         }
         if vm.voice.phase == crate::voice::VoicePhase::Recording {
-            return (170.0, 36.0);
+            return (if s.idle_look == IdleLook::Eyes { 214.0 } else { 170.0 }, 36.0);
         }
         if vm.meeting_soon().is_some() {
             return (236.0, 36.0);
@@ -459,8 +459,10 @@ impl UiState {
             use teardrop_core::HudKind::*;
             return matches!(h.kind, Volume | Muted | Brightness | Charging | Bluetooth | Timer).then_some(Spot::Hud);
         }
-        if vm.meeting_soon().is_some() || vm.voice.phase == crate::voice::VoicePhase::Recording {
+        if vm.meeting_soon().is_some() {
             None
+        } else if vm.voice.phase == crate::voice::VoicePhase::Recording {
+            Some(Spot::Rec)
         } else if vm.focus_visible() {
             Some(Spot::Focus)
         } else if vm.music_active() {
@@ -495,6 +497,7 @@ impl UiState {
             area: eyes::area(spot.unwrap_or(Spot::Idle), body),
             thinking: vm.ai.busy,
             focus_left: (spot == Some(Spot::Focus) && vm.focus_running()).then(|| vm.focus_remaining_ms() as f32 / 1000.0),
+            recording: (vm.voice.phase == crate::voice::VoicePhase::Recording).then_some(vm.voice.level.clamp(0.0, 1.0)),
         };
         self.eyes.tick(dt, &senses);
     }
@@ -682,6 +685,23 @@ mod tests {
         vm.track.playback = teardrop_core::Playback::Stopped;
         let idle = ui.compact_target(&vm, &s, now_ms).0;
         assert!(music > idle, "music {music} should be wider than idle {idle}");
+    }
+
+    #[test]
+    fn recording_shows_the_face_with_eyes() {
+        let now = Utc::now();
+        let mut vm = ViewModel::demo(now);
+        let mut s = Settings::default();
+        let ui = UiState::new(Page::Music);
+        let now_ms = now.timestamp_millis() as u64;
+        vm.voice.phase = crate::voice::VoicePhase::Recording;
+        s.idle_look = IdleLook::Eyes;
+        assert_eq!(ui.face_spot(&vm, &s, now_ms), Some(Spot::Rec));
+        let with = ui.compact_target(&vm, &s, now_ms).0;
+        s.idle_look = IdleLook::Clock;
+        assert_eq!(ui.face_spot(&vm, &s, now_ms), None);
+        let without = ui.compact_target(&vm, &s, now_ms).0;
+        assert!(with > without, "eyes {with} should be wider than plain {without}");
     }
 
     #[test]
