@@ -1,9 +1,30 @@
 name: CI
 
+# Runs only when something that can change the build changes. Docs, the README,
+# screenshots and brand assets don't start it (the Docs workflow covers those).
 on:
   push:
     branches: [main]
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "installer/**"
+      - "tools/**"
+      - ".github/workflows/ci.yml"
   pull_request:
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "installer/**"
+      - "tools/**"
+      - ".github/workflows/ci.yml"
+
+# A newer push to the same branch makes the older run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   windows:
@@ -11,20 +32,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
+      # Targeted lint: only the lint groups that point at real bugs fail the
+      # build (correctness and suspicious). Style lints are reported, not gated.
+      - name: Lint (clippy, bug classes)
+        run: cargo clippy --workspace --all-targets -- -D clippy::correctness -D clippy::suspicious
       - name: Test
         run: cargo test --workspace
       - name: Release build
         run: cargo build -p teardrop --release
-      - name: Installer builds (NSIS)
+      - name: Installer builds (Inno Setup)
         shell: pwsh
         run: |
-          choco install nsis -y --no-progress
+          choco install innosetup -y --no-progress
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item target/release/teardrop.exe dist/teardrop.exe
-          & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" /DVERSION=0.0.0-ci tools/installer.nsi
-          if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
-          Get-Item dist/teardrop-setup-0.0.0-ci.exe | Select-Object Name, Length
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=0.0.0" installer/teardrop.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+          Get-Item dist/teardrop-setup-0.0.0.exe | Select-Object Name, Length
       - name: Selftest (renders every state headless)
         run: ./target/release/teardrop.exe --selftest dist/selftest
         continue-on-error: true

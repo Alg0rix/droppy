@@ -95,7 +95,6 @@ impl IslandState {
     }
 
     #[allow(dead_code)]
-
     /// Outline in window-local coords (top edge at y=0).
     pub fn outline_local(&self, cx: f32, n: usize) -> Vec<(f32, f32)> {
         self.geom

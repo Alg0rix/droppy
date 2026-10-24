@@ -1,0 +1,30 @@
+name: Docs
+
+# Cheap check that only runs when documentation changes: every relative link,
+# image and #anchor in the Markdown files must point at something that exists.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.md"
+      - "docs/**"
+      - "tools/check_docs.py"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "**.md"
+      - "docs/**"
+      - "tools/check_docs.py"
+      - ".github/workflows/docs.yml"
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check links, images and anchors
+        run: python3 tools/check_docs.py
