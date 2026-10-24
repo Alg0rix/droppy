@@ -288,9 +288,9 @@ pub mod d2d {
                         // the last glyph, respecting the field's alignment.
                         let tw = self.text_width(&wide, &fmt).min(r.w);
                         let x = match align {
-                            Align::Left => r.x,
-                            Align::Center => r.x + (r.w - tw) / 2.0,
-                            Align::Right => r.right() - tw,
+                            Align::Left => r.x + tw,
+                            Align::Center => r.x + (r.w + tw) / 2.0,
+                            Align::Right => r.right(),
                         };
                         let h = (size * 1.15).min(r.h - 2.0).max(2.0);
                         let top = r.y + (r.h - h) / 2.0;

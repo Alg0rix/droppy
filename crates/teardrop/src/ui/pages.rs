@@ -189,70 +189,81 @@ fn focus(c: &mut Ctx, a: Rect) {
     let acc = accent(Page::Focus);
     let vm = c.vm;
     let pomo = &vm.pomo;
-    let ring = (a.x + 96.0, a.y + 116.0);
-    let rr = 80.0;
-    c.s.ring(ring.0, ring.1, rr, 10.0, 0.0, 1.0, Color::rgba(255, 255, 255, 0.08));
+
+    let left_w = 260.0;
+    let ring_cx = a.x + left_w * 0.5;
+    let ring_cy = a.y + a.h * 0.48;
+    let rr = 76.0;
+
+    c.s.ring(ring_cx, ring_cy, rr, 10.0, 0.0, 1.0, Color::rgba(255, 255, 255, 0.08));
     let prog = vm.focus_progress();
     if prog > 0.003 {
-        c.s.ring(ring.0, ring.1, rr, 10.0, 0.0, prog, acc);
+        c.s.ring(ring_cx, ring_cy, rr, 10.0, 0.0, prog, acc);
     }
-    c.text(mmss(vm.focus_remaining_ms()), Rect::new(ring.0 - 70.0, ring.1 - 30.0, 140.0, 46.0), 38.0, Weight::Semibold, TEXT, Align::Center);
+    c.text(mmss(vm.focus_remaining_ms()), Rect::new(ring_cx - 75.0, ring_cy - 28.0, 150.0, 44.0), 36.0, Weight::Semibold, TEXT, Align::Center);
     let phase = match pomo.phase {
         Phase::Idle => "READY",
         Phase::Focus => "FOCUS",
         Phase::ShortBreak => "SHORT BREAK",
         Phase::LongBreak => "LONG BREAK",
     };
-    c.text(phase, Rect::new(ring.0 - 70.0, ring.1 + 18.0, 140.0, 18.0), 11.0, Weight::Semibold, acc, Align::Center);
+    c.text(phase, Rect::new(ring_cx - 75.0, ring_cy + 18.0, 150.0, 18.0), 11.0, Weight::Semibold, acc, Align::Center);
 
-    let x = a.x + 220.0;
-    let w = a.w - 220.0;
-    c.section_title(Rect::new(x, a.y + 4.0, w, 44.0), "Pomodoro", match pomo.phase {
+    let rx = a.x + left_w + 24.0;
+    let rw = (a.right() - rx).max(10.0);
+
+    let sub = match pomo.phase {
         Phase::Idle => "Ready when you are",
-        Phase::Focus if vm.focus_running() => "Stay with it",
+        Phase::Focus if vm.focus_running() => "Stay in the flow",
         Phase::Focus => "Paused",
         _ => "Take a breather",
-    });
+    };
+    c.text("Pomodoro Timer", Rect::new(rx, a.y + 4.0, rw, 26.0), 18.0, Weight::Semibold, TEXT, Align::Left);
+    c.text(sub, Rect::new(rx, a.y + 30.0, rw, 18.0), 12.5, Weight::Regular, TEXT_2, Align::Left);
 
-    // Length stepper (only while idle) or session counter.
-    let y = a.y + 62.0;
+    // Length stepper or session count
+    let y1 = a.y + 58.0;
     if pomo.phase == Phase::Idle {
-        c.text("Length", Rect::new(x, y, 56.0, 32.0), 12.0, Weight::Regular, TEXT_3, Align::Left);
-        c.icon_btn(Rect::new(x + 56.0, y, 32.0, 32.0), Action::FocusMinus, Icon::Minus, 14.0, TEXT_2);
-        c.text(format!("{} min", pomo.focus_min), Rect::new(x + 90.0, y, 56.0, 32.0), 14.0, Weight::Semibold, TEXT, Align::Center);
-        c.icon_btn(Rect::new(x + 148.0, y, 32.0, 32.0), Action::FocusPlus, Icon::Plus, 14.0, TEXT_2);
+        c.text("Duration", Rect::new(rx, y1 + 3.0, 70.0, 26.0), 12.5, Weight::Medium, TEXT_2, Align::Left);
+        c.icon_btn(Rect::new(rx + 76.0, y1, 28.0, 28.0), Action::FocusMinus, Icon::Minus, 12.0, TEXT_2);
+        c.text(format!("{} min", pomo.focus_min), Rect::new(rx + 106.0, y1 + 3.0, 60.0, 26.0), 13.5, Weight::Semibold, TEXT, Align::Center);
+        c.icon_btn(Rect::new(rx + 168.0, y1, 28.0, 28.0), Action::FocusPlus, Icon::Plus, 12.0, TEXT_2);
     } else {
         let n = pomo.sessions_before_long.max(1);
         let cur = (pomo.completed_focus % n) + if pomo.phase == Phase::Focus { 1 } else { 0 };
-        c.text(format!("Session {} of {}", cur.min(n), n), Rect::new(x, y, w, 32.0), 13.0, Weight::Medium, TEXT_2, Align::Left);
+        c.text(format!("Session {} of {}", cur.min(n), n), Rect::new(rx, y1 + 3.0, rw, 26.0), 13.0, Weight::Medium, TEXT, Align::Left);
     }
 
-    // Cycle dots.
+    // Cycle dots and completed count
+    let y2 = a.y + 98.0;
     let n = pomo.sessions_before_long.max(1);
     let done = if pomo.phase == Phase::LongBreak { n } else { pomo.completed_focus % n };
     for i in 0..n {
         let on = i < done;
-        let dx = x + 6.0 + i as f32 * 20.0;
+        let dx = rx + 6.0 + i as f32 * 18.0;
         if on {
-            c.s.circle(dx, a.y + 120.0, 5.5, acc);
+            c.s.circle(dx, y2 + 6.0, 5.0, acc);
         } else {
-            c.s.circle(dx, a.y + 120.0, 5.5, Color::rgba(255, 255, 255, 0.14));
+            c.s.circle(dx, y2 + 6.0, 5.0, Color::rgba(255, 255, 255, 0.14));
         }
     }
-    c.text(format!("{} done", pomo.completed_focus), Rect::new(x + 6.0 + n as f32 * 20.0, a.y + 110.0, 80.0, 20.0), 12.0, Weight::Regular, TEXT_3, Align::Left);
+    c.text(format!("{} completed today", pomo.completed_focus), Rect::new(rx + 6.0 + n as f32 * 18.0 + 8.0, y2, 160.0, 18.0), 11.5, Weight::Regular, TEXT_3, Align::Left);
 
-    // Controls.
-    let by = a.y + 146.0;
+    // Primary action button + Reset button
+    let by = a.y + 132.0;
     let label = if vm.focus_running() {
         "Pause"
     } else if pomo.remaining_ms_when_paused.is_some() {
         "Resume"
     } else {
-        "Start"
+        "Start Focus"
     };
-    c.pill(Rect::new(x, by, 130.0, 42.0), Action::FocusToggle, label, Some(acc), 14.0);
-    c.icon_btn(Rect::new(x + 142.0, by, 42.0, 42.0), Action::FocusReset, Icon::Reset, 16.0, if pomo.phase == Phase::Idle { TEXT_3 } else { TEXT });
-    c.text("S start \u{00b7} P pause \u{00b7} R reset", Rect::new(x, a.y + 204.0, w, 18.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
+    let btn_w = (rw - 52.0).min(180.0);
+    c.pill(Rect::new(rx, by, btn_w, 38.0), Action::FocusToggle, label, Some(acc), 13.5);
+    c.icon_btn(Rect::new(rx + btn_w + 12.0, by, 38.0, 38.0), Action::FocusReset, Icon::Reset, 16.0, if pomo.phase == Phase::Idle { TEXT_3 } else { TEXT });
+
+    // Keyboard hints at the bottom with 20px padding above bottom rim
+    c.text("S start \u{00b7} P pause \u{00b7} R reset", Rect::new(rx, a.bottom() - 16.0, rw, 16.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
 }
 
 // -------------------------------------------------------------------- water
@@ -708,23 +719,6 @@ fn note_editor(c: &mut Ctx, a: Rect, acc: Color) {
     let lines = wrap_note_lines(&text, inner_w, 13.5);
     let visible = (((body.h - 20.0) / line_h).floor() as usize).max(1);
     let start = lines.len().saturating_sub(visible);
-    let mut y = body.y + 10.0;
-    for line in lines.iter().skip(start) {
-        if !line.is_empty() {
-            c.text(line.clone(), Rect::new(body.x + 12.0, y, inner_w, line_h), 13.5, Weight::Regular, TEXT, Align::Left);
-        }
-        y += line_h;
-    }
-    if text.is_empty() {
-        c.text(
-            "Start typing \u{2014} Enter starts a new line",
-            Rect::new(body.x + 12.0, body.y + 10.0, inner_w, line_h),
-            13.5,
-            Weight::Regular,
-            TEXT_3,
-            Align::Left,
-        );
-    }
     let blink = (c.ui.clock_s * 1.8) % 2.0 < 1.0;
     let mut y = body.y + 10.0;
     for (i, line) in lines.iter().skip(start).enumerate() {
@@ -941,8 +935,7 @@ fn today(c: &mut Ctx, a: Rect) {
         c.text(date.format("%A").to_string(), Rect::new(x, a.y, w, 30.0), 23.0, Weight::Semibold, TEXT, Align::Left);
         c.text(date.format("%-d %B").to_string(), Rect::new(x, a.y + 30.0, w, 20.0), 14.0, Weight::Regular, acc, Align::Left);
     }
-    agenda(c, Rect::new(x, a.y + 58.0, w, 158.0), &items, acc);
-    draw_today_sys_line(c, x, a.bottom() - 16.0, w);
+    agenda(c, Rect::new(x, a.y + 54.0, w, 150.0), &items, acc);
 }
 
 fn draw_today_sys_line(c: &mut Ctx, x: f32, y: f32, w: f32) {
@@ -983,19 +976,19 @@ fn agenda(c: &mut Ctx, r: Rect, items: &[&crate::calendar::Event], acc: Color) {
     }
     let scroll = c.ui.scroll_of(Page::Today).min(today_max_scroll(items.len()));
     for (slot, (i, ev)) in items.iter().enumerate().skip(scroll).take(3).enumerate() {
-        let row = Rect::new(r.x, r.y + slot as f32 * 44.0, r.w, 40.0);
+        let row = Rect::new(r.x, r.y + slot as f32 * 38.0, r.w, 35.0);
         let ev_act = Action::CalEvent(i as u8);
         let hv = c.ui.hover_amt(ev_act);
-        c.s.rect(row, 10.0, SURFACE.mix(SURFACE_HOVER, hv * 0.85));
+        c.s.rect(row, 9.0, SURFACE.mix(SURFACE_HOVER, hv * 0.85));
         if hv > 0.01 {
-            c.s.stroke(row, 10.0, 1.0, acc.fade(0.35 * hv));
+            c.s.stroke(row, 9.0, 1.0, acc.fade(0.35 * hv));
         }
         if i == 0 {
-            c.s.rect(Rect::new(row.x, row.y + 8.0, 3.0, row.h - 16.0), 1.5, acc);
+            c.s.rect(Rect::new(row.x, row.y + 7.0, 3.0, row.h - 14.0), 1.5, acc);
         }
         let join = ev.join.is_some();
         let tw = row.w - 20.0 - if join { 48.0 } else { 0.0 };
-        c.text(ev.title.clone(), Rect::new(row.x + 12.0, row.y + 4.0, tw, 18.0), 12.5, Weight::Semibold, TEXT, Align::Left);
+        c.text(ev.title.clone(), Rect::new(row.x + 12.0, row.y + 3.0, tw, 16.0), 12.0, Weight::Semibold, TEXT, Align::Left);
         let when = if day_mode {
             time_range_label(ev)
         } else {
@@ -1008,21 +1001,21 @@ fn agenda(c: &mut Ctx, r: Rect, items: &[&crate::calendar::Event], acc: Color) {
             (None, 0) if !ev.all_day => format!(" \u{00b7} {}", countdown(ev, now)),
             _ => String::new(),
         };
-        c.text(format!("{when}{tail}"), Rect::new(row.x + 12.0, row.y + 22.0, tw, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+        c.text(format!("{when}{tail}"), Rect::new(row.x + 12.0, row.y + 19.0, tw, 13.0), 10.0, Weight::Regular, TEXT_3, Align::Left);
         let hit_w = if join { row.w - 48.0 } else { row.w };
         c.hit(Rect::new(row.x, row.y, hit_w, row.h), ev_act);
         if join {
-            c.pill(Rect::new(row.right() - 46.0, row.cy() - 11.0, 40.0, 22.0), Action::Join(i as u8), "Join", Some(acc), 10.5);
+            c.pill(Rect::new(row.right() - 46.0, row.cy() - 10.0, 40.0, 20.0), Action::Join(i as u8), "Join", Some(acc), 10.0);
         }
     }
-    let fy = r.y + 3.0 * 44.0 + 4.0;
-    c.pill(Rect::new(r.x, fy, 64.0, 20.0), Action::CalendarPaste, "Add link", None, 10.0);
-    c.pill(Rect::new(r.x + 70.0, fy, 64.0, 20.0), Action::CalendarClear, "Remove", None, 10.0);
+    let fy = r.y + 3.0 * 38.0 + 4.0;
+    c.pill(Rect::new(r.x, fy, 66.0, 22.0), Action::CalendarPaste, "Add link", None, 10.5);
+    c.pill(Rect::new(r.x + 72.0, fy, 66.0, 22.0), Action::CalendarClear, "Remove", None, 10.5);
     if items.len() > 3 {
         c.text(
             format!("{}\u{2013}{} of {}", scroll + 1, (scroll + 3).min(items.len()), items.len()),
-            Rect::new(r.x + 140.0, fy + 2.0, r.w - 140.0, 16.0),
-            9.5,
+            Rect::new(r.x + 146.0, fy + 3.0, r.w - 146.0, 16.0),
+            10.0,
             Weight::Regular,
             TEXT_3,
             Align::Right,
@@ -1869,60 +1862,71 @@ fn update_pill(c: &mut Ctx, r: Rect) {
 }
 
 fn settings(c: &mut Ctx, a: Rect) {
-    c.text("Settings", Rect::new(a.x, a.y, 160.0, 26.0), 17.0, Weight::Semibold, TEXT, Align::Left);
-    c.pill(Rect::new(a.right() - 70.0, a.y + 1.0, 70.0, 24.0), Action::Quit, "Quit", None, 11.5);
-    update_pill(c, Rect::new(a.right() - 70.0 - 8.0 - 150.0, a.y + 1.0, 150.0, 24.0));
+    let col_w = (a.w - 36.0) / 2.0;
+    let lx = a.x;
+    let rx = a.x + col_w + 36.0;
 
-    let col_w = (a.w - 28.0) / 2.0;
-    let left = [SettingKey::OpenOnHover, SettingKey::Lyrics, SettingKey::WaterReminders, SettingKey::ClipboardHistory];
-    let right = [SettingKey::Sounds, SettingKey::HideFullscreen, SettingKey::StartWithWindows];
-    let ty = a.y + 34.0;
-    let row = 30.0;
-    for (ci, keys) in [&left[..], &right[..]].iter().enumerate() {
-        let x = a.x + ci as f32 * (col_w + 28.0);
-        for (i, k) in keys.iter().enumerate() {
-            let y = ty + i as f32 * row;
-            c.text(k.label(), Rect::new(x, y, col_w - 52.0, row - 4.0), 13.0, Weight::Regular, TEXT, Align::Left);
-            c.switch(Rect::new(x + col_w - 42.0, y + 2.0, 42.0, 22.0), *k, acc_on());
-        }
+    // LEFT COLUMN: General Toggles
+    c.text("General Settings", Rect::new(lx, a.y, col_w, 24.0), 16.0, Weight::Semibold, TEXT, Align::Left);
+    let keys = [
+        SettingKey::OpenOnHover,
+        SettingKey::Lyrics,
+        SettingKey::Sounds,
+        SettingKey::HideFullscreen,
+        SettingKey::StartWithWindows,
+        SettingKey::ClipboardHistory,
+        SettingKey::WaterReminders,
+    ];
+    let row_h = 26.0;
+    let ty = a.y + 30.0;
+    for (i, k) in keys.iter().enumerate() {
+        let y = ty + i as f32 * row_h;
+        c.text(k.label(), Rect::new(lx, y, col_w - 50.0, row_h - 4.0), 12.0, Weight::Regular, TEXT, Align::Left);
+        c.switch(Rect::new(lx + col_w - 42.0, y + 2.0, 42.0, 20.0), *k, acc_on());
     }
-    // Daily goal stepper sits as the 4th row of the right column.
-    let gx = a.x + col_w + 28.0;
-    let gy = ty + 3.0 * row;
-    c.text("Water goal", Rect::new(gx, gy, 90.0, row - 4.0), 13.0, Weight::Regular, TEXT, Align::Left);
-    c.icon_btn(Rect::new(gx + col_w - 118.0, gy, 26.0, 26.0), Action::GoalStep(-1), Icon::Minus, 12.0, TEXT_2);
-    c.text(format!("{:.2} L", c.vm.water.goal_ml as f32 / 1000.0), Rect::new(gx + col_w - 88.0, gy, 56.0, 26.0), 12.5, Weight::Semibold, TEXT, Align::Center);
-    c.icon_btn(Rect::new(gx + col_w - 28.0, gy, 26.0, 26.0), Action::GoalStep(1), Icon::Plus, 12.0, TEXT_2);
 
-    // Idle look segmented control.
-    let sy = ty + 4.0 * row + 6.0;
-    c.text("Idle look", Rect::new(a.x, sy, 90.0, 30.0), 13.0, Weight::Regular, TEXT, Align::Left);
+    // RIGHT COLUMN: Top buttons + Appearance & Mascot
+    c.pill(Rect::new(rx + col_w - 60.0, a.y, 60.0, 24.0), Action::Quit, "Quit", None, 11.0);
+    update_pill(c, Rect::new(rx, a.y, col_w - 68.0, 24.0));
+
+    // Idle look
+    let sy = a.y + 32.0;
+    c.text("Idle Look", Rect::new(rx, sy, 68.0, 26.0), 12.0, Weight::Medium, TEXT_2, Align::Left);
     let look = c.vm.idle_look;
     let looks = [(IdleLook::Clock, "Clock"), (IdleLook::Eyes, "Eyes"), (IdleLook::Minimal, "Dot"), (IdleLook::Hidden, "Hidden")].map(|(l, s)| (Action::Idle(l), s, look == l));
-    segmented(c, Rect::new(a.x + 100.0, sy, a.w - 100.0, 30.0), &looks, 12.5);
+    segmented(c, Rect::new(rx + 70.0, sy, col_w - 70.0, 26.0), &looks, 11.5);
 
-    if look != IdleLook::Eyes {
-        c.text("Win+Shift+T toggles the island \u{00b7} Esc closes it", Rect::new(a.x, a.bottom() - 16.0, a.w, 16.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
-        return;
+    // Eyes Style & Extras (when Eyes active)
+    let ey = sy + 32.0;
+    if look == IdleLook::Eyes {
+        let style = c.set.eye_style;
+        let styles = EyeStyle::ALL.map(|st| (Action::EyeStyle(st), st.label(), st == style));
+        segmented(c, Rect::new(rx, ey, col_w, 26.0), &styles, 11.0);
+
+        let chip_w = (col_w - 12.0) / 3.0;
+        let my = ey + 32.0;
+        let mut cx = rx;
+        for k in [SettingKey::MoodRing, SettingKey::WeatherMood] {
+            let on = k.get(c.set);
+            c.pill(Rect::new(cx, my, chip_w, 24.0), Action::Toggle(k), k.label(), on.then_some(acc_on()), 10.5);
+            cx += chip_w + 6.0;
+        }
+        let bday = match c.set.birthday {
+            Some((m, d)) => format!("{} {d}", MONTHS[(m as usize).clamp(1, 12) - 1]),
+            None => "Birthday".to_string(),
+        };
+        c.pill(Rect::new(cx, my, chip_w, 24.0), Action::Birthday, &bday, c.set.birthday.map(|_| accent(Page::Music)), 10.5);
     }
-    // Eyes: style + extras.
-    let ey = sy + 36.0;
-    let style = c.set.eye_style;
-    let styles = EyeStyle::ALL.map(|st| (Action::EyeStyle(st), st.label(), st == style));
-    let seg_w = 232.0;
-    segmented(c, Rect::new(a.x, ey, seg_w, 28.0), &styles, 11.5);
-    let chip_w = (a.w - seg_w - 8.0 - 2.0 * 6.0) / 3.0;
-    let mut x = a.x + seg_w + 8.0;
-    for k in [SettingKey::MoodRing, SettingKey::WeatherMood] {
-        let on = k.get(c.set);
-        c.pill(Rect::new(x, ey + 1.0, chip_w, 26.0), Action::Toggle(k), k.label(), on.then_some(acc_on()), 11.0);
-        x += chip_w + 6.0;
-    }
-    let bday = match c.set.birthday {
-        Some((m, d)) => format!("{} {d}", MONTHS[(m as usize).clamp(1, 12) - 1]),
-        None => "Birthday".to_string(),
-    };
-    c.pill(Rect::new(x, ey + 1.0, chip_w, 26.0), Action::Birthday, &bday, c.set.birthday.map(|_| accent(Page::Music)), 11.0);
+
+    // Water Goal Stepper
+    let gy = if look == IdleLook::Eyes { ey + 64.0 } else { ey + 8.0 };
+    c.text("Water goal", Rect::new(rx, gy + 2.0, 75.0, 24.0), 12.0, Weight::Regular, TEXT, Align::Left);
+    c.icon_btn(Rect::new(rx + col_w - 110.0, gy, 24.0, 24.0), Action::GoalStep(-1), Icon::Minus, 11.0, TEXT_2);
+    c.text(format!("{:.2} L", c.vm.water.goal_ml as f32 / 1000.0), Rect::new(rx + col_w - 82.0, gy + 2.0, 52.0, 24.0), 12.0, Weight::Semibold, TEXT, Align::Center);
+    c.icon_btn(Rect::new(rx + col_w - 26.0, gy, 24.0, 24.0), Action::GoalStep(1), Icon::Plus, 11.0, TEXT_2);
+
+    // Keyboard hint at bottom
+    c.text("Win+Shift+T toggles island \u{00b7} Esc closes", Rect::new(rx, a.bottom() - 16.0, col_w, 16.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
 }
 
 const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
