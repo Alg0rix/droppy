@@ -42,7 +42,7 @@ pub const OPENCODE_GO_BASE_URL: &str = "https://opencode.ai/zen/go/v1";
 pub const STARTER_PROMPTS: [(&str, &str); 4] = [
     ("Plan my day", "What's on my schedule today and what should I focus on first?"),
     ("Task + Focus", "Add a task 'Deep work session' and start my Pomodoro focus timer."),
-    ("Water & PC check", "Log 250 ml of water and tell me how my PC resources look."),
+    ("Water & PC check", "Log a glass of water and tell me how my PC resources look."),
     ("Prioritize tasks", "Summarize my open tasks and suggest the top 3 priorities."),
 ];
 
@@ -179,6 +179,20 @@ pub struct AiView {
     pub available_models: Vec<String>,
     pub models_loading: bool,
     pub scroll: i32,
+}
+
+/// Millilitres for a `[ACTION:WATER:..]` argument. Replies speak glasses
+/// ("1", "0.5", "2"); an explicit "ml" suffix, or a bare number too big to be
+/// a glass count (older prompts said ml), is taken as millilitres.
+fn water_arg_ml(arg: &str) -> u32 {
+    let a = arg.trim().to_ascii_lowercase();
+    let ml = if let Some(n) = a.strip_suffix("ml") {
+        n.trim().parse::<f32>().unwrap_or(teardrop_core::GLASS_ML as f32)
+    } else {
+        let n = a.trim_end_matches("glasses").trim_end_matches("glass").trim().parse::<f32>().unwrap_or(1.0);
+        if n > 24.0 { n } else { n * teardrop_core::GLASS_ML as f32 }
+    };
+    (ml.round() as u32).clamp(50, 2000)
 }
 
 /// Concrete directive parsed from an assistant reply (`[ACTION:...]`).
@@ -815,8 +829,7 @@ pub fn extract_directives(raw: &str) -> (String, Vec<ParsedDirective>) {
                     "DONE_TASK" if !arg.is_empty() => directives.push(ParsedDirective::DoneTask(arg.to_string())),
                     "DEL_TASK" if !arg.is_empty() => directives.push(ParsedDirective::DelTask(arg.to_string())),
                     "WATER" => {
-                        let ml = arg.trim_end_matches("ml").trim().parse::<u32>().unwrap_or(250).clamp(50, 2000);
-                        directives.push(ParsedDirective::LogWater(ml));
+                        directives.push(ParsedDirective::LogWater(water_arg_ml(arg)));
                     }
                     "FOCUS" if !arg.is_empty() => directives.push(ParsedDirective::Focus(arg.to_ascii_lowercase())),
                     "REMEMBER" if !arg.is_empty() => directives.push(ParsedDirective::Remember(arg.to_string())),
@@ -850,7 +863,7 @@ pub fn build_system_prompt(day_context: Option<&str>, memories: &[String]) -> St
          - Add a task: [ACTION:ADD_TASK:Task title]\n\
          - Complete a task: [ACTION:DONE_TASK:Task title]\n\
          - Delete a task: [ACTION:DEL_TASK:Task title]\n\
-         - Log water intake (in ml): [ACTION:WATER:250]\n\
+         - Log water intake (in glasses; 1 glass = 250 ml): [ACTION:WATER:1]\n\
          - Control Pomodoro focus timer: [ACTION:FOCUS:start] or [ACTION:FOCUS:pause] or [ACTION:FOCUS:reset]\n\
          - Save a durable user preference, habit, or personal fact for future chats: [ACTION:REMEMBER:concise fact]\n\
          - Jot something down in the Notes page: [ACTION:NOTE:one-line note, no newlines]\n\
@@ -2211,6 +2224,20 @@ mod tests {
                 ParsedDirective::Note("Call Ana about the prototype".into()),
             ]
         );
+    }
+
+    #[test]
+    fn water_directive_speaks_glasses_but_still_accepts_ml() {
+        assert_eq!(water_arg_ml("1"), 250);
+        assert_eq!(water_arg_ml("2"), 500);
+        assert_eq!(water_arg_ml("0.5"), 125);
+        assert_eq!(water_arg_ml("1 glass"), 250);
+        assert_eq!(water_arg_ml("3 glasses"), 750);
+        assert_eq!(water_arg_ml("250ml"), 250);
+        assert_eq!(water_arg_ml("500 ml"), 500);
+        assert_eq!(water_arg_ml("250"), 250, "a bare ml-sized number is millilitres");
+        assert_eq!(water_arg_ml("nonsense"), 250, "falls back to one glass");
+        assert_eq!(water_arg_ml("99999"), 2000, "clamped");
     }
 
     #[test]

@@ -155,18 +155,6 @@ pub fn seek_permille(r: Rect, x: f32) -> u16 {
     (f * 1000.0).round() as u16
 }
 
-fn grouped(n: u32) -> String {
-    let s = n.to_string();
-    let mut out = String::new();
-    for (i, ch) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i) % 3 == 0 {
-            out.push(',');
-        }
-        out.push(ch);
-    }
-    out
-}
-
 // -------------------------------------------------------------------- music
 
 fn music(c: &mut Ctx, a: Rect) {
@@ -607,16 +595,16 @@ fn water(c: &mut Ctx, a: Rect) {
     c.s.ring(ctr.0, ctr.1, r, 2.5, 0.0, 1.0, Color::rgba(255, 255, 255, 0.16));
     let pct = (vm.water.progress(day) * 100.0).round() as u32;
     c.text(format!("{pct}%"), Rect::new(ctr.0 - 50.0, ctr.1 - 22.0, 100.0, 32.0), 24.0, Weight::Semibold, WHITE, Align::Center);
-    c.text(format!("{} / {} ml", grouped(today), grouped(goal)), Rect::new(ctr.0 - 60.0, ctr.1 + 10.0, 120.0, 16.0), 10.5, Weight::Medium, WHITE.fade(0.85), Align::Center);
+    c.text(format!("{} / {}", teardrop_core::fmt_glasses(today), teardrop_core::glasses_label(goal)), Rect::new(ctr.0 - 60.0, ctr.1 + 10.0, 120.0, 16.0), 10.5, Weight::Medium, WHITE.fade(0.85), Align::Center);
 
     let x = a.x + 148.0;
     let w = a.right() - x;
-    let sub = if today >= goal { "Goal reached".to_string() } else { format!("{} ml to go", grouped(goal - today)) };
+    let sub = if today >= goal { "Goal reached".to_string() } else { format!("{} to go", teardrop_core::glasses_label(goal - today)) };
     c.section_title(Rect::new(x, a.y + 4.0, w, 40.0), "Hydration", &sub);
 
     let y = a.y + 50.0;
-    for (i, ml) in [150u32, 250, 500].iter().enumerate() {
-        c.pill(Rect::new(x + i as f32 * 60.0, y, 54.0, 32.0), Action::WaterAdd(*ml), &format!("+{ml}"), if *ml == 250 { Some(acc) } else { None }, 12.5);
+    for (i, ml) in [125u32, 250, 500].iter().enumerate() {
+        c.pill(Rect::new(x + i as f32 * 60.0, y, 54.0, 32.0), Action::WaterAdd(*ml), &teardrop_core::add_label(*ml), if *ml == 250 { Some(acc) } else { None }, 12.5);
     }
     c.icon_btn(Rect::new(x + 184.0, y, 28.0, 32.0), Action::WaterUndo, Icon::Undo, 13.0, TEXT_2);
 
@@ -2405,9 +2393,9 @@ fn settings(c: &mut Ctx, a: Rect) {
 
     // Water Goal Stepper
     let gy = if look == IdleLook::Eyes { ey + 64.0 } else { ey + 8.0 };
-    c.text("Water goal", Rect::new(rx, gy + 2.0, 75.0, 24.0), 12.0, Weight::Regular, TEXT, Align::Left);
+    c.text("Daily water", Rect::new(rx, gy + 2.0, 75.0, 24.0), 12.0, Weight::Regular, TEXT, Align::Left);
     c.icon_btn(Rect::new(rx + col_w - 110.0, gy, 24.0, 24.0), Action::GoalStep(-1), Icon::Minus, 11.0, TEXT_2);
-    c.text(format!("{:.2} L", c.vm.water.goal_ml as f32 / 1000.0), Rect::new(rx + col_w - 82.0, gy + 2.0, 52.0, 24.0), 12.0, Weight::Semibold, TEXT, Align::Center);
+    c.text(teardrop_core::glasses_label(c.vm.water.goal_ml), Rect::new(rx + col_w - 84.0, gy + 2.0, 56.0, 24.0), 11.5, Weight::Semibold, TEXT, Align::Center);
     c.icon_btn(Rect::new(rx + col_w - 26.0, gy, 24.0, 24.0), Action::GoalStep(1), Icon::Plus, 11.0, TEXT_2);
 
     // Pages on the island: each icon chips the page in/out of the nav and cycle.
@@ -2489,14 +2477,6 @@ mod tests {
         assert_eq!(days_in_month(2026, 2), 28);
         assert_eq!(days_in_month(2028, 2), 29);
         assert_eq!(days_in_month(2026, 12), 31);
-    }
-
-    #[test]
-    fn grouped_numbers() {
-        assert_eq!(grouped(0), "0");
-        assert_eq!(grouped(950), "950");
-        assert_eq!(grouped(1250), "1,250");
-        assert_eq!(grouped(12500), "12,500");
     }
 
     #[test]

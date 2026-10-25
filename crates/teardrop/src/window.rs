@@ -772,7 +772,7 @@ mod inner {
             total
         });
         if open {
-            toast(&format!("+{ml} ml \u{00b7} {total} today"));
+            toast(&format!("+{} \u{00b7} {} today", teardrop_core::glasses_label(ml), teardrop_core::glasses_label(total)));
         }
         let goal = VIEW.with(|v| v.borrow().water.goal_ml);
         let reached = total >= goal && total.saturating_sub(ml) < goal;
@@ -1201,7 +1201,7 @@ mod inner {
                 VIEW.with(|v| {
                     let mut vm = v.borrow_mut();
                     let day = vm.day();
-                    vm.water.sub(day, 250);
+                    vm.water.sub(day, teardrop_core::GLASS_ML);
                 });
                 with_eyes(|e| e.react(React::Oops));
             }
@@ -1423,7 +1423,7 @@ mod inner {
             Action::GoalStep(d) => {
                 VIEW.with(|v| {
                     let mut vm = v.borrow_mut();
-                    vm.water.goal_ml = (vm.water.goal_ml as i32 + 250 * d as i32).clamp(500, 6000) as u32;
+                    vm.water.goal_ml = (vm.water.goal_ml as i32 + teardrop_core::GLASS_ML as i32 * d as i32).clamp(2 * teardrop_core::GLASS_ML as i32, 24 * teardrop_core::GLASS_ML as i32) as u32;
                 });
                 with_eyes(|e| e.react(if d > 0 { React::Nod } else { React::Shake }));
             }
@@ -1966,7 +1966,7 @@ mod inner {
                                 vm.water.add(day, ml);
                                 vm.water.snooze(now);
                                 badges.push(AiActionBadge {
-                                    label: format!("Logged +{ml} ml water"),
+                                    label: format!("Logged +{} of water", teardrop_core::glasses_label(ml)),
                                     undo: UndoOp::SubtractWater(ml),
                                     undone: false,
                                 });

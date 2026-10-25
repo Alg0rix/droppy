@@ -34,4 +34,4 @@ pub use shelf::{Shelf, ShelfItem};
 pub use spring::Spring;
 pub use system::SystemSnapshot;
 pub use tasks::{Task, TaskList};
-pub use water::WaterLog;
+pub use water::{add_label, fmt_glasses, glasses_label, WaterLog, GLASS_ML};

@@ -146,7 +146,7 @@ pub fn run(dir: &str) -> i32 {
                 Ev::Click(Action::WaterAdd(ml)) => {
                     let day = vm.day();
                     vm.water.add(day, ml);
-                    ui.toast(&format!("+{ml} ml"), now_ms);
+                    ui.toast(&format!("+{}", teardrop_core::glasses_label(ml)), now_ms);
                     ui.set_hover(None);
                 }
                 Ev::Click(_) => {}

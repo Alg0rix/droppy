@@ -679,8 +679,8 @@ fn glance_water(c: &mut Ctx, r: Rect, cy: f32) {
     let today = vm.water.today(day);
     let goal = vm.water.goal_ml.max(1);
     icons::draw(&mut c.s, Icon::Drop, r.x + 28.0, cy, 19.0, acc);
-    c.text(format!("{} ml", today), Rect::new(r.x + 46.0, cy - 15.0, 130.0, 24.0), 19.0, Weight::Bold, TEXT, Align::Left);
-    c.text(format!("of {goal} ml"), Rect::new(r.x + 46.0, cy + 9.0, 130.0, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+    c.text(teardrop_core::glasses_label(today), Rect::new(r.x + 46.0, cy - 15.0, 130.0, 24.0), 19.0, Weight::Bold, TEXT, Align::Left);
+    c.text(format!("of {}", teardrop_core::glasses_label(goal)), Rect::new(r.x + 46.0, cy + 9.0, 130.0, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
     let bw = r.w - 300.0;
     let bar = Rect::new(r.x + 176.0, cy - 3.0, bw, 6.0);
     c.s.rect(bar, 3.0, Color::rgba(255, 255, 255, 0.12));
@@ -691,7 +691,7 @@ fn glance_water(c: &mut Ctx, r: Rect, cy: f32) {
     for (i, ml) in [250u32, 500].iter().enumerate() {
         let pill = Rect::new(r.right() - 122.0 + i as f32 * 62.0, cy - 13.0, 56.0, 26.0);
         c.s.rect(pill, 13.0, if *ml == 250 { acc } else { SURFACE_HOVER });
-        c.text(format!("+{ml}"), pill, 11.5, Weight::Semibold, if *ml == 250 { Color::rgb(8, 24, 32) } else { TEXT }, Align::Center);
+        c.text(teardrop_core::add_label(*ml), pill, 11.5, Weight::Semibold, if *ml == 250 { Color::rgb(8, 24, 32) } else { TEXT }, Align::Center);
         c.hit(pill, Action::WaterAdd(*ml));
     }
 }
@@ -924,7 +924,7 @@ fn hud(c: &mut Ctx, r: Rect, h: &teardrop_core::Hud, cy: f32) {
                 c.text("Time to hydrate", Rect::new(r.x + 42.0, cy - 10.0, r.w - 42.0 - 92.0, 20.0), 13.0, Weight::Medium, TEXT, Align::Left);
                 let pill = Rect::new(r.right() - 82.0, cy - 12.0, 70.0, 24.0);
                 c.s.rect(pill, 12.0, acc);
-                c.text("+250 ml", pill, 11.5, Weight::Semibold, Color::rgb(8, 24, 32), Align::Center);
+                c.text("+1 glass", pill, 11.5, Weight::Semibold, Color::rgb(8, 24, 32), Align::Center);
             } else {
                 c.text(h.detail.clone(), Rect::new(r.x + 42.0, cy - 10.0, r.w - 42.0 - 14.0, 20.0), 13.0, Weight::Medium, TEXT, Align::Left);
             }

@@ -3,6 +3,36 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// One glass, in ml. Water is stored in ml (so saved logs and reminders keep
+/// working) but shown and logged in glasses; 8 glasses = the 2 L default goal.
+pub const GLASS_ML: u32 = 250;
+
+/// `ml` as a short glass count: "5", "2.5", "0.6".
+pub fn fmt_glasses(ml: u32) -> String {
+    let g = ml as f32 / GLASS_ML as f32;
+    if (g - g.round()).abs() < 0.05 {
+        format!("{}", g.round() as u32)
+    } else {
+        format!("{g:.1}")
+    }
+}
+
+/// "1 glass" / "5 glasses" / "0.5 glasses".
+pub fn glasses_label(ml: u32) -> String {
+    let n = fmt_glasses(ml);
+    let word = if n == "1" { "glass" } else { "glasses" };
+    format!("{n} {word}")
+}
+
+/// Quick-add button text: "+\u{00bd}", "+1", "+2".
+pub fn add_label(ml: u32) -> String {
+    if ml == GLASS_ML / 2 {
+        "+\u{00bd}".to_string()
+    } else {
+        format!("+{}", fmt_glasses(ml))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WaterLog {
     pub goal_ml: u32,
@@ -82,6 +112,22 @@ mod tests {
         assert!(!w.reminder_due(now + chrono::Duration::minutes(61), w.goal_ml), "goal met -> quiet");
         w.reminders_enabled = false;
         assert!(!w.reminder_due(now + chrono::Duration::minutes(61), 0));
+    }
+
+    #[test]
+    fn glasses_read_naturally() {
+        assert_eq!(GLASS_ML * 8, WaterLog::default().goal_ml, "8 glasses is the default goal");
+        assert_eq!(fmt_glasses(0), "0");
+        assert_eq!(fmt_glasses(250), "1");
+        assert_eq!(fmt_glasses(1250), "5");
+        assert_eq!(fmt_glasses(625), "2.5");
+        assert_eq!(fmt_glasses(150), "0.6", "old 150 ml logs still show sensibly");
+        assert_eq!(glasses_label(250), "1 glass");
+        assert_eq!(glasses_label(500), "2 glasses");
+        assert_eq!(glasses_label(2000), "8 glasses");
+        assert_eq!(add_label(125), "+\u{00bd}");
+        assert_eq!(add_label(250), "+1");
+        assert_eq!(add_label(500), "+2");
     }
 
     #[test]

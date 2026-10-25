@@ -401,13 +401,13 @@ fn shots() -> Vec<Shot> {
                 vm.ai.messages = vec![
                     ChatMessage {
                         role: Role::User,
-                        text: "Add a task 'Deep work block' and log 250 ml of water.".into(),
+                        text: "Add a task 'Deep work block' and log a glass of water.".into(),
                         actions: Vec::new(),
                         timestamp: 0,
                     },
                     ChatMessage {
                         role: Role::Assistant,
-                        text: "All set! Added your deep work block and logged 250 ml of water \u{2014} you're at 1,500 / 2,000 ml today.".into(),
+                        text: "All set! Added your deep work block and logged a glass of water \u{2014} you're at 6 / 8 glasses today.".into(),
                         actions: vec![
                             AiActionBadge {
                                 label: "Added task: Deep work block".into(),
@@ -415,7 +415,7 @@ fn shots() -> Vec<Shot> {
                                 undone: false,
                             },
                             AiActionBadge {
-                                label: "Logged +250 ml water".into(),
+                                label: "Logged +1 glass of water".into(),
                                 undo: UndoOp::SubtractWater(250),
                                 undone: false,
                             },

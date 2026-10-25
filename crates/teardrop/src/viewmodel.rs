@@ -281,7 +281,7 @@ impl ViewModel {
         // Water
         let day = self.day();
         let today_ml = self.water.today(day);
-        lines.push(format!("Water today: {} / {} ml", today_ml, self.water.goal_ml));
+        lines.push(format!("Water today: {} / {} (1 glass = {} ml)", teardrop_core::fmt_glasses(today_ml), teardrop_core::glasses_label(self.water.goal_ml), teardrop_core::GLASS_ML));
 
         // Pomodoro
         let pomo_state = match self.pomo.phase {
@@ -399,15 +399,15 @@ pub fn hud_brightness(pct: u8, now_ms: u64) -> Hud {
     h
 }
 
-/// Reminder with a one-click "+250 ml" action.
+/// Reminder with a one-click "+1 glass" action.
 pub fn hud_water_due(now_ms: u64) -> Hud {
     let mut h = Hud::transient(HudKind::Water, "Water", "Time to hydrate", now_ms, 9000);
-    h.action_label = Some("+250 ml".to_string());
+    h.action_label = Some("+1 glass".to_string());
     h
 }
 
 pub fn hud_water_logged(ml: u32, total_ml: u32, now_ms: u64) -> Hud {
-    Hud::transient(HudKind::Water, "Water", &format!("+{ml} ml \u{00b7} {total_ml} ml today"), now_ms, 3200)
+    Hud::transient(HudKind::Water, "Water", &format!("+{} \u{00b7} {} today", teardrop_core::glasses_label(ml), teardrop_core::glasses_label(total_ml)), now_ms, 3200)
 }
 
 /// Move a (month, day) birthday by whole days, wrapping through the year
@@ -508,6 +508,6 @@ mod tests {
         assert!(vm.clipboard.items().len() >= 3);
         let summary = vm.day_context_summary();
         assert!(summary.contains("Ship the island redesign"));
-        assert!(summary.contains("1250 / 2000 ml"));
+        assert!(summary.contains("5 / 8 glasses"), "{summary}");
     }
 }
