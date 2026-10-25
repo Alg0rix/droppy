@@ -46,7 +46,7 @@ mod inner {
     use windows::Win32::UI::HiDpi::{GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         keybd_event, RegisterHotKey, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, UnregisterHotKey, KEYBD_EVENT_FLAGS,
-        KEYEVENTF_KEYUP, MOD_SHIFT, MOD_WIN, TME_LEAVE, TRACKMOUSEEVENT, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE,
+        KEYEVENTF_KEYUP, MOD_ALT, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN, TME_LEAVE, TRACKMOUSEEVENT, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE,
         VK_MEDIA_PREV_TRACK,
     };
     use windows::Win32::UI::Shell::{
@@ -61,6 +61,8 @@ mod inner {
     const ID_SETTINGS: usize = 1002;
     const HOTKEY_ID: i32 = 1;
     const HOTKEY_VK: u32 = 0x54; // T
+    /// Alt+Space: open straight into the launcher search.
+    const SEARCH_HOTKEY_ID: i32 = 2;
     /// Upper bound for one note's text (characters, not bytes).
     const NOTE_MAX_CHARS: usize = 4000;
     const CF_UNICODETEXT_U32: u32 = 13;
@@ -393,6 +395,29 @@ mod inner {
             let _ = SetForegroundWindow(hwnd);
             let _ = SetFocus(hwnd);
         }
+    }
+
+    /// Jump to the Windows page with a fresh, focused launcher search field.
+    fn focus_win_search(hwnd: HWND) {
+        if VIEW.with(|v| v.borrow().page) == Page::Notes {
+            finish_note_edit();
+        }
+        VIEW.with(|v| {
+            let mut vm = v.borrow_mut();
+            if vm.page != Page::Settings {
+                LAST_TAB.set(vm.page);
+            }
+            vm.page = Page::Windows;
+        });
+        UI.with(|u| {
+            let mut ui = u.borrow_mut();
+            ui.input = Some(crate::ui::textedit::TextField::default());
+            ui.note_search = None;
+            ui.note_edit = None;
+            ui.win_sel = 0;
+        });
+        activate(hwnd);
+        wake(hwnd);
     }
 
     fn open_island(hwnd: HWND, pinned: bool) {
@@ -847,6 +872,7 @@ mod inner {
                     let mut ui = u.borrow_mut();
                     if ui.input.is_none() {
                         ui.input = Some(crate::ui::textedit::TextField::default());
+                        ui.win_sel = 0;
                     }
                 });
                 activate(hwnd);
@@ -854,8 +880,8 @@ mod inner {
             }
             Action::WinLaunch(i) => {
                 let hits = crate::launcher::hits(&UI.with(|u| u.borrow().input.as_ref().map(|f| f.as_str().to_string()).unwrap_or_default()));
-                if let Some((_, path)) = hits.get(i as usize) {
-                    crate::launcher::launch(path);
+                if let Some(h) = hits.get(i as usize) {
+                    crate::launcher::launch(&h.path);
                     UI.with(|u| u.borrow_mut().input = None);
                 }
                 save = false;
@@ -2433,6 +2459,9 @@ mod inner {
             if UI.with(|u| u.borrow().input.is_some()) {
                 commit_note_input();
             }
+        } else if page == Page::Windows {
+            // New query text: selection restarts at the top hit.
+            UI.with(|u| u.borrow_mut().win_sel = 0);
         } else if page == Page::Ai {
             let prov = SETTINGS.with(|s| s.borrow().ai_provider);
             if crate::ai::snapshot(prov).focus_field == crate::ai::AiFocusField::Prompt {
@@ -2460,6 +2489,10 @@ mod inner {
                     return;
                 } else if page == Page::Ai {
                     commit_ai_field(true);
+                } else if page == Page::Windows {
+                    // Launch the top search hit.
+                    perform(hwnd, Action::WinLaunch(UI.with(|u| u.borrow().win_sel) as u16));
+                    return;
                 } else if editing_note {
                     edit_field(page, |f| f.insert("\n", cap));
                     after_edit(hwnd, page);
@@ -2565,6 +2598,19 @@ mod inner {
                 }
                 0x27 => {
                     edit_field(page, |f| f.move_h(1, ctrl, shift));
+                    false
+                }
+                0x26 | 0x28 if page == Page::Windows => {
+                    // Arrows walk the launcher results (wrapping) instead of the caret.
+                    let q = UI.with(|u| u.borrow().input.as_ref().map(|f| f.as_str().to_string()).unwrap_or_default());
+                    let n = crate::launcher::hits(&q).len();
+                    if n > 0 {
+                        UI.with(|u| {
+                            let mut ui = u.borrow_mut();
+                            let cur = ui.win_sel.min(n - 1);
+                            ui.win_sel = if vk == 0x26 { (cur + n - 1) % n } else { (cur + 1) % n };
+                        });
+                    }
                     false
                 }
                 0x26 => {
@@ -2899,6 +2945,7 @@ mod inner {
                 let _ = AddClipboardFormatListener(hwnd);
                 let _ = SetTimer(hwnd, T_SLOW, 1000, None);
                 let _ = RegisterHotKey(hwnd, HOTKEY_ID, MOD_WIN | MOD_SHIFT, HOTKEY_VK);
+                let _ = RegisterHotKey(hwnd, SEARCH_HOTKEY_ID, MOD_ALT | MOD_NOREPEAT, 0x20);
                 add_tray(hwnd);
                 // Eye food: lock/unlock, apps asking for attention, crashes, downloads.
                 let _ = WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);
@@ -3082,7 +3129,17 @@ mod inner {
                 DefWindowProcW(hwnd, msg, wp, lp)
             }
             WM_HOTKEY => {
-                if is_open() {
+                if wp.0 as i32 == SEARCH_HOTKEY_ID {
+                    let searching = is_open()
+                        && VIEW.with(|v| v.borrow().page) == Page::Windows
+                        && UI.with(|u| u.borrow().input.is_some());
+                    if searching {
+                        close_island(hwnd);
+                    } else {
+                        open_island(hwnd, true);
+                        focus_win_search(hwnd);
+                    }
+                } else if is_open() {
                     close_island(hwnd);
                 } else {
                     open_island(hwnd, true);
@@ -3169,6 +3226,7 @@ mod inner {
                 save_all();
                 let _ = RemoveClipboardFormatListener(hwnd);
                 let _ = UnregisterHotKey(hwnd, HOTKEY_ID);
+                let _ = UnregisterHotKey(hwnd, SEARCH_HOTKEY_ID);
                 let _ = WTSUnRegisterSessionNotification(hwnd);
                 let _ = DeregisterShellHookWindow(hwnd);
                 remove_tray(hwnd);

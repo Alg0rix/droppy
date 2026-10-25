@@ -295,6 +295,8 @@ pub struct UiState {
     /// Task / note / AI text being typed (None = field not focused).
     /// Task text being typed (None = field not focused).
     pub input: Option<super::textedit::TextField>,
+    /// Highlighted row in the Windows-page launcher results (arrow keys move it).
+    pub win_sel: usize,
     /// Id of the note the input buffer belongs to (`None` while typing a brand
     /// new note that does not exist yet, or when `input` is not a note).
     pub note_edit: Option<String>,
@@ -359,6 +361,7 @@ impl UiState {
             cal_selected_day: None,
             cal_selected_event: None,
             input: None,
+            win_sel: 0,
             note_edit: None,
             note_search: None,
             note_date_filter: NoteDateFilter::All,

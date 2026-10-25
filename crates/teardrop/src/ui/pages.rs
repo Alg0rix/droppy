@@ -46,32 +46,43 @@ fn windows_page(c: &mut Ctx, a: Rect) {
             c.s.text_edit(f.as_str().to_string(), Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 12.0, Weight::Medium, TEXT, ed);
         }
         Some(_) => {
-            c.text("Search apps and windows…", Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 11.5, Weight::Regular, TEXT_3, Align::Left);
+            c.text("Search apps, files, and windows…", Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 11.5, Weight::Regular, TEXT_3, Align::Left);
             if (c.ui.clock_s * 1.8) % 2.0 < 1.0 {
                 c.s.line(field.x + 12.0, field.y + 6.0, field.x + 12.0, field.y + field.h - 6.0, 1.5, acc);
             }
         }
         None => {
-            c.text("Search apps and windows…", Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 11.5, Weight::Regular, TEXT_3, Align::Left);
+            c.text("Search apps, files, and windows…", Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 11.5, Weight::Regular, TEXT_3, Align::Left);
         }
     }
     c.hit(field, Action::WinSearch);
     let mut y = field.bottom() + 8.0;
     if !q.is_empty() {
-        for (i, (name, _)) in crate::launcher::hits(&q).iter().enumerate() {
+        let hits = crate::launcher::hits(&q);
+        let sel = c.ui.win_sel.min(hits.len().saturating_sub(1));
+        // Scroll just enough to keep the keyboard selection on screen.
+        let fit = (((a.bottom() - 26.0 - y) / 25.0).floor().max(1.0)) as usize + 1;
+        let first = (sel + 1).saturating_sub(fit);
+        for (i, h) in hits.iter().enumerate().skip(first) {
             if y > a.bottom() - 26.0 { break; }
             let row = Rect::new(a.x + 8.0, y, a.w - 16.0, 24.0);
-            if c.hov(Action::WinLaunch(i as u16)) > 0.01 {
+            if c.ui.input.is_some() && i == sel {
+                c.s.rect(row, 9.0, acc.fade(0.22));
+            } else if c.hov(Action::WinLaunch(i as u16)) > 0.01 {
                 c.s.rect(row, 9.0, SURFACE_HOVER);
             }
             let tile = Rect::new(row.x + 4.0, row.y + 3.0, 18.0, 18.0);
-            c.s.rect(tile, 5.0, acc.fade(0.35));
-            // Letter tile until real icon extraction lands (HICON -> bitmap
-            // is a whole pipeline the vector scene doesn't have yet).
-            let initial = name.chars().next().unwrap_or('?').to_uppercase().collect::<String>();
-            c.text(initial, tile, 10.5, Weight::Semibold, TEXT, Align::Center);
-            c.text(name.clone(), Rect::new(row.x + 30.0, row.y + 3.0, row.w - 80.0, 17.0), 11.5, Weight::Medium, TEXT, Align::Left);
-            c.text("app", Rect::new(row.right() - 40.0, row.y + 4.0, 34.0, 15.0), 9.5, Weight::Medium, TEXT_3, Align::Right);
+            match crate::appicons::icon_for(&h.path) {
+                Some(img) => c.s.image(tile, &img),
+                // Letter tile fallback when the shell yields no image.
+                None => {
+                    c.s.rect(tile, 5.0, acc.fade(0.35));
+                    let initial = h.name.chars().next().unwrap_or('?').to_uppercase().collect::<String>();
+                    c.text(initial, tile, 10.5, Weight::Semibold, TEXT, Align::Center);
+                }
+            }
+            c.text(h.name.clone(), Rect::new(row.x + 30.0, row.y + 3.0, row.w - 120.0, 17.0), 11.5, Weight::Medium, TEXT, Align::Left);
+            c.text(h.tag.clone(), Rect::new(row.right() - 84.0, row.y + 4.0, 80.0, 15.0), 9.5, Weight::Medium, TEXT_3, Align::Right);
             c.hit(row, Action::WinLaunch(i as u16));
             y += 25.0;
         }
@@ -93,7 +104,11 @@ fn windows_page(c: &mut Ctx, a: Rect) {
         if w.exe != last_exe {
             last_exe = w.exe.clone();
             let n = filtered.iter().filter(|(_, x)| x.exe == w.exe).count();
-            c.s.rect(Rect::new(a.x + 8.0, y + 3.0, 16.0, 16.0), 5.0, acc.fade(0.2));
+            let tile = Rect::new(a.x + 8.0, y + 3.0, 16.0, 16.0);
+            match crate::appicons::icon_for(&w.path) {
+                Some(img) => c.s.image(tile, &img),
+                None => c.s.rect(tile, 5.0, acc.fade(0.2)),
+            }
             c.text(w.app.clone(), Rect::new(a.x + 30.0, y, a.w - 130.0, 22.0), 12.5, Weight::Semibold, TEXT, Align::Left);
             c.text(if n == 1 { "1 window".to_string() } else { format!("{} windows", n) }, Rect::new(a.right() - 120.0, y + 4.0, 112.0, 15.0), 10.0, Weight::Medium, TEXT_3, Align::Right);
             y += 24.0;

@@ -15,6 +15,8 @@ pub struct WindowInfo {
     pub hwnd: isize,
     /// Executable file name, lower-cased (e.g. `code.exe`).
     pub exe: String,
+    /// Full image path, for extracting the app's icon.
+    pub path: String,
     /// Display name of the owning app (exe minus extension, capitalized).
     pub app: String,
     pub title: String,
@@ -53,17 +55,18 @@ unsafe extern "system" fn enum_proc(hwnd: HWND, lp: LPARAM) -> BOOL {
         }
         let mut pid = 0u32;
         let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
-        let exe = exe_of(pid).unwrap_or_default();
+        let (exe, path) = exe_of(pid).unwrap_or_default();
         if exe.is_empty() {
             return BOOL(1);
         }
         let app = app_name(&exe);
-        list.push(WindowInfo { hwnd: hwnd.0 as isize, exe, app, title });
+        list.push(WindowInfo { hwnd: hwnd.0 as isize, exe, path, app, title });
         BOOL(1)
     }
 }
 
-fn exe_of(pid: u32) -> Option<String> {
+/// (lower-cased file name, full path) of the process image.
+fn exe_of(pid: u32) -> Option<(String, String)> {
     unsafe {
         let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
         let mut buf = [0u16; MAX_PATH as usize];
@@ -72,8 +75,7 @@ fn exe_of(pid: u32) -> Option<String> {
             .ok()
             .map(|_| String::from_utf16_lossy(&buf[..n as usize]));
         let _ = windows::Win32::Foundation::CloseHandle(h);
-        // Keep just the file name.
-        name.and_then(|p| p.rsplit(['\\', '/']).next().map(|s| s.to_lowercase()))
+        name.and_then(|p| p.rsplit(['\\', '/']).next().map(|s| (s.to_lowercase(), p.clone())))
     }
 }
 

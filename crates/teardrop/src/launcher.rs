@@ -1,10 +1,10 @@
 //! Installed-app launcher index for the Windows page search field.
 //!
-//! Windows Search via ISearchQueryHelper only emits SQL for OLE DB, so the
-//! v1 index is the Start Menu itself: every .lnk under both Start Menu
-//! roots, scanned once lazily. Searching filters by substring.
+//! App hits come from the Start Menu scan (every .lnk under both roots).
+//! On top of those, `winsearch` layers real Windows Search index hits —
+//! files, folders, shell items — the same catalog Start Menu queries.
 
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 /// (display name, .lnk path) — Start Menu order, stable across searches.
 static APPS: OnceLock<Vec<(String, String)>> = OnceLock::new();
@@ -41,13 +41,64 @@ pub fn installed_apps() -> &'static [(String, String)] {
     })
 }
 
-/// App hits for `query` — name contains it, case-insensitive.
-pub fn hits(query: &str) -> Vec<(String, String)> {
+/// One launcher hit: display name, a path to open (lnk, file, or shell
+/// parsing path), and the right-side tag ("app" or the file's type text).
+#[derive(Clone)]
+pub struct Hit {
+    pub name: String,
+    pub path: String,
+    pub tag: String,
+}
+
+/// (query, hits) — `hits()` runs every layout frame, so the result is
+/// memoized per query and only recomputed when the text changes.
+static LAST: OnceLock<Mutex<(String, Vec<Hit>)>> = OnceLock::new();
+
+/// Hits for `query`: Start Menu apps whose name matches, then real
+/// Windows Search rows (deduped). Index order is rank order.
+pub fn hits(query: &str) -> Vec<Hit> {
     let q = query.trim().to_lowercase();
     if q.is_empty() {
         return Vec::new();
     }
-    installed_apps().iter().filter(|(n, _)| n.to_lowercase().contains(&q)).take(6).cloned().collect()
+    let last = LAST.get_or_init(|| Mutex::new((String::new(), Vec::new())));
+    let mut g = last.lock().unwrap();
+    if g.0 == q {
+        return g.1.clone();
+    }
+    let out = compute(&q);
+    *g = (q, out.clone());
+    out
+}
+
+fn compute(q: &str) -> Vec<Hit> {
+    let mut out: Vec<Hit> = Vec::new();
+    for (n, p) in installed_apps().iter().filter(|(n, _)| n.to_lowercase().contains(q)) {
+        out.push(Hit { name: n.clone(), path: p.clone(), tag: "app".to_string() });
+        if out.len() == 6 {
+            break;
+        }
+    }
+    for r in crate::winsearch::search(q, 25) {
+        if r.name.is_empty() || r.path.is_empty() {
+            continue;
+        }
+        if out.iter().any(|h| h.path.eq_ignore_ascii_case(&r.path) || h.name.eq_ignore_ascii_case(&r.name)) {
+            continue;
+        }
+        let tag = if r.path.to_lowercase().ends_with(".lnk") {
+            "app".to_string()
+        } else if r.kind.is_empty() {
+            "file".to_string()
+        } else {
+            r.kind.to_lowercase()
+        };
+        out.push(Hit { name: r.name, path: r.path, tag });
+        if out.len() == 12 {
+            break;
+        }
+    }
+    out
 }
 
 /// Open a .lnk shortcut via the shell (no window focus needed on us).

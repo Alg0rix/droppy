@@ -44,6 +44,10 @@ mod winreg;
 mod mixer;
 #[cfg(windows)]
 mod launcher;
+#[cfg(windows)]
+mod appicons;
+#[cfg(windows)]
+mod winsearch;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

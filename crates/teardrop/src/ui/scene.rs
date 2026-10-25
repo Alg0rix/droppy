@@ -132,6 +132,24 @@ pub struct TextEdit {
     pub sel_color: Color,
 }
 
+/// Raster image for [`Cmd::Image`]: premultiplied BGRA, top-down rows.
+/// `id` is a stable key so painters can cache the uploaded texture
+/// across frames instead of re-creating it per draw.
+#[derive(Debug)]
+pub struct Image {
+    pub id: u64,
+    pub w: u32,
+    pub h: u32,
+    pub bgra: Vec<u8>,
+}
+
+impl Image {
+    pub fn new(w: u32, h: u32, bgra: Vec<u8>) -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        Self { id: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed), w, h, bgra }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Cmd {
     /// The island silhouette: soft shadow, body fill, 1px rim light.
@@ -157,6 +175,8 @@ pub enum Cmd {
         /// Editing overlay: caret + selection, measured by the renderer.
         edit: Option<TextEdit>,
     },
+    /// Raster image stretched to `r`; `img` holds premultiplied BGRA pixels.
+    Image { r: Rect, img: std::sync::Arc<Image>, opacity: f32 },
     Clip(Rect),
     PopClip,
 }
@@ -287,6 +307,15 @@ impl Scene {
         }
         let (r, base, lit) = (self.r(r), self.c(base), self.c(lit));
         self.cmds.push(Cmd::Text { s: s.into(), r, size, weight, color: base, align: Align::Left, karaoke: Some((frac.clamp(0.0, 1.0), lit)), edit: None });
+    }
+
+    /// Draw `img` (premultiplied BGRA) stretched into `r`.
+    pub fn image(&mut self, r: Rect, img: &std::sync::Arc<Image>) {
+        if self.alpha <= 0.003 {
+            return;
+        }
+        let r = self.r(r);
+        self.cmds.push(Cmd::Image { r, img: img.clone(), opacity: self.alpha });
     }
 
     pub fn clip(&mut self, r: Rect) {

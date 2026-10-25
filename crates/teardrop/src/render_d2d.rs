@@ -17,11 +17,12 @@ pub mod d2d {
     use windows::Win32::Graphics::Direct2D::Common::{
         D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_ALPHA_MODE_UNKNOWN, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
         D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D1_GRADIENT_STOP,
-        D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F,
+        D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F, D2D_SIZE_U,
     };
     use windows::Win32::Graphics::Direct2D::{
-        D2D1CreateFactory, ID2D1Brush, ID2D1DCRenderTarget, ID2D1Factory, ID2D1PathGeometry, ID2D1RenderTarget,
-        ID2D1SolidColorBrush, ID2D1StrokeStyle, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_CAP_STYLE_ROUND,
+        D2D1CreateFactory, ID2D1Bitmap, ID2D1Brush, ID2D1DCRenderTarget, ID2D1Factory, ID2D1PathGeometry, ID2D1RenderTarget,
+        ID2D1SolidColorBrush, ID2D1StrokeStyle, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+        D2D1_BITMAP_PROPERTIES, D2D1_CAP_STYLE_ROUND,
         D2D1_DASH_STYLE_DASH, D2D1_DASH_STYLE_SOLID, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ELLIPSE, D2D1_EXTEND_MODE_CLAMP,
         D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT, D2D1_GAMMA_2_2, D2D1_LINE_JOIN_ROUND,
         D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT,
@@ -65,6 +66,9 @@ pub mod d2d {
         factory: ID2D1Factory,
         dwrite: IDWriteFactory,
         fmts: RefCell<HashMap<(u32, Weight, u8), IDWriteTextFormat>>,
+        /// Uploaded bitmaps keyed by (render target, image id): a D2D bitmap is
+        /// bound to the target that created it, so both halves of the key matter.
+        bitmaps: RefCell<HashMap<(usize, u64), ID2D1Bitmap>>,
         round: ID2D1StrokeStyle,
         dashed: ID2D1StrokeStyle,
     }
@@ -88,7 +92,7 @@ pub mod d2d {
                 };
                 let round = mk(D2D1_DASH_STYLE_SOLID).ok()?;
                 let dashed = mk(D2D1_DASH_STYLE_DASH).ok()?;
-                Some(Self { factory, dwrite, fmts: RefCell::new(HashMap::new()), round, dashed })
+                Some(Self { factory, dwrite, fmts: RefCell::new(HashMap::new()), bitmaps: RefCell::new(HashMap::new()), round, dashed })
             }
         }
 
@@ -314,6 +318,28 @@ pub mod d2d {
                         }
                     }
                 }
+                Cmd::Image { r, img, opacity } => {
+                    let key = (Interface::as_raw(rt) as usize, img.id);
+                    let cached = self.bitmaps.borrow().get(&key).cloned();
+                    let bmp = match cached {
+                        Some(b) => Some(b),
+                        None => {
+                            let props = D2D1_BITMAP_PROPERTIES {
+                                pixelFormat: D2D1_PIXEL_FORMAT { format: DXGI_FORMAT_B8G8R8A8_UNORM, alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED },
+                                dpiX: 96.0,
+                                dpiY: 96.0,
+                            };
+                            rt.CreateBitmap(D2D_SIZE_U { width: img.w, height: img.h }, Some(img.bgra.as_ptr() as *const _), img.w * 4, &props)
+                                .ok()
+                                .inspect(|b| {
+                                    self.bitmaps.borrow_mut().insert(key, b.clone());
+                                })
+                        }
+                    };
+                    if let Some(b) = bmp {
+                        rt.DrawBitmap(&b, Some(&rc(*r)), *opacity, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, None);
+                    }
+                }
                 Cmd::Clip(r) => {
                     rt.PushAxisAlignedClip(&rc(*r), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
                     *clips += 1;
@@ -452,7 +478,11 @@ pub mod d2d {
             let (nw, nh) = (w.max(self.cap.0), h.max(self.cap.1));
             if self.gpu.is_some() {
                 match make_gpu(&self.painter, nw, nh) {
-                    Some(g) => self.gpu = Some(g),
+                    Some(g) => {
+                        // Cached bitmaps belong to the old target (and its address may be reused).
+                        self.painter.bitmaps.borrow_mut().clear();
+                        self.gpu = Some(g);
+                    }
                     None => return false,
                 }
             } else {
