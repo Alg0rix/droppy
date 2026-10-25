@@ -8,7 +8,7 @@ use super::scene::{Align, Color, Fill, Rect, Scene, Weight};
 use super::state::{Action, Hit, UiState};
 use super::theme::*;
 use crate::viewmodel::{local_naive, mmss, ViewModel};
-use teardrop_core::{DropletGeom, HudKind, IdleLook, Page, Settings};
+use teardrop_core::{DropletGeom, HudKind, IdleLook, Page, Playback, Settings};
 
 /// Morph input from the island spring.
 #[derive(Debug, Clone, Copy)]
@@ -543,6 +543,111 @@ fn face(c: &mut Ctx, r: Rect, spot: Spot, accent: Option<Color>) {
     c.s.pop_clip();
 }
 
+/// The glance pill: the wide flat capsule the island rests at mid-morph.
+/// Shows the live activity with a couple of quick actions; clicking
+/// anywhere expands to the full page.
+fn glance(c: &mut Ctx, r: Rect) {
+    let vm = c.vm;
+    let cy = r.cy();
+
+    if vm.voice.phase == crate::voice::VoicePhase::Recording {
+        // REC: red dot, elapsed, stop button.
+        let acc = accent(Page::Voice);
+        c.s.circle(r.x + 28.0, cy, 7.0, acc);
+        c.text("Recording", Rect::new(r.x + 44.0, cy - 13.0, 160.0, 18.0), 14.5, Weight::Semibold, TEXT, Align::Left);
+        c.text(crate::voice::clock(vm.voice.elapsed_ms), Rect::new(r.x + 44.0, cy + 4.0, 160.0, 15.0), 11.0, Weight::Medium, TEXT_3, Align::Left);
+        let sq = Rect::new(r.right() - 52.0, cy - 15.0, 30.0, 30.0);
+        c.s.rect(sq, 10.0, acc.fade(0.2));
+        c.s.rect(sq.inset(9.0), 3.0, acc);
+        c.hit(sq, Action::VoiceToggle);
+        return;
+    }
+    if let Some(ev) = vm.meeting_soon() {
+        // Next meeting: icon, title, countdown, Join pill.
+        let acc = accent(Page::Today);
+        icons::draw(&mut c.s, Icon::Calendar, r.x + 28.0, cy, 19.0, acc);
+        c.text(ev.title.clone(), Rect::new(r.x + 48.0, cy - 13.0, r.w - 190.0, 18.0), 13.5, Weight::Semibold, TEXT, Align::Left);
+        c.text(crate::calendar::countdown(ev, vm.now.timestamp()), Rect::new(r.x + 48.0, cy + 4.0, 160.0, 15.0), 11.0, Weight::Medium, TEXT_3, Align::Left);
+        let pill = Rect::new(r.right() - 86.0, cy - 13.0, 68.0, 26.0);
+        c.s.rect(pill, 13.0, acc);
+        c.text("Join", pill, 11.5, Weight::Semibold, Color::rgb(8, 16, 32), Align::Center);
+        c.hit(pill, Action::MeetingJoin);
+        return;
+    }
+    if vm.focus_visible() {
+        // Focus: ring, label + session, big timer, pause/reset.
+        let acc = accent(Page::Focus);
+        let rcx = r.x + 30.0;
+        c.s.ring(rcx, cy, 14.0, 4.0, 0.0, 1.0, Color::rgba(255, 255, 255, 0.16));
+        let p = vm.focus_progress();
+        if p > 0.003 {
+            c.s.ring(rcx, cy, 14.0, 4.0, 0.0, p, acc);
+        }
+        let n = vm.pomo.sessions_before_long.max(1);
+        let cur = (vm.pomo.completed_focus % n) + 1;
+        c.text("Focus", Rect::new(r.x + 54.0, cy - 13.0, 150.0, 18.0), 14.0, Weight::Semibold, TEXT, Align::Left);
+        let sub = match vm.pomo.phase {
+            teardrop_core::Phase::ShortBreak => "Take a breather".to_string(),
+            teardrop_core::Phase::LongBreak => "Long break".to_string(),
+            _ => format!("Session {} of {}", cur.min(n), n),
+        };
+        c.text(sub, Rect::new(r.x + 54.0, cy + 4.0, 150.0, 15.0), 11.0, Weight::Medium, TEXT_3, Align::Left);
+        c.text(mmss(vm.focus_remaining_ms()), Rect::new(r.right() - 196.0, cy - 17.0, 90.0, 30.0), 24.0, Weight::Semibold, TEXT, Align::Right);
+        let label = if vm.focus_running() { "Pause" } else if vm.pomo.remaining_ms_when_paused.is_some() { "Resume" } else { "Start" };
+        let pill = Rect::new(r.right() - 96.0, cy - 14.0, 78.0, 28.0);
+        c.s.rect(pill, 14.0, acc);
+        c.text(label, pill, 12.0, Weight::Semibold, Color::rgb(28, 18, 6), Align::Center);
+        c.hit(pill, Action::FocusToggle);
+        return;
+    }
+    if vm.music_active() {
+        // Music: note tile, title, artist, viz, transport.
+        let acc = accent(Page::Music);
+        let t = &vm.track;
+        let (c1, c2) = art_colors(&t.title);
+        let art = Rect::new(r.x + 16.0, cy - 20.0, 40.0, 40.0);
+        c.s.rect(art, 12.0, Fill::DGrad(c1, c2));
+        icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy(), 18.0, Color::rgb(255, 255, 255).fade(0.92));
+        c.text(t.title.clone(), Rect::new(art.right() + 12.0, cy - 14.0, r.w - 230.0, 18.0), 13.5, Weight::Semibold, TEXT, Align::Left);
+        c.text(t.display_artist(), Rect::new(art.right() + 12.0, cy + 4.0, r.w - 230.0, 15.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
+        let x0 = r.right() - 160.0;
+        for (i, b) in c.ui.viz.sample(8).iter().enumerate() {
+            let h = 4.0 + b * 16.0;
+            c.s.rect(Rect::new(x0 + i as f32 * 6.0, cy - h / 2.0, 3.0, h), 1.5, acc.fade(0.85));
+        }
+        let px = r.right() - 108.0;
+        icons::draw(&mut c.s, Icon::Prev, px, cy, 15.0, TEXT_2);
+        c.hit(Rect::new(px - 11.0, cy - 13.0, 22.0, 26.0), Action::MediaPrev);
+        let pp = if vm.track.playback == Playback::Playing { Icon::Pause } else { Icon::Play };
+        c.s.circle(px + 36.0, cy, 15.0, Color::rgb(255, 255, 255));
+        icons::draw(&mut c.s, pp, px + 36.0, cy, 15.0, Color::rgb(20, 20, 26));
+        c.hit(Rect::new(px + 21.0, cy - 15.0, 30.0, 30.0), Action::MediaPlayPause);
+        icons::draw(&mut c.s, Icon::Next, px + 66.0, cy, 15.0, TEXT_2);
+        c.hit(Rect::new(px + 55.0, cy - 13.0, 22.0, 26.0), Action::MediaNext);
+        return;
+    }
+
+    // Idle/other pages: page icon, name, one-line status, eyes face on the right.
+    let acc = accent(vm.page);
+    icons::draw(&mut c.s, tab_icon(vm.page), r.x + 28.0, cy, 18.0, acc);
+    c.text(vm.page.title(), Rect::new(r.x + 46.0, cy - 13.0, 140.0, 18.0), 14.0, Weight::Semibold, TEXT, Align::Left);
+    let sub = match vm.page {
+        Page::Music => "Nothing playing".to_string(),
+        Page::Focus => "Ready when you are".to_string(),
+        Page::Water => {
+            let d = vm.day();
+            format!("{} / {} ml", vm.water.today(d), vm.water.goal_ml)
+        }
+        Page::Tasks => format!("{} open tasks", vm.tasks.open_count()),
+        Page::Today => vm.calendar.agenda(vm.now.timestamp(), 1).first().map(|e| e.title.clone()).unwrap_or_else(|| "No meetings".to_string()),
+        _ => local_naive(vm.now).format("%a %d %b  %H:%M").to_string(),
+    };
+    c.text(sub, Rect::new(r.x + 46.0, cy + 4.0, r.w - 160.0, 15.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
+    if c.set.idle_look == IdleLook::Eyes {
+        face(c, r, Spot::Music, None);
+    }
+}
+
 fn hud(c: &mut Ctx, r: Rect, h: &teardrop_core::Hud, cy: f32) {
     let left = r.x + 15.0;
     match h.kind {
@@ -635,13 +740,27 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
     // Collapsed activity.
     let ca = 1.0 - smooth(open / 0.28);
     collapsed(&mut c, body, ca);
-    if open < 0.5 {
+    if open < 0.56 {
         let a = match vm.live_hud(now_ms) {
             Some(h) if h.kind == HudKind::Water && h.action_label.is_some() => Action::HudWater,
             Some(h) if h.kind == HudKind::Meeting && h.action_label.is_some() => Action::MeetingJoin,
             _ => Action::Island,
         };
         c.hit(body, a);
+    }
+
+    // Glance pill: the middle stop of the morph (~open 0.5). Its content
+    // fades in as the collapsed content fades out and hands off to the card.
+    let ga = smooth(open / 0.36) * (1.0 - smooth((open - 0.56) / 0.22));
+    if ga > 0.01 {
+        c.s.clip(Rect::new(body.x + 1.0, 0.0, body.w - 2.0, body.h));
+        // Quick actions are only live once the pill is resting at the glance.
+        c.live = (open - 0.5).abs() < 0.08;
+        c.s.set_transform(0.0, 0.0, ga);
+        glance(&mut c, body);
+        c.s.reset_transform();
+        c.live = true;
+        c.s.pop_clip();
     }
 
     // Open card.

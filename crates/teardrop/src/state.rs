@@ -9,10 +9,17 @@ use teardrop_core::{DropletGeom, Spring};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IslandMode {
     Collapsed,
+    /// Morphing toward the glance pill (open ~0.5).
+    Glancing,
+    /// Resting at the glance pill.
+    Glance,
     Opening,
     Open,
     Closing,
 }
+
+/// `open` value the glance pill rests at (mid-point of the morph).
+pub const GLANCE_T: f32 = 0.5;
 
 pub struct IslandState {
     pub geom: DropletGeom,
@@ -38,6 +45,7 @@ impl IslandState {
     pub fn target(&self) -> f32 {
         match self.mode {
             IslandMode::Collapsed | IslandMode::Closing => 0.0,
+            IslandMode::Glancing | IslandMode::Glance => GLANCE_T,
             IslandMode::Opening | IslandMode::Open => 1.0,
         }
     }
@@ -49,9 +57,31 @@ impl IslandState {
                 // Kick the wobble so the droplet sloshes as it detaches.
                 self.wobble.velocity += 3.2;
             }
-            IslandMode::Opening | IslandMode::Open => {
+            IslandMode::Glancing | IslandMode::Glance | IslandMode::Opening | IslandMode::Open => {
                 self.mode = IslandMode::Closing;
             }
+        }
+    }
+
+    /// Collapsed -> glance pill (the dwell-hover peek).
+    pub fn glance(&mut self) {
+        match self.mode {
+            IslandMode::Collapsed | IslandMode::Closing => {
+                self.mode = IslandMode::Glancing;
+                self.wobble.velocity += 1.6;
+            }
+            _ => {}
+        }
+    }
+
+    /// Glance pill -> fully open card (click or prolonged dwell).
+    pub fn expand(&mut self) {
+        match self.mode {
+            IslandMode::Glancing | IslandMode::Glance => {
+                self.mode = IslandMode::Opening;
+                self.wobble.velocity += 1.6;
+            }
+            _ => {}
         }
     }
 
@@ -72,6 +102,9 @@ impl IslandState {
         self.wobble_px = (self.wobble.value * 6.0).clamp(-9.0, 12.0);
         let t = self.open.value;
         match self.mode {
+            IslandMode::Glancing if (t - GLANCE_T).abs() < 0.015 && self.open.velocity.abs() < 0.15 => {
+                self.mode = IslandMode::Glance;
+            }
             IslandMode::Opening if t > 0.985 && self.open.velocity.abs() < 0.15 => {
                 self.mode = IslandMode::Open;
             }

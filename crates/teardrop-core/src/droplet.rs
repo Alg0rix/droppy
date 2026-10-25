@@ -29,6 +29,9 @@ pub struct DropletGeom {
     /// Collapsed pill size.
     pub pill_w: f32,
     pub pill_h: f32,
+    /// Glance size: the wide flat pill the island rests at mid-morph.
+    pub glance_w: f32,
+    pub glance_h: f32,
     /// Fully opened card size.
     pub card_w: f32,
     pub card_h: f32,
@@ -38,7 +41,7 @@ pub struct DropletGeom {
 
 impl Default for DropletGeom {
     fn default() -> Self {
-        Self { pill_w: 180.0, pill_h: 36.0, card_w: 680.0, card_h: 318.0, card_radius: 26.0 }
+        Self { pill_w: 180.0, pill_h: 36.0, glance_w: 440.0, glance_h: 78.0, card_w: 680.0, card_h: 318.0, card_radius: 26.0 }
     }
 }
 
@@ -51,11 +54,15 @@ pub struct OutlinePt {
 }
 
 impl DropletGeom {
-    /// Width at morph position `open` (0..1) with overshoot allowed slightly >1.
+    /// Width at morph position `open` (0..1). The morph is two hops:
+    /// pill -> glance pill on the lower half, glance pill -> card above 0.5.
     pub fn width(&self, open: f32) -> f32 {
         let t = open.clamp(-0.15, 1.15);
-        // Ease with slight overshoot past 1 handled by spring, not here.
-        self.pill_w + (self.card_w - self.pill_w) * smootherstep(t)
+        if t < 0.5 {
+            self.pill_w + (self.glance_w - self.pill_w) * smootherstep(t * 2.0)
+        } else {
+            self.glance_w + (self.card_w - self.glance_w) * smootherstep((t - 0.5) * 2.0)
+        }
     }
 
     /// Height at morph position `open`.
@@ -63,16 +70,24 @@ impl DropletGeom {
         let t = open.clamp(-0.15, 1.15);
         // Droplet hangs: height grows faster than width early on (gravity).
         let hang = t.powf(0.75);
-        self.pill_h + (self.card_h - self.pill_h) * smootherstep(hang) + wobble_px
+        let h = if hang < 0.5 {
+            self.pill_h + (self.glance_h - self.pill_h) * smootherstep(hang * 2.0)
+        } else {
+            self.glance_h + (self.card_h - self.glance_h) * smootherstep((hang - 0.5) * 2.0)
+        };
+        h + wobble_px
     }
 
     /// Neck pinch factor: 1 = straight sides, <1 = pinched waist.
-    /// Dips to ~0.62 around t=0.45 then relaxes to 1.0 when square.
+    /// Dips to ~0.62 around t=0.45 then relaxes to 1.0 when square; it also
+    /// straightens around t=0.5 so the glance pill rests with flat sides.
     pub fn neck(&self, open: f32) -> f32 {
         let t = open.clamp(0.0, 1.0);
         // Gaussian dip centered at 0.45.
         let dip = (-((t - 0.45) * (t - 0.45)) / (2.0 * 0.0225)).exp();
-        1.0 - 0.38 * dip * (1.0 - t * 0.55)
+        let base = 1.0 - 0.38 * dip * (1.0 - t * 0.55);
+        let rest = (-((t - 0.5) * (t - 0.5)) / (2.0 * 0.0004)).exp();
+        base + (1.0 - base) * rest
     }
 
     /// Tip roundness: 1 = perfect droplet circle, 0 = squared card.

@@ -85,6 +85,7 @@ mod inner {
     const T_SLOW: usize = 2;
     const T_HOVER: usize = 3;
     const T_LEAVE: usize = 4;
+    const T_GLANCE: usize = 5;
 
     static FETCHING: AtomicBool = AtomicBool::new(false);
     static LYRICS_RESULT: Mutex<Option<(String, Vec<LyricLine>)>> = Mutex::new(None);
@@ -151,7 +152,7 @@ mod inner {
     }
 
     fn is_open() -> bool {
-        ISLAND.with(|s| matches!(s.borrow().mode, IslandMode::Open | IslandMode::Opening))
+        ISLAND.with(|s| matches!(s.borrow().mode, IslandMode::Open | IslandMode::Opening | IslandMode::Glance | IslandMode::Glancing))
     }
 
     fn open_amount() -> f32 {
@@ -391,10 +392,15 @@ mod inner {
     fn open_island(hwnd: HWND, pinned: bool) {
         ISLAND.with(|s| {
             let mut st = s.borrow_mut();
-            if matches!(st.mode, IslandMode::Collapsed | IslandMode::Closing) {
-                st.toggle();
+            match st.mode {
+                IslandMode::Collapsed | IslandMode::Closing => st.toggle(),
+                IslandMode::Glancing | IslandMode::Glance => st.expand(),
+                _ => {}
             }
         });
+        unsafe {
+            let _ = KillTimer(hwnd, T_GLANCE);
+        }
         if pinned {
             PINNED.set(true);
             activate(hwnd);
@@ -403,10 +409,17 @@ mod inner {
         wake(hwnd);
     }
 
+    /// Dwell-hover stops at the glance pill; a longer rest (or a click)
+    /// continues into the fully open island.
+    fn glance_island(hwnd: HWND) {
+        ISLAND.with(|s| s.borrow_mut().glance());
+        wake(hwnd);
+    }
+
     fn close_island(hwnd: HWND) {
         ISLAND.with(|s| {
             let mut st = s.borrow_mut();
-            if matches!(st.mode, IslandMode::Open | IslandMode::Opening) {
+            if matches!(st.mode, IslandMode::Open | IslandMode::Opening | IslandMode::Glance | IslandMode::Glancing) {
                 st.toggle();
             }
         });
@@ -2919,12 +2932,25 @@ mod inner {
                                 HOVER_PENDING.set(true);
                                 let _ = SetTimer(hwnd, T_HOVER, 170, None);
                             } else {
-                                open_island(hwnd, false);
+                                // Rest stops at the glance pill; a longer
+                                // rest continues into the full island.
+                                glance_island(hwnd);
+                                let _ = SetTimer(hwnd, T_GLANCE, 850, None);
                             }
+                        }
+                    }
+                    T_GLANCE => {
+                        let _ = KillTimer(hwnd, T_GLANCE);
+                        let (x, y) = LAST_MOUSE.get();
+                        let still = matches!(hit_at(x, y).map(|h| h.action), Some(Action::Island) | Some(Action::HudWater));
+                        let petting = UI.with(|u| u.borrow().eyes.petting());
+                        if still && !petting {
+                            open_island(hwnd, false);
                         }
                     }
                     T_LEAVE => {
                         let _ = KillTimer(hwnd, T_LEAVE);
+                        let _ = KillTimer(hwnd, T_GLANCE);
                         let pinned = PINNED.get() && GetForegroundWindow() == hwnd;
                         if is_open() && !pinned && !MENU_OPEN.get() {
                             close_island(hwnd);
