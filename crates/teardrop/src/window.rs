@@ -3447,10 +3447,11 @@ mod inner {
                 crate::chat::pump();
                 sync_chat();
                 if let Some((who, text)) = crate::chat::take_alert() {
-                    if SETTINGS.with(|s| s.borrow().mesh_hud) {
-                        let ms = now_ms();
-                        VIEW.with(|v| v.borrow_mut().hud = Some(crate::viewmodel::hud_chat(&who, &text, ms)));
-                    }
+                    let ms = now_ms();
+                    // HUD shows the real text only when mesh_hud is on;
+                    // otherwise a generic notice — sender stays visible.
+                    let body = if SETTINGS.with(|s| s.borrow().mesh_hud) { text } else { "message received".to_string() };
+                    VIEW.with(|v| v.borrow_mut().hud = Some(crate::viewmodel::hud_chat(&who, &body, ms)));
                     with_eyes(|e| e.react(React::Perk));
                 }
                 wake(hwnd);

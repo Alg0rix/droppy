@@ -117,7 +117,7 @@ impl SettingKey {
             SettingKey::HotkeyNote => "Alt+N",
             SettingKey::HotkeyAi => "Alt+I",
             SettingKey::MeshChat => "Mesh chat (BLE)",
-            SettingKey::MeshHud => "Mesh message HUD",
+            SettingKey::MeshHud => "HUD: show message text",
         }
     }
 }
