@@ -16,6 +16,8 @@ pub enum Page {
     Usage,
     Voice,
     Ai,
+    /// The desktop window switcher.
+    Windows,
     /// Reached from the gear in the header; not part of the tab cycle.
     Settings,
 }
@@ -34,6 +36,7 @@ impl Page {
             Page::Focus,
             Page::Water,
             Page::Shelf,
+            Page::Windows,
             Page::Tasks,
             Page::Notes,
             Page::Clipboard,
@@ -59,6 +62,7 @@ impl Page {
             Page::Usage => "Usage",
             Page::Voice => "Voice",
             Page::Ai => "AI",
+            Page::Windows => "Windows",
             Page::Settings => "Settings",
         }
     }

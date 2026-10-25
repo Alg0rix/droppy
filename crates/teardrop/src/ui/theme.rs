@@ -37,6 +37,7 @@ pub fn accent(page: Page) -> Color {
         Page::Usage => Color::rgb(251, 146, 60),
         Page::Voice => Color::rgb(248, 113, 113),
         Page::Ai => Color::rgb(192, 132, 252),
+        Page::Windows => Color::rgb(190, 242, 100),
         Page::Settings => Color::rgb(156, 163, 175),
     }
 }

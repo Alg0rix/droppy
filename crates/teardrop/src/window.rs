@@ -825,6 +825,17 @@ mod inner {
                 save = false;
             }
             Action::HudWater => add_water(250),
+            Action::WinActivate(i) => {
+                let target = VIEW.with(|v| v.borrow().windows.get(i as usize).map(|w| w.hwnd));
+                if let Some(h) = target {
+                    let h = HWND(h as *mut _);
+                    unsafe {
+                        let _ = ShowWindow(h, windows::Win32::UI::WindowsAndMessaging::SW_RESTORE);
+                        let _ = SetForegroundWindow(h);
+                    }
+                }
+                save = false;
+            }
             Action::TogglePage(p) => {
                 SETTINGS.with(|s| {
                     let mut st = s.borrow_mut();
@@ -2092,6 +2103,7 @@ mod inner {
     }
 
     fn slow_tick(hwnd: HWND) {
+        VIEW.with(|v| v.borrow_mut().windows = crate::winreg::enumerate(hwnd.0 as isize));
         let n = TICKS.get().wrapping_add(1);
         TICKS.set(n);
         if apply_fullscreen_hide(hwnd) {
@@ -2315,6 +2327,7 @@ mod inner {
                     }
                 }
                 Page::Shelf => ui::pages::shelf_max_scroll(vm.shelf.items.len()),
+                Page::Windows => ui::pages::windows_max_scroll(vm.windows.len()),
                 Page::Tasks => ui::pages::tasks_max_scroll(vm.tasks.tasks.len()),
                 Page::Notes => ui::pages::notes_max_scroll(vm.notes.notes.len()),
                 Page::Clipboard => ui::pages::clip_max_scroll(vm.clipboard.items().len()),

@@ -185,6 +185,7 @@ pub fn tab_icon(p: Page) -> Icon {
         Page::Usage => Icon::Chart,
         Page::Voice => Icon::Mic,
         Page::Ai => Icon::Sparkle,
+        Page::Windows => Icon::Tray,
         Page::Settings => Icon::Gear,
     }
 }
@@ -202,6 +203,7 @@ fn tab_label_w(p: Page) -> f32 {
         Page::Speed => 84.0,
         Page::Usage => 84.0,
         Page::Voice => 82.0,
+        Page::Windows => 86.0,
         Page::Ai => 64.0,
         Page::Settings => 36.0,
     }
@@ -598,6 +600,7 @@ fn glance(c: &mut Ctx, r: Rect, page: Page) {
         Page::Speed => glance_speed(c, r, cy),
         Page::Usage => glance_usage(c, r, cy),
         Page::Voice => glance_voice(c, r, cy),
+        Page::Windows => glance_windows(c, r, cy),
         Page::Ai | Page::Settings => glance_ai(c, r, cy),
     }
 }
@@ -852,6 +855,28 @@ fn glance_voice(c: &mut Ctx, r: Rect, cy: f32) {
     c.s.rect(btn, 14.0, acc);
     c.text("REC", btn, 12.0, Weight::Bold, Color::rgb(40, 8, 8), Align::Center);
     c.hit(btn, Action::VoiceToggle);
+}
+
+fn glance_windows(c: &mut Ctx, r: Rect, cy: f32) {
+    let acc = accent(Page::Windows);
+    icons::draw(&mut c.s, tab_icon(Page::Windows), r.x + 28.0, cy, 17.0, acc);
+    let n = c.vm.windows.len();
+    c.text(format!("{n} windows"), Rect::new(r.x + 46.0, cy - 14.0, 140.0, 18.0), 14.0, Weight::Semibold, TEXT, Align::Left);
+    // Up to three foreground-most apps, like the Alt-Tab strip.
+    let mut seen: Vec<String> = Vec::new();
+    let mut x = r.x + 46.0;
+    for w in c.vm.windows.iter().take(12) {
+        if seen.contains(&w.exe) { continue; }
+        seen.push(w.exe.clone());
+        if seen.len() > 4 { break; }
+        let tw = est_w(&w.app, 11.0) + 18.0;
+        let chip = Rect::new(x, cy + 6.0, tw, 22.0);
+        c.s.rect(chip, 11.0, SURFACE);
+        c.text(w.app.clone(), Rect::new(chip.x + 9.0, chip.y, chip.w - 14.0, chip.h), 11.0, Weight::Medium, TEXT_2, Align::Left);
+        x += tw + 6.0;
+        if x > r.right() - 30.0 { break; }
+    }
+    c.text(format!("{n}"), Rect::new(r.right() - 60.0, cy - 10.0, 46.0, 20.0), 14.0, Weight::Semibold, acc, Align::Right);
 }
 
 fn glance_ai(c: &mut Ctx, r: Rect, cy: f32) {

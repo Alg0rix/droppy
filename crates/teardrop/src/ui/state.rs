@@ -99,6 +99,8 @@ pub enum Action {
     Tab(Page),
     /// Settings chip: keep this page out of the nav and the page cycle.
     TogglePage(Page),
+    /// Bring the n-th registered desktop window to the foreground.
+    WinActivate(u16),
     Gear,
     Pin,
     MediaPrev,
@@ -234,7 +236,7 @@ pub struct Hit {
 }
 
 /// Per-page animation slots (every tab plus Settings, with headroom).
-pub const PAGE_SLOTS: usize = 13;
+pub const PAGE_SLOTS: usize = 14;
 
 pub fn page_index(p: Page) -> usize {
     Page::all().iter().position(|&x| x == p).unwrap_or(Page::all().len())
@@ -531,6 +533,7 @@ impl UiState {
             Page::Usage => 480.0,
             Page::Voice => 420.0,
             Page::Ai => 480.0,
+            Page::Windows => 500.0,
             Page::Settings => 440.0,
         };
         (w, 80.0)
@@ -552,6 +555,7 @@ impl UiState {
             Page::Usage => (480.0, 270.0),
             Page::Voice => (420.0, 260.0),
             Page::Ai => (540.0, 300.0),
+            Page::Windows => (500.0, 300.0),
             Page::Settings => (680.0, 318.0),
         }
     }

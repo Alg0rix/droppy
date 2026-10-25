@@ -38,6 +38,8 @@ mod viewmodel;
 mod voice;
 mod volume;
 mod window;
+#[cfg(windows)]
+mod winreg;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

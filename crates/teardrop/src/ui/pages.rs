@@ -24,7 +24,43 @@ pub fn draw(c: &mut Ctx, page: Page, a: Rect) {
         Page::Usage => usage(c, a),
         Page::Voice => voice(c, a),
         Page::Ai => ai(c, a),
+        Page::Windows => windows_page(c, a),
         Page::Settings => settings(c, a),
+    }
+}
+
+/// Desktop window switcher: apps grouped, rows activate the window.
+fn windows_page(c: &mut Ctx, a: Rect) {
+    let acc = accent(Page::Windows);
+    let n = c.vm.windows.len();
+    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
+    c.text("ON THE DESKTOP", Rect::new(a.x + 12.0, a.y, a.w - 130.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    c.text(format!("{n} windows"), Rect::new(a.right() - 118.0, a.y, 118.0, 15.0), 10.5, Weight::Medium, TEXT_3, Align::Right);
+    let mut y = a.y + 34.0;
+    let row_h = 26.0;
+    let scroll = c.ui.scroll_of(Page::Windows);
+    // Group consecutive windows of the same exe under an app header.
+    let mut last_exe = String::new();
+    let mut i = 0usize;
+    for w in c.vm.windows.iter().skip(scroll) {
+        if y > a.bottom() - 26.0 { break; }
+        if w.exe != last_exe {
+            last_exe = w.exe.clone();
+            let n = c.vm.windows.iter().filter(|x| x.exe == w.exe).count();
+            c.s.rect(Rect::new(a.x + 8.0, y + 3.0, 16.0, 16.0), 5.0, acc.fade(0.2));
+            c.text(w.app.clone(), Rect::new(a.x + 30.0, y, a.w - 130.0, 22.0), 12.5, Weight::Semibold, TEXT, Align::Left);
+            c.text(if n == 1 { "1 window".to_string() } else { format!("{} windows", n) }, Rect::new(a.right() - 120.0, y + 4.0, 112.0, 15.0), 10.0, Weight::Medium, TEXT_3, Align::Right);
+            y += 24.0;
+        }
+        if y > a.bottom() - 26.0 { break; }
+        let row = Rect::new(a.x + 34.0, y, a.w - 42.0, row_h - 4.0);
+        if c.hov(Action::WinActivate(i as u16)) > 0.01 {
+            c.s.rect(row, 9.0, SURFACE_HOVER);
+        }
+        c.text(w.title.clone(), Rect::new(row.x + 10.0, row.y + 3.0, row.w - 16.0, 16.0), 11.5, Weight::Regular, TEXT_2, Align::Left);
+        c.hit(row, Action::WinActivate(i as u16));
+        y += row_h;
+        i += 1;
     }
 }
 
@@ -550,6 +586,10 @@ pub fn parent_of(path: &str) -> String {
 
 const SHELF_COLS: usize = 2;
 const SHELF_ROWS: usize = 3;
+
+pub fn windows_max_scroll(n: usize) -> usize {
+    n.saturating_sub(8)
+}
 
 pub fn shelf_max_scroll(n: usize) -> usize {
     let rows = (n + SHELF_COLS - 1) / SHELF_COLS;

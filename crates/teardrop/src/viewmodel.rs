@@ -33,6 +33,8 @@ pub struct ViewModel {
     pub ai: crate::ai::AiView,
     pub pinned: bool,
     pub now: DateTime<Utc>,
+    /// Desktop windows for the switcher page (slow-tick snapshot).
+    pub windows: Vec<crate::winreg::WindowInfo>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -175,6 +177,7 @@ impl ViewModel {
             update: Default::default(),
             usage: Default::default(),
             voice: Default::default(),
+            windows: Vec::new(),
             calendar: Default::default(),
             calendar_feeds: 0,
             ai: crate::ai::AiView {
@@ -211,6 +214,7 @@ impl ViewModel {
             update: Default::default(),
             usage: Default::default(),
             voice: Default::default(),
+            windows: Vec::new(),
             calendar: Default::default(),
             calendar_feeds: 0,
             ai: Default::default(),
