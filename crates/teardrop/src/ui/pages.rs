@@ -2429,7 +2429,8 @@ fn settings(c: &mut Ctx, a: Rect) {
     // Mesh toggles: BLE radio + HUD text privacy, as two pills.
     let my = py + 36.0;
     let pw = (col_w - 6.0) / 2.0;
-    for (i, (k, lbl)) in [(SettingKey::MeshChat, "Mesh chat (BLE)"), (SettingKey::MeshHud, "HUD msg text")].iter().enumerate() {
+    for (i, k) in [SettingKey::MeshChat, SettingKey::MeshHud].iter().enumerate() {
+        let lbl = k.label();
         let on = k.get(c.set);
         c.pill(Rect::new(rx + i as f32 * (pw + 6.0), my, pw, 24.0), Action::Toggle(*k), lbl, on.then_some(acc_on()), 10.5);
     }
