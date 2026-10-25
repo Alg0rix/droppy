@@ -830,7 +830,8 @@ mod inner {
                 if VIEW.with(|v| v.borrow().page) == Page::Notes && p != Page::Notes {
                     finish_note_edit();
                 }
-                VIEW.with(|v| v.borrow_mut().page = p)
+                VIEW.with(|v| v.borrow_mut().page = p);
+                ISLAND.with(|s| s.borrow_mut().wobble.velocity += 1.8);
             }
             Action::CalStep(d) => {
                 UI.with(|u| u.borrow_mut().cal_offset += d as i32);

@@ -958,15 +958,16 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
         c.s.clip(Rect::new(body.x + 1.0, 0.0, body.w - 2.0, body.h));
         // Quick actions are only live once the pill is resting at the glance.
         let ease = ui.page_ease();
+        let eb = ui.page_ease_back();
         let sliding = ui.page_t < 1.0;
         if sliding {
             c.live = false;
-            c.s.set_transform(-ui.page_dir * 26.0 * ease, 0.0, ga * (1.0 - ease));
+            c.s.set_transform(-ui.page_dir * 26.0 * eb, -(ease * 5.0), ga * (1.0 - ease));
             glance(&mut c, body, ui.prev_page);
         }
         c.live = (open - 0.5).abs() < 0.08 && !sliding;
-        let (dx, a) = if sliding { (ui.page_dir * 26.0 * (1.0 - ease), ga * ease) } else { (0.0, ga) };
-        c.s.set_transform(dx, 0.0, a);
+        let (dx, a) = if sliding { (ui.page_dir * 26.0 * (1.0 - eb), ga * ease.min(1.0)) } else { (0.0, ga) };
+        c.s.set_transform(dx, if sliding { (1.0 - ease) * 5.0 } else { 0.0 }, a);
         glance(&mut c, body, vm.page);
         c.s.reset_transform();
         c.live = true;
@@ -992,12 +993,12 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
         let sliding = ui.page_t < 1.0;
         if sliding {
             c.live = false;
-            c.s.set_transform(-ui.page_dir * 26.0 * ease, 0.0, oa * (1.0 - ease));
+            c.s.set_transform(-ui.page_dir * 26.0 * ui.page_ease_back(), -(ease * 5.0), oa * (1.0 - ease));
             pages::draw(&mut c, ui.prev_page, area_of(ui.prev_page));
         }
         c.live = oa > 0.9 && !sliding;
-        let (dx, a) = if sliding { (ui.page_dir * 26.0 * (1.0 - ease), oa * ease) } else { (0.0, oa) };
-        c.s.set_transform(dx, 0.0, a);
+        let (dx, a) = if sliding { (ui.page_dir * 26.0 * (1.0 - ui.page_ease_back()), oa * ease.min(1.0)) } else { (0.0, oa) };
+        c.s.set_transform(dx, if sliding { (1.0 - ease) * 5.0 } else { 0.0 }, a);
         pages::draw(&mut c, vm.page, area_of(vm.page));
         c.s.reset_transform();
 

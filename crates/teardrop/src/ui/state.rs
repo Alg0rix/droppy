@@ -383,6 +383,14 @@ impl UiState {
         1.0 - (1.0 - t).powi(3)
     }
 
+    /// Back-out ease for the slide offset: the new page overshoots ~8%
+    /// then settles, like water finding its level.
+    pub fn page_ease_back(&self) -> f32 {
+        let t = self.page_t.clamp(0.0, 1.0);
+        let u = t - 1.0;
+        1.0 + 2.7 * u * u * u + 1.7 * u * u
+    }
+
     pub fn scroll_of(&self, p: Page) -> usize {
         self.scroll[page_index(p).min(PAGE_SLOTS - 1)]
     }
