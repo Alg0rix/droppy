@@ -2350,6 +2350,8 @@ fn settings(c: &mut Ctx, a: Rect) {
         SettingKey::StartWithWindows,
         SettingKey::ClipboardHistory,
         SettingKey::WaterReminders,
+        SettingKey::MeshChat,
+        SettingKey::MeshHud,
     ];
     let row_h = 26.0;
     let ty = a.y + 30.0;
