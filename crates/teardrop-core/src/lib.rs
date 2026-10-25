@@ -10,6 +10,7 @@ pub mod droplet;
 pub mod hud;
 pub mod lyrics;
 pub mod media;
+pub mod mesh;
 pub mod notes;
 pub mod pages;
 pub mod pomodoro;

@@ -39,6 +39,8 @@ pub struct ViewModel {
     pub audio: Vec<crate::mixer::AudioSession>,
     /// Live system monitor readings (System page).
     pub sys: teardrop_core::SysView,
+    /// BLE mesh chat (Chat page).
+    pub chat: crate::chat::ChatView,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -194,6 +196,26 @@ impl ViewModel {
                 available_models: crate::ai::default_models_for(teardrop_core::AiProvider::ChatGpt),
                 ..Default::default()
             },
+            chat: crate::chat::ChatView {
+                status: "mesh: 2 links".into(),
+                me: "a1b2c3d4e5f60708".into(),
+                nick: "me".into(),
+                peers: vec![
+                    crate::chat::PeerView { id: "b0b0b0b0b0b0b0b0".into(), nick: "bob".into(), fresh: true, secure: true, unread: 2 },
+                    crate::chat::PeerView { id: "c0ffee11aa22bb33".into(), nick: "carol".into(), fresh: true, secure: false, unread: 0 },
+                ],
+                sel: None,
+                sel_nick: "#room".into(),
+                msgs: vec![
+                    crate::chat::Msg { id: "a".into(), who: "bob".into(), text: "anyone on this mesh?".into(), ts: now.timestamp_millis() - 120_000, mine: false, ..Default::default() },
+                    crate::chat::Msg { id: "b".into(), who: "me".into(), text: "yep — droppy mesh is up".into(), ts: now.timestamp_millis() - 90_000, mine: true, delivered: Some(true), ..Default::default() },
+                    crate::chat::Msg { id: "c".into(), who: "carol".into(), text: "no internet needed, nice".into(), ts: now.timestamp_millis() - 30_000, mine: false, ..Default::default() },
+                ],
+                unread_room: 0,
+                unread_total: 2,
+                editing_nick: false,
+                radio_on: true,
+            },
             pinned: false,
             now,
         }
@@ -226,6 +248,7 @@ impl ViewModel {
             calendar: Default::default(),
             calendar_feeds: 0,
             ai: Default::default(),
+            chat: Default::default(),
             pinned: false,
             now,
         }
@@ -416,6 +439,12 @@ pub fn hud_bluetooth(name: &str, battery: Option<u8>, now_ms: u64) -> Hud {
     let mut h = Hud::transient(HudKind::Bluetooth, name, "Connected", now_ms, 4500);
     h.progress = battery.map(|b| b.min(100) as f32 / 100.0);
     h
+}
+
+/// Pill for an incoming mesh chat message.
+pub fn hud_chat(who: &str, text: &str, now_ms: u64) -> Hud {
+    let clip: String = text.chars().take(60).collect();
+    Hud::transient(HudKind::Chat, who, &clip, now_ms, 5000)
 }
 
 pub fn hud_water_logged(ml: u32, total_ml: u32, now_ms: u64) -> Hud {

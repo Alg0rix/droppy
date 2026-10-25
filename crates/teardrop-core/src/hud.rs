@@ -25,6 +25,8 @@ pub enum HudKind {
     Muted,
     Meeting,
     Brightness,
+    /// An incoming mesh chat message: sender in `title`, text in `detail`.
+    Chat,
 }
 
 impl Hud {

@@ -84,6 +84,7 @@ mod inner {
     const WM_APP_SEARCH: u32 = 0x8005;
     /// A Bluetooth device connected (btdev worker thread).
     const WM_APP_BT: u32 = 0x8007;
+    const WM_APP_MESH: u32 = 0x8008;
     const HSHELL_WINDOWCREATED: u32 = 1;
     const HSHELL_FLASH: u32 = 0x8006;
     const HSHELL_WINDOWACTIVATED: u32 = 4;
@@ -815,6 +816,42 @@ mod inner {
         let goal = VIEW.with(|v| v.borrow().water.goal_ml);
         let reached = total >= goal && total.saturating_sub(ml) < goal;
         with_eyes(|e| e.react(if reached { React::Celebrate } else { React::Satisfied }));
+    }
+
+    /// Enter/Send on the Chat page: nick editor commits a rename, the
+    /// message field sends to the selected conversation.
+    fn chat_commit_input() {
+        let (text, editing_nick) = UI.with(|u| {
+            let ui = u.borrow();
+            (ui.input.as_ref().map(|f| f.as_str().to_string()).unwrap_or_default(), crate::chat::snapshot().editing_nick)
+        });
+        if editing_nick {
+            crate::chat::set_nick(&text);
+            crate::chat::set_editing_nick(false);
+            UI.with(|u| u.borrow_mut().input = None);
+        } else {
+            crate::chat::send(text);
+            UI.with(|u| u.borrow_mut().input = Some(crate::ui::textedit::TextField::default()));
+        }
+        sync_chat();
+        wake_if_open();
+    }
+
+    /// Refresh `vm.chat` from the chat service runtime when it changed.
+    fn sync_chat() {
+        thread_local! {
+            static SEEN: std::cell::Cell<u32> = const { std::cell::Cell::new(u32::MAX) };
+        }
+        let rev = crate::chat::revision();
+        if SEEN.replace(rev) == rev {
+            return;
+        }
+        let snap = crate::chat::snapshot();
+        VIEW.with(|v| v.borrow_mut().chat = snap);
+    }
+
+    fn wake_if_open() {
+        // Redrawn via the caller's wake().
     }
 
     fn add_task_from_input() {
@@ -1670,6 +1707,33 @@ mod inner {
                     save = false;
                 }
             }
+            Action::ChatSelect(i) => {
+                let sel = if i == 0 {
+                    None
+                } else {
+                    VIEW.with(|v| v.borrow().chat.peers.get(i as usize - 1).map(|p| p.id.clone()))
+                };
+                crate::chat::select(sel);
+                sync_chat();
+                save = false;
+            }
+            Action::ChatInput => {
+                UI.with(|u| u.borrow_mut().input = Some(crate::ui::textedit::TextField::default()));
+                crate::chat::set_editing_nick(false);
+                activate(hwnd);
+                save = false;
+            }
+            Action::ChatNick => {
+                let cur = VIEW.with(|v| v.borrow().chat.nick.clone());
+                UI.with(|u| u.borrow_mut().input = Some(crate::ui::textedit::TextField::new(cur)));
+                crate::chat::set_editing_nick(true);
+                activate(hwnd);
+                save = false;
+            }
+            Action::ChatSend => {
+                chat_commit_input();
+                save = false;
+            }
             Action::Quit => unsafe {
                 let _ = DestroyWindow(hwnd);
                 return;
@@ -2484,6 +2548,7 @@ mod inner {
                 Page::Tasks => ui::pages::tasks_max_scroll(vm.tasks.tasks.len()),
                 Page::Notes => ui::pages::notes_max_scroll(vm.notes.notes.len()),
                 Page::Clipboard => ui::pages::clip_max_scroll(vm.clipboard.items().len()),
+                Page::Chat => ui::pages::chat_max_scroll(vm.chat.msgs.len()),
                 _ => 0,
             }
         });
@@ -2527,7 +2592,7 @@ mod inner {
                 None
             }
         } else if has_input {
-            Some((false, false, if page == Page::Ai { 400 } else { 120 }))
+            Some((false, false, if page == Page::Ai { 400 } else if page == Page::Chat { 240 } else { 120 }))
         } else {
             None
         }
@@ -2591,6 +2656,9 @@ mod inner {
                 } else if page == Page::Windows {
                     // Launch the top search hit.
                     perform(hwnd, Action::WinLaunch(UI.with(|u| u.borrow().win_sel) as u16));
+                    return;
+                } else if page == Page::Chat {
+                    chat_commit_input();
                     return;
                 } else if editing_note {
                     edit_field(page, |f| f.insert("\n", cap));
@@ -3076,6 +3144,12 @@ mod inner {
                         let _ = PostMessageW(HWND(raw as *mut _), WM_APP_BT, WPARAM(0), LPARAM(0));
                     });
                     crate::btdev::start();
+                    crate::mesh_ble::set_notify(move || unsafe {
+                        let _ = PostMessageW(HWND(raw as *mut _), WM_APP_MESH, WPARAM(0), LPARAM(0));
+                    });
+                }
+                if SETTINGS.with(|s| s.borrow().mesh_chat) {
+                    crate::chat::start("", now_ms());
                 }
                 let _ = RegisterPowerSettingNotification(HANDLE(hwnd.0), &GUID_VIDEO_CURRENT_MONITOR_BRIGHTNESS, DEVICE_NOTIFY_WINDOW_HANDLE);
                 if SETTINGS.with(|s| s.borrow().weather_mood) {
@@ -3389,6 +3463,20 @@ mod inner {
                     with_eyes(|e| e.react(React::Perk));
                     wake(hwnd);
                 }
+                LRESULT(0)
+            }
+            _ if msg == WM_APP_MESH => {
+                crate::chat::pump();
+                sync_chat();
+                if let Some((who, text)) = crate::chat::take_alert() {
+                    let ms = now_ms();
+                    // HUD shows the real text only when mesh_hud is on;
+                    // otherwise a generic notice — sender stays visible.
+                    let body = if SETTINGS.with(|s| s.borrow().mesh_hud) { text } else { "message received".to_string() };
+                    VIEW.with(|v| v.borrow_mut().hud = Some(crate::viewmodel::hud_chat(&who, &body, ms)));
+                    with_eyes(|e| e.react(React::Perk));
+                }
+                wake(hwnd);
                 LRESULT(0)
             }
             _ if msg == WM_APP_VOLUME => {

@@ -18,6 +18,8 @@ pub enum Page {
     Usage,
     Voice,
     Ai,
+    /// BLE mesh chat (bitchat whitepaper).
+    Chat,
     /// The desktop window switcher.
     Windows,
     /// Reached from the gear in the header; not part of the tab cycle.
@@ -48,6 +50,7 @@ impl Page {
             Page::Usage,
             Page::Voice,
             Page::Ai,
+            Page::Chat,
         ]
     }
 
@@ -66,6 +69,7 @@ impl Page {
             Page::Usage => "Usage",
             Page::Voice => "Voice",
             Page::Ai => "AI",
+            Page::Chat => "Chat",
             Page::Windows => "Windows",
             Page::Settings => "Settings",
         }

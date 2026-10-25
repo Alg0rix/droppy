@@ -44,6 +44,8 @@ pub enum Icon {
     Search,
     /// A CPU package with pins — the System page.
     Chip,
+    /// Speech bubble — the mesh Chat page.
+    Chat,
 }
 
 /// Draw `icon` centred at (cx, cy) inside a `size`px box.
@@ -247,6 +249,12 @@ pub fn draw(s: &mut Scene, icon: Icon, cx: f32, cy: f32, size: f32, c: Color) {
             let (h2x, h2y) = p(13.2, 13.2);
             s.line(h1x, h1y, h2x, h2y, sw * 1.1, c);
         }
+        Icon::Chat => {
+            s.stroke(rect(2.4, 2.8, 11.2, 8.6), 3.0 * u, sw, c);
+            s.polyline(vec![p(5.4, 11.2), p(5.4, 14.2), p(8.6, 11.4)], sw, c);
+            s.line(p(5.0, 5.8).0, p(5.0, 5.8).1, p(11.0, 5.8).0, p(11.0, 5.8).1, sw * 0.8, c);
+            s.line(p(5.0, 8.4).0, p(5.0, 8.4).1, p(9.4, 8.4).0, p(9.4, 8.4).1, sw * 0.8, c);
+        }
     }
 }
 
@@ -290,7 +298,7 @@ mod tests {
         let mut s = Scene::new();
         for i in [
             Play, Pause, Next, Prev, Note, Timer, Drop, Tray, Check, List, Notes, Clipboard, Calendar, Gauge, Chart, Mic, Sparkle, Send,
-            Phone, Gear, Plus, Minus, Close, Folder, Speaker, Muted, Bolt, Headphones, Undo, Reset, File, Pin, Search,
+            Phone, Gear, Plus, Minus, Close, Folder, Speaker, Muted, Bolt, Headphones, Undo, Reset, File, Pin, Search, Chip, Chat,
         ] {
             let before = s.cmds.len();
             draw(&mut s, i, 10.0, 10.0, 16.0, Color::rgb(255, 255, 255));
