@@ -121,58 +121,18 @@ fn announce_decode(d: &[u8]) -> Option<(String, [u8; 32], [u8; 32], Vec<PeerId>)
     Some((nick?, npk?, spk?, nb))
 }
 
-fn public_encode(id: &str, nick: &str, text: &str, ts_ms: u64) -> Vec<u8> {
-    let mut d = Vec::with_capacity(64);
-    d.push(0u8); // flags: not relay/private/orig/recip/peerid/mentions/bridged
-    d.extend_from_slice(&ts_ms.to_be_bytes());
-    d.push(id.len().min(255) as u8);
-    d.extend_from_slice(&id.as_bytes()[..id.len().min(255)]);
-    d.push(nick.len().min(255) as u8);
-    d.extend_from_slice(&nick.as_bytes()[..nick.len().min(255)]);
-    let t = &text.as_bytes()[..text.len().min(65535)];
-    d.extend_from_slice(&(t.len() as u16).to_be_bytes());
-    d.extend_from_slice(t);
-    d
+/// Public message payloads on the current wire are the raw UTF-8 text —
+/// sender/timestamp live in the packet header, nick in the announce.
+/// (The richer BitchatMessage envelope is for archives/Nostr, not BLE.)
+fn public_encode(_id: &str, _nick: &str, text: &str, _ts_ms: u64) -> Vec<u8> {
+    text.as_bytes().to_vec()
 }
 
-/// `(id, sender_nick, content)`; skips optional flag-driven trailing fields.
+/// `(id, sender_nick, content)` — id is synthesized from nothing on the wire;
+/// callers substitute the dedup key. Returns `None` for non-UTF-8 payloads.
 fn public_decode(d: &[u8]) -> Option<(String, String, String)> {
-    if d.len() < 13 {
-        return None;
-    }
-    let flags = d[0];
-    let mut off = 9; // flags + timestamp
-    let get = |d: &[u8], off: &mut usize| -> Option<String> {
-        let n = *d.get(*off)? as usize;
-        *off += 1;
-        let s = std::str::from_utf8(d.get(*off..*off + n)?).ok()?.to_string();
-        *off += n;
-        Some(s)
-    };
-    let id = get(d, &mut off)?;
-    let sender = get(d, &mut off)?;
-    let clen = u16::from_be_bytes(d.get(off..off + 2)?.try_into().ok()?) as usize;
-    off += 2;
-    let content = std::str::from_utf8(d.get(off..off + clen)?).ok()?.to_string();
-    off += clen;
-    // Optional fields: original sender (0x04), recipient nick (0x08),
-    // sender peer id (0x10), mentions (0x20). Skipped — order per encoder.
-    for has in [flags & 0x04, flags & 0x08, flags & 0x10] {
-        if has != 0 {
-            let n = *d.get(off)? as usize;
-            off += 1 + n;
-        }
-    }
-    if flags & 0x20 != 0 {
-        if let Some(&count) = d.get(off) {
-            off += 1;
-            for _ in 0..count {
-                let n = *d.get(off)? as usize;
-                off += 1 + n;
-            }
-        }
-    }
-    Some((id, sender, content))
+    let text = std::str::from_utf8(d).ok()?;
+    Some((String::new(), String::new(), text.to_string()))
 }
 
 /// Private message inside the session (PrivateMessagePacket TLV).
@@ -428,7 +388,10 @@ impl Node {
             }
             Some(_) | None => {}
         }
-        (vec![], vec![Event::Public { from: pkt.sender, nick, id, text, ts: pkt.timestamp, mine: false }])
+        // No wire id or nick in the payload: id = dedup key, nick = announce.
+        let id = format!("{:x}", u64::from_be_bytes(pkt.dedup_key()[..8].try_into().unwrap_or_default()));
+        let nick = self.nick_of(&pkt.sender).unwrap_or_else(|| nick);
+        (vec![], vec![Event::Public { from: pkt.sender, nick: if nick.is_empty() { format!("anon{}", &pkt.sender.hex()[..8]) } else { nick }, id, text, ts: pkt.timestamp, mine: false }])
     }
 
     fn on_handshake(&mut self, pkt: Packet, now_ms: u64) -> (Vec<Op>, Vec<Event>) {
