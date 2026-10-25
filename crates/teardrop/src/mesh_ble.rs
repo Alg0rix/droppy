@@ -62,6 +62,9 @@ pub fn status() -> String {
 }
 
 fn set_status(s: impl Into<String>) {
+    let s = s.into();
+    let (_d, cache) = crate::paths::ensure_dirs();
+    crate::store::log_line(&cache, &s);
     *STATUS.lock().unwrap() = s.into();
     notify();
 }
@@ -70,6 +73,10 @@ fn push_events(evs: impl IntoIterator<Item = Event>) {
     let mut q = EVENTS.lock().unwrap();
     let mut any = false;
     for e in evs {
+        if let Event::Log(s) = &e {
+            let (_d, cache) = crate::paths::ensure_dirs();
+            crate::store::log_line(&cache, s);
+        }
         any = true;
         q.push(e);
     }
@@ -117,7 +124,7 @@ mod imp {
     use windows::core::{GUID, HSTRING, Interface};
     use windows::Devices::Bluetooth::Advertisement::*;
     use windows::Devices::Bluetooth::GenericAttributeProfile::*;
-    use windows::Devices::Bluetooth::{BluetoothConnectionStatus, BluetoothLEDevice};
+    use windows::Devices::Bluetooth::{BluetoothCacheMode, BluetoothConnectionStatus, BluetoothLEDevice};
     use windows::Foundation::TypedEventHandler;
     use windows::Storage::Streams::{DataReader, DataWriter, IBuffer};
     use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
@@ -497,9 +504,10 @@ mod imp {
             let _ = RoInitialize(RO_INIT_MULTITHREADED);
         }
         let dev = BluetoothLEDevice::FromBluetoothAddressAsync(addr)?.get()?;
-        let services = dev.GetGattServicesForUuidAsync(SERVICE)?.get()?;
+        // Uncached: without it, unpaired devices return empty service lists.
+        let services = dev.GetGattServicesForUuidWithCacheModeAsync(SERVICE, BluetoothCacheMode::Uncached)?.get()?;
         let svc = services.Services()?.GetAt(0)?;
-        let chars = svc.GetCharacteristicsForUuidAsync(MESH_CHAR)?.get()?;
+        let chars = svc.GetCharacteristicsForUuidWithCacheModeAsync(MESH_CHAR, BluetoothCacheMode::Uncached)?.get()?;
         let ch = chars.Characteristics()?.GetAt(0)?;
 
         // Notifications → frames into the loop.
