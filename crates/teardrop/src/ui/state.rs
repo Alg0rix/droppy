@@ -500,8 +500,19 @@ impl UiState {
     /// blobs get their own size; the rest share the classic card.
     pub fn card_target(page: Page) -> (f32, f32) {
         match page {
+            Page::Music => (520.0, 280.0),
             Page::Focus => (400.0, 300.0),
-            _ => (680.0, 318.0),
+            Page::Water => (420.0, 240.0),
+            Page::Shelf => (560.0, 290.0),
+            Page::Tasks => (440.0, 280.0),
+            Page::Notes => (620.0, 310.0),
+            Page::Clipboard => (480.0, 270.0),
+            Page::Today => (620.0, 310.0),
+            Page::Speed => (420.0, 270.0),
+            Page::Usage => (480.0, 270.0),
+            Page::Voice => (420.0, 260.0),
+            Page::Ai => (540.0, 300.0),
+            Page::Settings => (680.0, 318.0),
         }
     }
 

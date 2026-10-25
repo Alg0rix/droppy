@@ -236,9 +236,9 @@ pub fn content_rect(card_x: f32, geom: &DropletGeom) -> Rect {
 }
 
 /// Pages drawn as self-contained blobs: no header row, the bottom strip
-/// carries clock + page dots + pin/gear instead of the tab bar.
+/// carries clock + page icons + pin/gear instead of the tab bar.
 pub fn is_blob_page(p: Page) -> bool {
-    p == Page::Focus
+    p != Page::Settings
 }
 
 /// Content area of a blob page: the whole card minus padding and the nav strip.
@@ -252,19 +252,24 @@ fn blob_nav(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
     let local = local_naive(c.vm.now);
     c.s.text(local.format("%a %d %b  %H:%M").to_string(), Rect::new(card_x + 18.0, y + 2.0, 110.0, 20.0), 11.0, Weight::Medium, TEXT_3, Align::Left);
 
-    // Page dots: the active one stretches into a capsule.
+    // Page icons: the active one sits on an accent chip.
     let n = Page::all().len();
-    let total = n as f32 * 10.0 + 14.0;
+    let iw = 26.0;
+    let total = n as f32 * iw;
     let mut x = card_x + (geom.card_w - total) / 2.0;
     for (i, &p) in Page::all().iter().enumerate() {
         let amt = c.ui.tab_amt[i];
-        let w = 6.0 + 14.0 * amt;
-        let r = Rect::new(x, y + 6.0, w, 7.0);
+        let r = Rect::new(x, y - 3.0, iw - 2.0, 24.0);
         let a = Action::Tab(p);
         let h = c.hov(a);
-        c.s.rect(r, 3.5, accent(p).fade(0.18 + 0.7 * amt + 0.12 * h * (1.0 - amt)));
-        c.hit(Rect::new(x - 2.0, y, w + 4.0, 20.0), a);
-        x += w + 4.0;
+        if amt > 0.01 {
+            c.s.rect(r, 9.0, accent(p).fade(0.22 * amt));
+        } else if h > 0.01 {
+            c.s.rect(r, 9.0, SURFACE_HOVER.fade(h));
+        }
+        icons::draw(&mut c.s, tab_icon(p), r.cx(), r.cy(), 13.0, TEXT_3.mix(TEXT, h).mix(accent(p), amt));
+        c.hit(r, a);
+        x += iw;
     }
 
     let gr = Rect::new(card_x + geom.card_w - 18.0 - 24.0, y - 3.0, 24.0, 24.0);

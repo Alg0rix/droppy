@@ -478,8 +478,8 @@ fn water(c: &mut Ctx, a: Rect) {
     let today = vm.water.today(day);
     let goal = vm.water.goal_ml.max(1);
     let level = c.ui.water_level;
-    let ctr = (a.x + 96.0, a.y + 116.0);
-    let r = 82.0;
+    let ctr = (a.x + 66.0, a.y + 92.0);
+    let r = 60.0;
 
     c.s.circle(ctr.0, ctr.1, r, Color::rgba(255, 255, 255, 0.045));
     let t = c.ui.clock_s;
@@ -489,39 +489,38 @@ fn water(c: &mut Ctx, a: Rect) {
     }
     c.s.ring(ctr.0, ctr.1, r, 2.5, 0.0, 1.0, Color::rgba(255, 255, 255, 0.16));
     let pct = (vm.water.progress(day) * 100.0).round() as u32;
-    c.text(format!("{pct}%"), Rect::new(ctr.0 - 60.0, ctr.1 - 30.0, 120.0, 42.0), 34.0, Weight::Semibold, WHITE, Align::Center);
-    c.text(format!("{} / {} ml", grouped(today), grouped(goal)), Rect::new(ctr.0 - 70.0, ctr.1 + 12.0, 140.0, 18.0), 12.0, Weight::Medium, WHITE.fade(0.85), Align::Center);
+    c.text(format!("{pct}%"), Rect::new(ctr.0 - 50.0, ctr.1 - 22.0, 100.0, 32.0), 24.0, Weight::Semibold, WHITE, Align::Center);
+    c.text(format!("{} / {} ml", grouped(today), grouped(goal)), Rect::new(ctr.0 - 60.0, ctr.1 + 10.0, 120.0, 16.0), 10.5, Weight::Medium, WHITE.fade(0.85), Align::Center);
 
-    let x = a.x + 220.0;
-    let w = a.w - 220.0;
-    let sub = if today >= goal { "Goal reached \u{2014} nice work".to_string() } else { format!("{} ml to go", grouped(goal - today)) };
-    c.section_title(Rect::new(x, a.y + 4.0, w, 44.0), "Hydration", &sub);
+    let x = a.x + 148.0;
+    let w = a.right() - x;
+    let sub = if today >= goal { "Goal reached".to_string() } else { format!("{} ml to go", grouped(goal - today)) };
+    c.section_title(Rect::new(x, a.y + 4.0, w, 40.0), "Hydration", &sub);
 
-    let y = a.y + 54.0;
+    let y = a.y + 50.0;
     for (i, ml) in [150u32, 250, 500].iter().enumerate() {
-        c.pill(Rect::new(x + i as f32 * 62.0, y, 56.0, 34.0), Action::WaterAdd(*ml), &format!("+{ml}"), if *ml == 250 { Some(acc) } else { None }, 13.0);
+        c.pill(Rect::new(x + i as f32 * 60.0, y, 54.0, 32.0), Action::WaterAdd(*ml), &format!("+{ml}"), if *ml == 250 { Some(acc) } else { None }, 12.5);
     }
-    c.icon_btn(Rect::new(x + 190.0, y, 30.0, 34.0), Action::WaterUndo, Icon::Undo, 14.0, TEXT_2);
+    c.icon_btn(Rect::new(x + 184.0, y, 28.0, 32.0), Action::WaterUndo, Icon::Undo, 13.0, TEXT_2);
 
     // Seven-day chart against the goal.
     let week = vm.water.week(day);
-    let base = a.y + 186.0;
-    let ch = 68.0;
-    let bw = 22.0;
+    let base = a.bottom() - 14.0;
+    let ch = 44.0;
+    let bw = 18.0;
     let gap = (w - 7.0 * bw) / 6.0;
     for (i, (d, ml)) in week.iter().enumerate() {
         let bx = x + i as f32 * (bw + gap);
         let is_today = i == week.len() - 1;
-        c.s.rect(Rect::new(bx, base - ch, bw, ch), 6.0, Color::rgba(255, 255, 255, 0.055));
+        c.s.rect(Rect::new(bx, base - ch, bw, ch), 5.0, Color::rgba(255, 255, 255, 0.055));
         let f = (*ml as f32 / goal as f32).clamp(0.0, 1.0);
         if f > 0.0 {
-            let hh = (ch * f).max(6.0);
-            c.s.rect(Rect::new(bx, base - hh, bw, hh), 6.0, if is_today { acc } else { acc.fade(0.5) });
+            let hh = (ch * f).max(5.0);
+            c.s.rect(Rect::new(bx, base - hh, bw, hh), 5.0, if is_today { acc } else { acc.fade(0.5) });
         }
         let letter: String = d.format("%a").to_string().chars().take(1).collect();
-        c.text(letter, Rect::new(bx - 4.0, base + 4.0, bw + 8.0, 16.0), 11.0, if is_today { Weight::Semibold } else { Weight::Regular }, if is_today { TEXT } else { TEXT_3 }, Align::Center);
+        c.text(letter, Rect::new(bx - 3.0, base + 3.0, bw + 6.0, 13.0), 10.0, if is_today { Weight::Semibold } else { Weight::Regular }, if is_today { TEXT } else { TEXT_3 }, Align::Center);
     }
-    c.text("W adds 250 ml from anywhere", Rect::new(x, a.y + 210.0, w, 18.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
 }
 
 // -------------------------------------------------------------------- shelf
