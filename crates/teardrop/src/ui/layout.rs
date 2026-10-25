@@ -249,14 +249,18 @@ fn blob_content_rect(card_x: f32, geom: &DropletGeom) -> Rect {
 /// Bottom strip for blob pages: clock left, page dots centre, pin + gear right.
 fn blob_nav(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
     let y = geom.card_h - 34.0;
+    let narrow = geom.card_w < 480.0;
     let local = local_naive(c.vm.now);
-    c.s.text(local.format("%a %d %b  %H:%M").to_string(), Rect::new(card_x + 18.0, y + 2.0, 110.0, 20.0), 11.0, Weight::Medium, TEXT_3, Align::Left);
+    let fmt = if narrow { "%H:%M" } else { "%a %d %b  %H:%M" };
+    c.s.text(local.format(fmt).to_string(), Rect::new(card_x + 18.0, y + 2.0, 110.0, 20.0), 11.0, Weight::Medium, TEXT_3, Align::Left);
 
-    // Page icons: the active one sits on an accent chip.
+    // Page icons centred in the space between the clock and pin/gear,
+    // shrinking their pitch on narrow blobs so nothing overlaps.
     let n = Page::all().len();
-    let iw = 26.0;
-    let total = n as f32 * iw;
-    let mut x = card_x + (geom.card_w - total) / 2.0;
+    let left = if narrow { card_x + 62.0 } else { card_x + 150.0 };
+    let right = card_x + geom.card_w - 70.0;
+    let iw = ((right - left) / n as f32).min(26.0);
+    let mut x = left + (right - left - iw * n as f32) / 2.0;
     for (i, &p) in Page::all().iter().enumerate() {
         let amt = c.ui.tab_amt[i];
         let r = Rect::new(x, y - 3.0, iw - 2.0, 24.0);
@@ -267,7 +271,7 @@ fn blob_nav(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
         } else if h > 0.01 {
             c.s.rect(r, 9.0, SURFACE_HOVER.fade(h));
         }
-        icons::draw(&mut c.s, tab_icon(p), r.cx(), r.cy(), 13.0, TEXT_3.mix(TEXT, h).mix(accent(p), amt));
+        icons::draw(&mut c.s, tab_icon(p), r.cx(), r.cy(), (iw - 9.0).clamp(10.0, 13.0), TEXT_3.mix(TEXT, h).mix(accent(p), amt));
         c.hit(r, a);
         x += iw;
     }
