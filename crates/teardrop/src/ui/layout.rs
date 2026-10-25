@@ -700,6 +700,8 @@ fn glance_shelf(c: &mut Ctx, r: Rect, cy: f32) {
     if let Some(item) = vm.shelf.items.last() {
         c.text(item.name.clone(), Rect::new(r.x + 46.0, cy - 14.0, r.w - 200.0, 18.0), 13.5, Weight::Semibold, TEXT, Align::Left);
         c.text(pages::parent_of(&item.path), Rect::new(r.x + 46.0, cy + 3.0, r.w - 200.0, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+        // The row doubles as the drag-out handle: press and pull the file away.
+        c.hit(Rect::new(r.x + 40.0, cy - 20.0, r.w - 190.0, 40.0), Action::ShelfOpen((vm.shelf.items.len() - 1) as u16));
         c.text(format!("{} on the shelf", vm.shelf.items.len()), Rect::new(r.right() - 150.0, cy - 8.0, 140.0, 16.0), 11.0, Weight::Medium, TEXT_3, Align::Right);
     } else {
         c.text("Shelf is empty", Rect::new(r.x + 46.0, cy - 14.0, 200.0, 18.0), 13.5, Weight::Semibold, TEXT_2, Align::Left);
@@ -1056,7 +1058,7 @@ mod tests {
 
     #[test]
     fn every_page_draws_and_registers_hits_when_open() {
-        for &p in visible_pages(c.set).iter().chain([Page::Settings].iter()) {
+        for &p in Page::all().iter().chain([Page::Settings].iter()) {
             let f = frame(p, 1.0);
             assert!(f.scene.cmds.len() > 20, "{p:?} drew only {} cmds", f.scene.cmds.len());
             assert!(f.hits.iter().any(|h| matches!(h.action, Action::Tab(_))), "{p:?} has no tabs");
@@ -1073,7 +1075,7 @@ mod tests {
 
     #[test]
     fn hits_stay_inside_the_window() {
-        for &p in visible_pages(c.set).iter().chain([Page::Settings].iter()) {
+        for &p in Page::all().iter().chain([Page::Settings].iter()) {
             let f = frame(p, 1.0);
             for h in &f.hits {
                 assert!(h.rect.x >= 0.0 && h.rect.right() <= f.w + 0.5, "{p:?} {:?} x-overflow {:?} vs {}", h.action, h.rect, f.w);

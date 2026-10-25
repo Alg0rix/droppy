@@ -2622,6 +2622,7 @@ mod inner {
             }
             0x43 if page == Page::Tasks => perform(hwnd, Action::TaskClearDone),
             0x43 if page == Page::Clipboard => perform(hwnd, Action::ClipClear),
+            0x56 if page == Page::Shelf => paste_to_shelf(hwnd),
             0x2E if page == Page::Shelf => perform(hwnd, Action::ShelfRemove(0)),
             0x31..=0x36 if page == Page::Shelf => {
                 let scroll = UI.with(|u| u.borrow().scroll_of(Page::Shelf));
@@ -2669,8 +2670,30 @@ mod inner {
                 let zone = drop_zone(x);
                 UI.with(|u| u.borrow_mut().drag_files = 0);
                 let mut list = payload.paths;
-                // A dragged URL or a lump of text becomes a tiny file so the
-                // shelf (and Phone Link's file-only share) accepts it too.
+                // Virtual files and dropped pixels land as real files.
+                for (name, bytes) in payload.blobs {
+                    let dir = paths::ensure_dirs().0.join("drops");
+                    let _ = std::fs::create_dir_all(&dir);
+                    let p = dir.join(&name);
+                    if std::fs::write(&p, &bytes).is_ok() {
+                        list.push(p.to_string_lossy().into_owned());
+                    }
+                }
+                // On the Phone Link half a lone URL/text shares directly.
+                if list.is_empty() && zone == 1 {
+                    if let Some(t) = payload.text {
+                        let tr = t.trim().to_string();
+                        if tr.starts_with("http://") || tr.starts_with("https://") {
+                            crate::share::prepare_link(tr);
+                        } else {
+                            crate::share::prepare_text(t);
+                        }
+                        on_share_ready(hwnd, 1, 1);
+                        return;
+                    }
+                }
+                // On the shelf half a dragged URL or lump of text becomes a
+                // tiny file so the shelf (and file-only shares) accept it.
                 if list.is_empty() {
                     if let Some(t) = payload.text {
                         if let Some(p) = text_to_file(&t) {
@@ -2700,6 +2723,66 @@ mod inner {
         let local = (screen_x - WIN_POS.get().0) as f32 / SCALE.get();
         let mid = ISLAND.with(|s| s.borrow().geom.card_w) / 2.0 + ui::theme::PAD;
         u8::from(local >= mid)
+    }
+
+    /// Ctrl+V on the Shelf page: clipboard files go straight on, clipboard
+    /// text becomes a .txt/.url drop file.
+    fn paste_to_shelf(hwnd: HWND) {
+        let mut got = false;
+        unsafe {
+            use windows::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard};
+            use windows::Win32::System::Memory::{GlobalLock, GlobalUnlock};
+            if OpenClipboard(hwnd).is_ok() {
+                if IsClipboardFormatAvailable(15).is_ok() {
+                    // CF_HDROP: file copies land on the shelf directly.
+                    if let Ok(h) = GetClipboardData(15) {
+                        let hdrop = windows::Win32::UI::Shell::HDROP(h.0);
+                        let count = windows::Win32::UI::Shell::DragQueryFileW(hdrop, 0xFFFF_FFFF, None);
+                        let now = Utc::now();
+                        VIEW.with(|v| {
+                            let mut vm = v.borrow_mut();
+                            for i in 0..count.min(24) {
+                                let mut buf = [0u16; 520];
+                                let len = windows::Win32::UI::Shell::DragQueryFileW(hdrop, i, Some(&mut buf));
+                                if len > 0 {
+                                    vm.shelf.add(&String::from_utf16_lossy(&buf[..len as usize]), now);
+                                    got = true;
+                                }
+                            }
+                        });
+                    }
+                } else if IsClipboardFormatAvailable(13).is_ok() {
+                    // CF_UNICODETEXT becomes a drop file.
+                    if let Ok(h) = GetClipboardData(13) {
+                        let hg = windows::Win32::Foundation::HGLOBAL(h.0);
+                        let base = GlobalLock(hg);
+                        if !base.is_null() {
+                            let ptr = base as *const u16;
+                            let mut n = 0usize;
+                            while *ptr.add(n) != 0 && n < 16384 {
+                                n += 1;
+                            }
+                            let s = String::from_utf16_lossy(std::slice::from_raw_parts(ptr, n));
+                            let _ = GlobalUnlock(hg);
+                            if let Some(p) = text_to_file(&s) {
+                                VIEW.with(|v| v.borrow_mut().shelf.add(&p, Utc::now()));
+                                got = true;
+                            }
+                        }
+                    }
+                }
+                let _ = CloseClipboard();
+            }
+        }
+        if got {
+            VIEW.with(|v| v.borrow_mut().page = Page::Shelf);
+            toast("Pasted onto the shelf");
+            with_eyes(|e| e.react(React::Satisfied));
+            save_all();
+        } else {
+            toast("Nothing on the clipboard to shelve");
+        }
+        wake(hwnd);
     }
 
     /// Persist a dropped text/URL payload as a small file in the data dir:

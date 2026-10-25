@@ -18,7 +18,7 @@ use windows::Win32::UI::Shell::IDataTransferManagerInterop;
 
 /// Storage files are agile (free-threaded) WinRT objects, so moving them to
 /// the UI thread is fine; the wrapper just says so to the compiler.
-struct Items(Vec<IStorageItem>);
+pub struct Items(Vec<IStorageItem>);
 unsafe impl Send for Items {}
 
 impl Items {
@@ -28,7 +28,15 @@ impl Items {
     }
 }
 
-static PENDING: Mutex<Option<Items>> = Mutex::new(None);
+pub enum Payload {
+    Files(Items),
+    /// A URL: Phone Link opens it directly instead of shipping a .url file.
+    Link(String),
+    /// Plain text (notes, snippets).
+    Text(String),
+}
+
+static PENDING: Mutex<Option<Payload>> = Mutex::new(None);
 
 #[implement(IIterator<IStorageItem>)]
 struct ItemIter {
@@ -83,9 +91,23 @@ pub fn prepare(paths: &[String]) -> usize {
         .collect();
     let n = items.len();
     if let Ok(mut slot) = PENDING.lock() {
-        *slot = (n > 0).then_some(Items(items));
+        *slot = (n > 0).then_some(Payload::Files(Items(items)));
     }
     n
+}
+
+/// Queue a URL for `show` — the phone gets a real link, not a file.
+pub fn prepare_link(url: String) {
+    if let Ok(mut slot) = PENDING.lock() {
+        *slot = Some(Payload::Link(url));
+    }
+}
+
+/// Queue plain text for `show`.
+pub fn prepare_text(text: String) {
+    if let Ok(mut slot) = PENDING.lock() {
+        *slot = Some(Payload::Text(text));
+    }
 }
 
 thread_local! {
@@ -105,10 +127,22 @@ pub fn show(hwnd: HWND) -> Result<()> {
         if let Some(args) = args {
             let data = args.Request()?.Data()?;
             let props = data.Properties()?;
-            props.SetTitle(&HSTRING::from(if items.list().len() == 1 { "Send 1 file" } else { "Send files" }))?;
             props.SetDescription(&HSTRING::from("Choose Phone Link to send to your phone"))?;
-            let list: IIterable<IStorageItem> = ItemList(items.list().to_vec()).into();
-            data.SetStorageItems(&list, true)?;
+            match &items {
+                Payload::Files(items) => {
+                    props.SetTitle(&HSTRING::from(if items.list().len() == 1 { "Send 1 file" } else { "Send files" }))?;
+                    let list: IIterable<IStorageItem> = ItemList(items.list().to_vec()).into();
+                    data.SetStorageItems(&list, true)?;
+                }
+                Payload::Link(url) => {
+                    props.SetTitle(&HSTRING::from("Send link"))?;
+                    data.SetWebLink(&windows::Foundation::Uri::CreateUri(&HSTRING::from(url.as_str()))?)?;
+                }
+                Payload::Text(t) => {
+                    props.SetTitle(&HSTRING::from("Send text"))?;
+                    data.SetText(&HSTRING::from(t.as_str()))?;
+                }
+            }
         }
         Ok(())
     }))?;
@@ -142,7 +176,7 @@ mod tests {
         paths.push(dir.join("missing.bin").to_string_lossy().into_owned()); // gone: skipped
         assert_eq!(prepare(&paths), 2);
 
-        let items = PENDING.lock().unwrap().take().unwrap();
+        let items = match PENDING.lock().unwrap().take().unwrap() { Payload::Files(i) => i, _ => panic!() };
         let list: IIterable<IStorageItem> = ItemList(items.list().to_vec()).into();
         // Our IIterable enumerates correctly...
         let names: Vec<String> = list.clone().into_iter().map(|i| i.Name().unwrap().to_string()).collect();
