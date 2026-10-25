@@ -6,6 +6,7 @@
 pub mod icons;
 pub mod eyes;
 pub mod layout;
+pub mod markdown;
 pub mod pages;
 pub mod scene;
 pub mod state;

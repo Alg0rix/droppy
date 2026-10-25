@@ -563,7 +563,7 @@ impl UiState {
             Page::Speed => (420.0, 270.0),
             Page::Usage => (480.0, 270.0),
             Page::Voice => (420.0, 260.0),
-            Page::Ai => (540.0, 300.0),
+            Page::Ai => (640.0, 400.0),
             Page::Windows => (500.0, 300.0),
             Page::Settings => (680.0, 318.0),
         }

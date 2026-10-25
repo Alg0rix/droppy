@@ -427,6 +427,21 @@ fn shots() -> Vec<Shot> {
             ..shot("26m-page-ai-chat", 1.0, Page::Ai)
         },
         Shot {
+            setup: |vm, _, _, _| {
+                use crate::ai::{ChatMessage, Role};
+                vm.ai.messages = vec![
+                    ChatMessage { role: Role::User, text: "How do I debounce a search box in Rust?".into(), actions: Vec::new(), timestamp: 0 },
+                    ChatMessage {
+                        role: Role::Assistant,
+                        text: "## Debouncing\n\nKeep a **deadline** and reset it on every keystroke; only run the query once the deadline passes. See [the docs](https://doc.rust-lang.org) or `std::time::Instant`.\n\n- Store `last_edit: Instant`\n- On each *tick*, compare `now - last_edit`\n  - fire when it exceeds **150 ms**\n1. Reset on input\n2. Query on timeout\n\n> Tip: 150 ms feels instant but skips most keystrokes.\n\n```rust\nif last_edit.elapsed() > Duration::from_millis(150) {\n    search(&query);\n}\n```".into(),
+                        actions: Vec::new(),
+                        timestamp: 0,
+                    },
+                ];
+            },
+            ..shot("26m2-ai-markdown", 1.0, Page::Ai)
+        },
+        Shot {
             setup: |vm, set, _, _| {
                 set.ai_provider = teardrop_core::AiProvider::ChatGpt;
                 vm.ai.show_setup = true;

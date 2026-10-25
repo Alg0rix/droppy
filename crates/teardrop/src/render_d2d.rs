@@ -31,7 +31,7 @@ pub mod d2d {
     };
     use windows::Win32::Graphics::DirectWrite::{
         DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL,
-        DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+        DWRITE_FONT_STYLE_ITALIC, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
         DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING,
         DWRITE_TEXT_METRICS, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP,
     };
@@ -97,7 +97,11 @@ pub mod d2d {
         }
 
         fn format(&self, size: f32, weight: Weight, align: Align) -> Option<IDWriteTextFormat> {
-            let key = ((size * 10.0) as u32, weight, align as u8);
+            self.format_styled(size, weight, align, false, false)
+        }
+
+        fn format_styled(&self, size: f32, weight: Weight, align: Align, italic: bool, mono: bool) -> Option<IDWriteTextFormat> {
+            let key = ((size * 10.0) as u32, weight, align as u8 | (italic as u8) << 4 | (mono as u8) << 5);
             if let Some(f) = self.fmts.borrow().get(&key) {
                 return Some(f.clone());
             }
@@ -110,7 +114,15 @@ pub mod d2d {
             unsafe {
                 let f = self
                     .dwrite
-                    .CreateTextFormat(w!("Segoe UI"), None, DWRITE_FONT_WEIGHT(wt), DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, size, w!("en-us"))
+                    .CreateTextFormat(
+                        if mono { w!("Consolas") } else { w!("Segoe UI") },
+                        None,
+                        DWRITE_FONT_WEIGHT(wt),
+                        if italic { DWRITE_FONT_STYLE_ITALIC } else { DWRITE_FONT_STYLE_NORMAL },
+                        DWRITE_FONT_STRETCH_NORMAL,
+                        size,
+                        w!("en-us"),
+                    )
                     .ok()?;
                 let _ = f.SetTextAlignment(match align {
                     Align::Left => DWRITE_TEXT_ALIGNMENT_LEADING,
@@ -317,6 +329,34 @@ pub mod d2d {
                             rt.PopAxisAlignedClip();
                         }
                     }
+                }
+                Cmd::Runs { r, size, runs } => {
+                    rt.PushAxisAlignedClip(&rc(*r), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                    let mut x = r.x;
+                    for run in runs {
+                        if run.text.is_empty() {
+                            continue;
+                        }
+                        let Some(fmt) = self.format_styled(*size, run.weight, Align::Left, run.italic, run.mono) else { continue };
+                        let wide: Vec<u16> = run.text.encode_utf16().collect();
+                        let tw = self.text_width(&wide, &fmt);
+                        let pad = if run.chip.is_some() { crate::ui::scene::CHIP_PAD } else { 0.0 };
+                        if let Some(chip) = run.chip {
+                            let h = (size * 1.45).min(r.h);
+                            let cr = D2D_RECT_F { left: x, top: r.y + (r.h - h) / 2.0, right: x + tw + pad * 2.0, bottom: r.y + (r.h + h) / 2.0 };
+                            solid.SetColor(&d2d_color(chip));
+                            rt.FillRoundedRectangle(&D2D1_ROUNDED_RECT { rect: cr, radiusX: 5.0, radiusY: 5.0 }, solid);
+                        }
+                        let tr = D2D_RECT_F { left: x + pad, top: r.y, right: x + pad + tw + 4.0, bottom: r.y + r.h };
+                        solid.SetColor(&d2d_color(run.color));
+                        rt.DrawText(&wide, &fmt, &tr, solid, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
+                        if run.underline {
+                            let uy = r.y + r.h / 2.0 + size * 0.62;
+                            rt.DrawLine(pt(x + pad, uy), pt(x + pad + tw.max(1.0) - 1.0, uy), solid, 1.0, None::<&ID2D1StrokeStyle>);
+                        }
+                        x += tw + pad * 2.0;
+                    }
+                    rt.PopAxisAlignedClip();
                 }
                 Cmd::Image { r, img, opacity } => {
                     let key = (Interface::as_raw(rt) as usize, img.id);

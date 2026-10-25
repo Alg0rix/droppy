@@ -150,6 +150,23 @@ impl Image {
     }
 }
 
+/// One styled span of a [`Cmd::Runs`] line.
+#[derive(Debug, Clone)]
+pub struct Run {
+    pub text: String,
+    pub weight: Weight,
+    pub italic: bool,
+    /// Monospace face (inline code).
+    pub mono: bool,
+    pub color: Color,
+    pub underline: bool,
+    /// Rounded chip drawn behind the run (inline code).
+    pub chip: Option<Color>,
+}
+
+/// Horizontal padding a chipped run adds on each side.
+pub const CHIP_PAD: f32 = 4.0;
+
 #[derive(Debug, Clone)]
 pub enum Cmd {
     /// The island silhouette: soft shadow, body fill, 1px rim light.
@@ -175,6 +192,9 @@ pub enum Cmd {
         /// Editing overlay: caret + selection, measured by the renderer.
         edit: Option<TextEdit>,
     },
+    /// One line of styled runs laid left to right inside `r` (vertically
+    /// centred). The renderer measures each run, so mixed styles never overlap.
+    Runs { r: Rect, size: f32, runs: Vec<Run> },
     /// Raster image stretched to `r`; `img` holds premultiplied BGRA pixels.
     Image { r: Rect, img: std::sync::Arc<Image>, opacity: f32 },
     Clip(Rect),
@@ -307,6 +327,20 @@ impl Scene {
         }
         let (r, base, lit) = (self.r(r), self.c(base), self.c(lit));
         self.cmds.push(Cmd::Text { s: s.into(), r, size, weight, color: base, align: Align::Left, karaoke: Some((frac.clamp(0.0, 1.0), lit)), edit: None });
+    }
+
+    /// Draw a line of styled runs starting at `r.x`.
+    pub fn runs(&mut self, r: Rect, size: f32, runs: Vec<Run>) {
+        if self.alpha <= 0.003 || runs.is_empty() {
+            return;
+        }
+        let r = self.r(r);
+        let runs = runs.into_iter().map(|mut u| {
+            u.color = self.c(u.color);
+            u.chip = u.chip.map(|c| self.c(c));
+            u
+        }).collect();
+        self.cmds.push(Cmd::Runs { r, size, runs });
     }
 
     /// Draw `img` (premultiplied BGRA) stretched into `r`.

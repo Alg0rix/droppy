@@ -2185,15 +2185,19 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
         return;
     }
 
-    // Pre-layout conversation bubbles so we can bottom-align and scroll cleanly.
+    // Pre-layout the conversation so we can bottom-align and scroll cleanly.
+    // Assistant replies are rendered as markdown beside a small avatar; the
+    // user's messages stay as accent bubbles on the right.
+    const GUTTER: f32 = 32.0;
     enum RowItem {
         UserBubble(Vec<String>),
-        AssistantBubble { msg_idx: usize, lines: Vec<String> },
+        Assistant { msg_idx: usize, md: std::rc::Rc<super::markdown::Laid> },
         ActionRow { msg_idx: usize, act_idx: usize, label: String, can_undo: bool, undone: bool },
         Thinking,
         ErrorBanner(String),
     }
 
+    let md_w = body.w - GUTTER - 6.0;
     let mut items = Vec::new();
     for (mi, m) in ai.messages.iter().enumerate() {
         match m.role {
@@ -2201,10 +2205,7 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
                 items.push(RowItem::UserBubble(wrap_lines(&m.text, body.w * 0.72, 12.0)));
             }
             Role::Assistant => {
-                items.push(RowItem::AssistantBubble {
-                    msg_idx: mi,
-                    lines: wrap_lines(&m.text, body.w - 64.0, 12.0),
-                });
+                items.push(RowItem::Assistant { msg_idx: mi, md: super::markdown::laid(&m.text, md_w) });
                 for (ai_idx, act) in m.actions.iter().enumerate() {
                     items.push(RowItem::ActionRow {
                         msg_idx: mi,
@@ -2224,15 +2225,18 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
         items.push(RowItem::ErrorBanner(ai.error.clone()));
     }
 
+    /// Row below an assistant reply that holds its Copy button.
+    const COPY_ROW: f32 = 22.0;
     let item_h = |it: &RowItem| -> f32 {
         match it {
-            RowItem::UserBubble(lines) => (lines.len() as f32 * 16.0 + 12.0).max(28.0) + 5.0,
-            RowItem::AssistantBubble { lines, .. } => (lines.len() as f32 * 16.0 + 14.0).max(30.0) + 5.0,
+            RowItem::UserBubble(lines) => (lines.len() as f32 * 16.0 + 12.0).max(28.0) + 8.0,
+            RowItem::Assistant { md, .. } => md.height.max(LH_MIN) + COPY_ROW + 8.0,
             RowItem::ActionRow { .. } => 26.0,
-            RowItem::Thinking => 28.0,
+            RowItem::Thinking => 32.0,
             RowItem::ErrorBanner(_) => 28.0,
         }
     };
+    const LH_MIN: f32 = 18.0;
 
     let total_h: f32 = items.iter().map(&item_h).sum();
     let max_scroll = (total_h - body.h).max(0.0);
@@ -2241,6 +2245,11 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
         body.y
     } else {
         body.bottom() - total_h + scroll_px
+    };
+
+    let avatar = |c: &mut Ctx, x: f32, y: f32, pulse: f32| {
+        c.s.circle(x + 11.0, y + 11.0, 11.0, acc.fade(0.16));
+        icons::draw(&mut c.s, Icon::Sparkle, x + 11.0, y + 11.0, 12.0, acc.fade(pulse));
     };
 
     c.s.clip(body);
@@ -2255,29 +2264,26 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
         }
         match it {
             RowItem::UserBubble(lines) => {
-                let bh = h - 5.0;
+                let bh = h - 8.0;
                 let max_line = lines.iter().map(|l| est_w(l, 12.0) * 1.12).fold(40.0_f32, f32::max);
-                let bw = (max_line + 22.0).clamp(64.0, body.w * 0.78);
+                let bw = (max_line + 24.0).clamp(64.0, body.w * 0.78);
                 let br = Rect::new(body.right() - bw, y, bw, bh);
-                c.s.rect(br, 11.0, acc.fade(0.22));
+                c.s.rect(br, 14.0, acc.fade(0.2));
+                c.s.stroke(br, 14.0, 1.0, acc.fade(0.22));
                 for (li, l) in lines.iter().enumerate() {
-                    c.text(l.clone(), Rect::new(br.x + 11.0, br.y + 6.0 + li as f32 * 16.0, br.w - 22.0, 16.0), 12.0, Weight::Regular, TEXT, Align::Left);
+                    c.text(l.clone(), Rect::new(br.x + 12.0, br.y + 6.0 + li as f32 * 16.0, br.w - 24.0, 16.0), 12.0, Weight::Regular, TEXT, Align::Left);
                 }
             }
-            RowItem::AssistantBubble { msg_idx, lines } => {
-                let bh = h - 5.0;
-                let br = Rect::new(body.x, y, body.w, bh);
-                c.s.rect(br, 11.0, SURFACE);
-                for (li, l) in lines.iter().enumerate() {
-                    c.text(l.clone(), Rect::new(br.x + 11.0, br.y + 7.0 + li as f32 * 16.0, br.w - 58.0, 16.0), 12.0, Weight::Regular, TEXT, Align::Left);
-                }
-                let copy_r = Rect::new(br.right() - 44.0, br.y + 5.0, 38.0, 20.0);
+            RowItem::Assistant { msg_idx, md } => {
+                avatar(c, body.x, y + 1.0, 1.0);
+                md.draw(&mut c.s, body.x + GUTTER, y + 1.0, md_w, acc);
+                let copy_r = Rect::new(body.x + GUTTER - 2.0, y + md.height.max(LH_MIN) + 5.0, 40.0, 18.0);
                 if copy_r.y >= body.y && copy_r.bottom() <= body.bottom() {
                     c.pill(copy_r, Action::AiCopyReply(*msg_idx as u16), "Copy", None, 9.5);
                 }
             }
             RowItem::ActionRow { msg_idx, act_idx, label, can_undo, undone } => {
-                let ar = Rect::new(body.x + 8.0, y, body.w - 8.0, 22.0);
+                let ar = Rect::new(body.x + GUTTER, y, body.w - GUTTER, 22.0);
                 c.s.rect(ar, 8.0, GREEN.fade(0.12));
                 icons::draw(&mut c.s, Icon::Check, ar.x + 12.0, ar.cy(), 11.0, GREEN);
                 let txt = if *undone { format!("{label} (undone)") } else { label.clone() };
@@ -2290,11 +2296,15 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
                 }
             }
             RowItem::Thinking => {
-                let pulse = ((c.now_ms % 1200) as f32 / 1200.0 * std::f32::consts::TAU).sin() * 0.35 + 0.65;
-                let br = Rect::new(body.x, y, 124.0, 24.0);
-                c.s.rect(br, 11.0, SURFACE);
-                icons::draw(&mut c.s, Icon::Sparkle, br.x + 14.0, br.cy(), 12.0, acc.fade(pulse));
-                c.text("Thinking\u{2026}", Rect::new(br.x + 28.0, br.y, br.w - 32.0, br.h), 11.5, Weight::Medium, TEXT_2.fade(pulse), Align::Left);
+                let t = c.now_ms as f32 / 1000.0;
+                let pulse = (t * std::f32::consts::TAU / 1.2).sin() * 0.35 + 0.65;
+                avatar(c, body.x, y + 1.0, pulse);
+                // Three dots chasing each other.
+                for k in 0..3 {
+                    let ph = ((t * 1.6 - k as f32 * 0.18) % 1.0).max(0.0);
+                    let lift = (ph * std::f32::consts::PI).sin().max(0.0);
+                    c.s.circle(body.x + GUTTER + 6.0 + k as f32 * 11.0, y + 12.0 - lift * 3.0, 2.6, TEXT_2.fade(0.45 + 0.55 * lift));
+                }
             }
             RowItem::ErrorBanner(err) => {
                 let br = Rect::new(body.x, y, body.w, 24.0);
