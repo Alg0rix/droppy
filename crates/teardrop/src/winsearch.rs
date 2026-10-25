@@ -10,6 +10,7 @@ use windows::core::{w, HSTRING};
 /// One search row: display name, a path ShellExecute/SHCreateItem can open
 /// (filesystem path or `shell:`/::{GUID} parsing path), and the friendly
 /// type text ("Text Document", "Shortcut", …).
+#[derive(Clone)]
 pub struct Row {
     pub name: String,
     pub path: String,

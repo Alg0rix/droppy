@@ -76,6 +76,8 @@ mod inner {
     const WM_APP_DOWNLOAD: u32 = 0x8002;
     const WM_APP_SHARE: u32 = 0x8003;
     const WM_APP_VOLUME: u32 = 0x8004;
+    /// Launcher search results / app icons finished on a worker thread.
+    const WM_APP_SEARCH: u32 = 0x8005;
     const HSHELL_WINDOWCREATED: u32 = 1;
     const HSHELL_FLASH: u32 = 0x8006;
     const HSHELL_WINDOWACTIVATED: u32 = 4;
@@ -416,6 +418,7 @@ mod inner {
             ui.note_edit = None;
             ui.win_sel = 0;
         });
+        crate::launcher::warm();
         activate(hwnd);
         wake(hwnd);
     }
@@ -875,6 +878,7 @@ mod inner {
                         ui.win_sel = 0;
                     }
                 });
+                crate::launcher::warm();
                 activate(hwnd);
                 save = false;
             }
@@ -2955,6 +2959,12 @@ mod inner {
                 env::spawn_downloads_watcher(hwnd, WM_APP_DOWNLOAD);
                 // Live level changes: volume keys and the brightness slider/keys.
                 volume::watch(hwnd.0 as isize, WM_APP_VOLUME);
+                {
+                    let raw = hwnd.0 as isize;
+                    crate::launcher::set_notify(move || unsafe {
+                        let _ = PostMessageW(HWND(raw as *mut _), WM_APP_SEARCH, WPARAM(0), LPARAM(0));
+                    });
+                }
                 let _ = RegisterPowerSettingNotification(HANDLE(hwnd.0), &GUID_VIDEO_CURRENT_MONITOR_BRIGHTNESS, DEVICE_NOTIFY_WINDOW_HANDLE);
                 if SETTINGS.with(|s| s.borrow().weather_mood) {
                     env::refresh_weather();
@@ -3254,6 +3264,10 @@ mod inner {
                     with_eyes(|e| e.react(if locked { React::Goodnight } else { React::WelcomeBack }));
                     wake(hwnd);
                 }
+                LRESULT(0)
+            }
+            _ if msg == WM_APP_SEARCH => {
+                wake(hwnd);
                 LRESULT(0)
             }
             _ if msg == WM_APP_VOLUME => {

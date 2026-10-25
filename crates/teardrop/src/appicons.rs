@@ -1,28 +1,63 @@
 //! Real app icons for launcher search hits: a .lnk's shell image extracted
-//! once, converted to premultiplied BGRA through WIC, and cached for the
-//! painter. The UI thread is STA (OleInitialize in window::run), so the
-//! shell calls below are legal where layout runs.
+//! on a worker thread, converted to premultiplied BGRA through WIC, and
+//! cached for the painter. Layout never waits on the shell.
 
 use crate::ui::scene::Image;
 use std::collections::HashMap;
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
 
 /// Icons draw at ~18px logical (up to ~36px at 2x DPI); 48 is the shell's
 /// standard "large" size and downscales cleanly.
 const PX: i32 = 48;
 
-static CACHE: OnceLock<Mutex<HashMap<String, Option<Arc<Image>>>>> = OnceLock::new();
+enum Slot {
+    /// Handed to the icon worker; draws as the letter tile until it lands.
+    Pending,
+    Done(Option<Arc<Image>>),
+}
 
-/// Premultiplied-BGRA icon for the app `lnk` points at, or None when the
-/// shell can't produce one (callers fall back to the letter tile).
+static CACHE: OnceLock<Mutex<HashMap<String, Slot>>> = OnceLock::new();
+static QUEUE: OnceLock<Sender<String>> = OnceLock::new();
+
+fn cache() -> &'static Mutex<HashMap<String, Slot>> {
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Premultiplied-BGRA icon for the app `lnk` points at. Never blocks: the
+/// first call queues the shell extraction (thumbnails of big documents can
+/// take a while) and returns None, so callers draw their letter tile; the UI
+/// is woken when the icon is ready and later calls return it.
 pub fn icon_for(lnk: &str) -> Option<Arc<Image>> {
-    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Some(hit) = cache.lock().unwrap().get(lnk) {
-        return hit.clone();
+    let mut c = cache().lock().unwrap();
+    match c.get(lnk) {
+        Some(Slot::Done(img)) => return img.clone(),
+        Some(Slot::Pending) => return None,
+        None => {}
     }
-    let img = extract(lnk).map(Arc::new);
-    cache.lock().unwrap().insert(lnk.to_string(), img.clone());
-    img
+    c.insert(lnk.to_string(), Slot::Pending);
+    drop(c);
+    let tx = QUEUE.get_or_init(|| {
+        let (tx, rx) = channel::<String>();
+        std::thread::Builder::new().name("app-icons".into()).spawn(move || worker(rx)).ok();
+        tx
+    });
+    let _ = tx.send(lnk.to_string());
+    None
+}
+
+fn worker(rx: Receiver<String>) {
+    use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
+    // The shell image factory and IShellLink are apartment objects: give this
+    // thread its own STA, like the UI thread's.
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+    }
+    for path in rx {
+        let img = extract(&path).map(Arc::new);
+        cache().lock().unwrap().insert(path, Slot::Done(img));
+        crate::launcher::notify();
+    }
 }
 
 /// File the icon should come from: the link's own IconLocation when set,
@@ -137,7 +172,15 @@ mod tests {
         let Some((_, lnk)) = crate::launcher::installed_apps().first().cloned() else {
             return; // nothing installed — nothing to assert against
         };
-        let img = super::icon_for(&lnk).expect("shell image for a Start Menu .lnk");
+        // icon_for is async: the first call queues extraction, then it lands.
+        let t0 = std::time::Instant::now();
+        let img = loop {
+            if let Some(i) = super::icon_for(&lnk) {
+                break i;
+            }
+            assert!(t0.elapsed().as_secs() < 10, "icon worker never produced an image");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
         assert!(img.w > 0 && img.h > 0);
         assert_eq!(img.bgra.len() as u32, img.w * img.h * 4);
         // Cache serves the same image back.
