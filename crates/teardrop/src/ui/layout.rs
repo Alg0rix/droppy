@@ -158,7 +158,20 @@ impl<'a> Ctx<'a> {
     }
 }
 
-fn tab_icon(p: Page) -> Icon {
+/// Step through the visible pages only (wheel/arrow cycling).
+pub fn step_page(cur: Page, delta: i32, set: &Settings) -> Page {
+    let all = visible_pages(set);
+    let Some(i) = all.iter().position(|&p| p == cur) else { return all[0] };
+    all[((i as i32 + delta).rem_euclid(all.len() as i32)) as usize]
+}
+
+/// Pages that actually appear in the nav dock and the page cycle.
+pub fn visible_pages(set: &Settings) -> Vec<Page> {
+    let v: Vec<Page> = Page::all().iter().copied().filter(|p| !set.hidden_pages.iter().any(|h| h == p.title())).collect();
+    if v.is_empty() { vec![Page::Music] } else { v }
+}
+
+pub fn tab_icon(p: Page) -> Icon {
     match p {
         Page::Music => Icon::Note,
         Page::Focus => Icon::Timer,
@@ -256,12 +269,12 @@ fn blob_nav(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
 
     // Page icons centred in the space between the clock and pin/gear,
     // shrinking their pitch on narrow blobs so nothing overlaps.
-    let n = Page::all().len();
+    let n = visible_pages(c.set).len();
     let left = if narrow { card_x + 62.0 } else { card_x + 150.0 };
     let right = card_x + geom.card_w - 70.0;
     let iw = ((right - left) / n as f32).min(26.0);
     let mut x = left + (right - left - iw * n as f32) / 2.0;
-    for (i, &p) in Page::all().iter().enumerate() {
+    for (i, &p) in visible_pages(c.set).iter().enumerate() {
         let amt = c.ui.tab_amt[i];
         let r = Rect::new(x, y - 3.0, iw - 2.0, 24.0);
         let a = Action::Tab(p);
@@ -304,14 +317,14 @@ fn header(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
     c.s.text(date_str, tr, 11.5, Weight::Medium, TEXT_2, Align::Left);
 
     // Page tabs centred in the card; the active one widens to show its label.
-    let widths: Vec<f32> = Page::all()
+    let widths: Vec<f32> = visible_pages(c.set)
         .iter()
         .enumerate()
         .map(|(i, &p)| TAB_W + (tab_label_w(p) - TAB_W) * c.ui.tab_amt[i])
         .collect();
     let total: f32 = widths.iter().sum::<f32>() + (widths.len() - 1) as f32 * 2.0;
     let mut x = card_x + (geom.card_w - total) / 2.0;
-    for (i, &p) in Page::all().iter().enumerate() {
+    for (i, &p) in visible_pages(c.set).iter().enumerate() {
         let amt = c.ui.tab_amt[i];
         let w = widths[i];
         let r = Rect::new(x, HEADER_Y, w, HEADER_H);
@@ -1043,7 +1056,7 @@ mod tests {
 
     #[test]
     fn every_page_draws_and_registers_hits_when_open() {
-        for &p in Page::all().iter().chain([Page::Settings].iter()) {
+        for &p in visible_pages(c.set).iter().chain([Page::Settings].iter()) {
             let f = frame(p, 1.0);
             assert!(f.scene.cmds.len() > 20, "{p:?} drew only {} cmds", f.scene.cmds.len());
             assert!(f.hits.iter().any(|h| matches!(h.action, Action::Tab(_))), "{p:?} has no tabs");
@@ -1060,7 +1073,7 @@ mod tests {
 
     #[test]
     fn hits_stay_inside_the_window() {
-        for &p in Page::all().iter().chain([Page::Settings].iter()) {
+        for &p in visible_pages(c.set).iter().chain([Page::Settings].iter()) {
             let f = frame(p, 1.0);
             for h in &f.hits {
                 assert!(h.rect.x >= 0.0 && h.rect.right() <= f.w + 0.5, "{p:?} {:?} x-overflow {:?} vs {}", h.action, h.rect, f.w);

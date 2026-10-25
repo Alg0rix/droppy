@@ -825,6 +825,22 @@ mod inner {
                 save = false;
             }
             Action::HudWater => add_water(250),
+            Action::TogglePage(p) => {
+                SETTINGS.with(|s| {
+                    let mut st = s.borrow_mut();
+                    let t = p.title().to_string();
+                    if let Some(i) = st.hidden_pages.iter().position(|h| h == &t) {
+                        st.hidden_pages.remove(i);
+                    } else {
+                        st.hidden_pages.push(t);
+                    }
+                });
+                // If the current page just got hidden, move to the first visible one.
+                let set = SETTINGS.with(|s| s.borrow().clone());
+                if set.hidden_pages.iter().any(|h| h == VIEW.with(|v| v.borrow().page.title())) {
+                    VIEW.with(|v| v.borrow_mut().page = ui::layout::visible_pages(&set)[0]);
+                }
+            }
             Action::Tab(p) => {
                 // Leaving the notes editor closes it (and prunes a blank note).
                 if VIEW.with(|v| v.borrow().page) == Page::Notes && p != Page::Notes {
@@ -2319,7 +2335,7 @@ mod inner {
                 WHEEL_LAST.set(now);
                 VIEW.with(|v| {
                     let mut vm = v.borrow_mut();
-                    vm.page = if vm.page == Page::Settings { LAST_TAB.get() } else { vm.page.step(dir) };
+                    vm.page = if vm.page == Page::Settings { LAST_TAB.get() } else { ui::layout::step_page(vm.page, dir, &SETTINGS.with(|s| s.borrow().clone())) };
                 });
                 save_all();
             }

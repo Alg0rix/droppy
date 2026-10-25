@@ -97,6 +97,8 @@ impl SettingKey {
 pub enum Action {
     Island,
     Tab(Page),
+    /// Settings chip: keep this page out of the nav and the page cycle.
+    TogglePage(Page),
     Gear,
     Pin,
     MediaPrev,

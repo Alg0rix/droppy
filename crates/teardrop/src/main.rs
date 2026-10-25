@@ -62,6 +62,32 @@ fn main() {
         println!("  --demo       render demo.gif / demo.mp4 into <dir> (needs ffmpeg)");
         return;
     }
+    #[cfg(windows)]
+    if !single_instance_guard() {
+        return;
+    }
     let (_data, _cache) = paths::ensure_dirs();
     std::process::exit(window::run());
+}
+
+/// One island per session: a named mutex tells a second launch that
+/// Teardrop is already running. The handle is leaked on purpose — the
+/// mutex must live as long as the process does.
+#[cfg(windows)]
+fn single_instance_guard() -> bool {
+    use windows::core::{w, PCWSTR};
+    use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
+    use windows::Win32::System::Threading::CreateMutexW;
+    use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, SetForegroundWindow};
+    unsafe {
+        let _keep = CreateMutexW(None, true, w!("Local\\TeardropIslandMutex"));
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            if let Ok(hwnd) = FindWindowW(w!("TeardropIsland"), PCWSTR::null()) {
+                let _ = SetForegroundWindow(hwnd);
+            }
+            return false;
+        }
+        let _ = _keep;
+        true
+    }
 }

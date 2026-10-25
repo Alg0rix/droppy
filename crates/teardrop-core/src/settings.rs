@@ -166,6 +166,9 @@ pub struct Settings {
     /// iCal feed links (secret addresses): never shown, logged or put in a view model.
     #[serde(default)]
     pub calendar_urls: Vec<String>,
+    /// Page titles kept out of the island nav dock and page cycle.
+    #[serde(default)]
+    pub hidden_pages: Vec<String>,
     /// Active AI Chat provider.
     #[serde(default)]
     pub ai_provider: AiProvider,
@@ -306,6 +309,7 @@ impl Default for Settings {
             app_themes: BTreeMap::new(),
             eye_themes: Vec::new(),
             calendar_urls: Vec::new(),
+            hidden_pages: Vec::new(),
             ai_provider: AiProvider::ChatGpt,
             ai_share_day: true,
             ai_chatgpt_model: default_chatgpt_model(),

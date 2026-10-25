@@ -2277,6 +2277,22 @@ fn settings(c: &mut Ctx, a: Rect) {
     c.text(format!("{:.2} L", c.vm.water.goal_ml as f32 / 1000.0), Rect::new(rx + col_w - 82.0, gy + 2.0, 52.0, 24.0), 12.0, Weight::Semibold, TEXT, Align::Center);
     c.icon_btn(Rect::new(rx + col_w - 26.0, gy, 24.0, 24.0), Action::GoalStep(1), Icon::Plus, 11.0, TEXT_2);
 
+    // Pages on the island: each icon chips the page in/out of the nav and cycle.
+    let py = gy + 36.0;
+    c.text("On island", Rect::new(rx, py + 2.0, 75.0, 24.0), 12.0, Weight::Regular, TEXT_2, Align::Left);
+    let vis = super::layout::visible_pages(c.set);
+    let pitch = ((col_w - 84.0) / 12.0).min(28.0);
+    for (i, pg) in Page::all().iter().enumerate() {
+        let on = vis.contains(pg);
+        c.icon_btn(
+            Rect::new(rx + 80.0 + i as f32 * pitch, py, 24.0, 24.0),
+            Action::TogglePage(*pg),
+            super::layout::tab_icon(*pg),
+            13.0,
+            if on { accent(*pg) } else { TEXT_3.fade(0.45) },
+        );
+    }
+
     // Keyboard hint at bottom
     c.text("Win+Shift+T toggles island \u{00b7} Esc closes", Rect::new(rx, a.bottom() - 16.0, col_w, 16.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
 }
