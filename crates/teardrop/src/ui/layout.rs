@@ -236,10 +236,23 @@ pub fn content_rect(card_x: f32, geom: &DropletGeom) -> Rect {
 }
 
 fn header(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
-    let mut x = card_x + 18.0;
+    // Live clock and date at the far left (e.g. "Sat 24 Oct  13:49").
+    let local = local_naive(c.vm.now);
+    let date_str = local.format("%a %d %b  %H:%M").to_string();
+    let tr = Rect::new(card_x + 20.0, HEADER_Y + 7.0, 120.0, 20.0);
+    c.s.text(date_str, tr, 11.5, Weight::Medium, TEXT_2, Align::Left);
+
+    // Page tabs centred in the card; the active one widens to show its label.
+    let widths: Vec<f32> = Page::all()
+        .iter()
+        .enumerate()
+        .map(|(i, &p)| TAB_W + (tab_label_w(p) - TAB_W) * c.ui.tab_amt[i])
+        .collect();
+    let total: f32 = widths.iter().sum::<f32>() + (widths.len() - 1) as f32 * 2.0;
+    let mut x = card_x + (geom.card_w - total) / 2.0;
     for (i, &p) in Page::all().iter().enumerate() {
         let amt = c.ui.tab_amt[i];
-        let w = TAB_W + (tab_label_w(p) - TAB_W) * amt;
+        let w = widths[i];
         let r = Rect::new(x, HEADER_Y, w, HEADER_H);
         let a = Action::Tab(p);
         let h = c.hov(a);
@@ -259,6 +272,7 @@ fn header(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
         c.hit(r, a);
         x += w + 2.0;
     }
+
     // Settings gear, far right.
     let gr = Rect::new(card_x + geom.card_w - 18.0 - HEADER_H, HEADER_Y, HEADER_H, HEADER_H);
     let on = c.vm.page == Page::Settings;
@@ -275,14 +289,8 @@ fn header(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
     }
     c.hit(gr, Action::Gear);
 
-    // Live clock and date (e.g. "Sat 24 Oct  13:49").
-    let local = local_naive(c.vm.now);
-    let date_str = local.format("%a %d %b  %H:%M").to_string();
-    let tr = Rect::new(gr.x - 128.0, HEADER_Y + 7.0, 120.0, 20.0);
-    c.s.text(date_str, tr, 11.5, Weight::Medium, TEXT_2, Align::Right);
-
-    // Pin toggle button.
-    let pr = Rect::new(tr.x - 30.0, HEADER_Y + 3.0, 26.0, HEADER_H - 6.0);
+    // Pin toggle button, just left of the gear.
+    let pr = Rect::new(gr.x - 32.0, HEADER_Y + 3.0, 26.0, HEADER_H - 6.0);
     let ph = c.hov(Action::Pin);
     let pin_on = c.vm.pinned;
     if pin_on {

@@ -325,7 +325,7 @@ impl UiState {
             page_t: 1.0,
             page_dir: 1.0,
             compact_w: 120.0,
-            compact_h: 36.0,
+            compact_h: 42.0,
             peek_until_ms: 0,
             peek_amt: 0.0,
             track_key: String::new(),
@@ -406,43 +406,43 @@ impl UiState {
                 _ if s.idle_look == IdleLook::Eyes => 290.0 + super::layout::HUD_FACE_W,
                 _ => 290.0,
             };
-            return (w, 38.0);
+            return (w, 44.0);
         }
         if vm.voice.phase == crate::voice::VoicePhase::Recording {
-            return (if s.idle_look == IdleLook::Eyes { 214.0 } else { 170.0 }, 36.0);
+            return (if s.idle_look == IdleLook::Eyes { 214.0 } else { 170.0 }, 42.0);
         }
         if vm.meeting_soon().is_some() {
-            return (236.0, 36.0);
+            return (236.0, 42.0);
         }
         if vm.focus_visible() {
             // The ring and countdown share the pill with the music capsule:
             // ring + art + title/lyric + visualizer + face + mm:ss.
             if vm.music_active() {
                 if let Some((_, w, h)) = crate::ui::layout::compact_lyric(vm, s) {
-                    return ((w + 100.0).min(720.0), h.max(36.0));
+                    return ((w + 100.0).min(720.0), h.max(42.0));
                 }
                 let line = format!("{} \u{2014} {}", vm.track.title, vm.track.display_artist());
                 let tail = if s.idle_look == IdleLook::Eyes { 44.0 + 42.0 } else { 44.0 };
                 let w = 46.0 + crate::ui::layout::est_w(&line, 12.0) * 1.15 + 12.0 + tail + 100.0;
-                return (w.clamp(300.0, 640.0), 36.0);
+                return (w.clamp(300.0, 640.0), 42.0);
             }
-            return (176.0, 36.0);
+            return (176.0, 42.0);
         }
         if vm.music_active() {
             // A synced lyric line takes over the capsule and may grow taller.
             if let Some((_, w, h)) = crate::ui::layout::compact_lyric(vm, s) {
-                return (w, h);
+                return (w, h.max(42.0));
             }
             // art + title + visualizer; wide enough for the whole title up to a cap.
             let line = format!("{} \u{2014} {}", vm.track.title, vm.track.display_artist());
             let tail = if s.idle_look == IdleLook::Eyes { 44.0 + 42.0 } else { 44.0 };
             let w = 46.0 + crate::ui::layout::est_w(&line, 12.0) * 1.15 + 12.0 + tail;
-            return (w.clamp(232.0, 390.0), 36.0);
+            return (w.clamp(232.0, 390.0), 42.0);
         }
         match s.idle_look {
-            IdleLook::Clock => (116.0, 34.0),
-            IdleLook::Eyes => (128.0, 40.0),
-            IdleLook::Minimal => (70.0, 28.0),
+            IdleLook::Clock => (116.0, 38.0),
+            IdleLook::Eyes => (128.0, 46.0),
+            IdleLook::Minimal => (70.0, 30.0),
             IdleLook::Hidden => (132.0, 6.0),
         }
     }
@@ -747,12 +747,12 @@ mod tests {
         let now_ms = now.timestamp_millis() as u64;
         let title_size = ui.compact_target(&ViewModel::demo(now), &s, now_ms);
 
-        // Short line: one subline, capsule keeps the 36px height, whole line fits.
+        // Short line: one subline, capsule keeps the 42px height, whole line fits.
         let line = "Ripples keep the shape of you";
         vm.lyric_lines = teardrop_core::parse_lrc("[00:00.00]Ripples keep the shape of you\n[00:05.00]Surface tension holding true\n");
         vm.lyric_idx = Some(0);
         let (w, h) = ui.compact_target(&vm, &s, now_ms);
-        assert_eq!(h, 36.0);
+        assert_eq!(h, 42.0);
         let chrome = 46.0 + 44.0 + 12.0;
         assert!(w >= chrome + crate::ui::layout::est_w(line, 13.0) * 1.2, "w {w} should fit the whole line");
 

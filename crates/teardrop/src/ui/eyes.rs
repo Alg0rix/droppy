@@ -57,12 +57,12 @@ pub enum Spot {
 /// Face centre + scale for a spot inside the collapsed body rect.
 pub fn place(spot: Spot, body: Rect) -> (f32, f32, f32) {
     match spot {
-        Spot::Idle => (body.cx(), body.cy() + 1.0, 1.0),
-        Spot::Music => (body.right() - 31.0, body.cy(), 0.78),
-        Spot::Focus => (body.x + 66.0, body.cy(), 0.72),
-        Spot::FocusMusic => (body.right() - 95.0, body.cy(), 0.72),
-        Spot::Hud => (body.right() - 26.0, body.cy(), 0.62),
-        Spot::Rec => (body.x + 104.0, body.cy(), 0.66),
+        Spot::Idle => (body.cx(), body.cy() + 1.0, 1.12),
+        Spot::Music => (body.right() - 31.0, body.cy(), 0.88),
+        Spot::Focus => (body.x + 66.0, body.cy(), 0.84),
+        Spot::FocusMusic => (body.right() - 95.0, body.cy(), 0.84),
+        Spot::Hud => (body.right() - 26.0, body.cy(), 0.72),
+        Spot::Rec => (body.x + 104.0, body.cy(), 0.76),
     }
 }
 
