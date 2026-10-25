@@ -3193,6 +3193,11 @@ mod inner {
                     // Switch the work theme right away instead of on the next tick.
                     poll_focus_app(hwnd);
                 }
+                // Event-driven registry refresh: create/destroy/activate all
+                // change what the switcher page should show.
+                if matches!(code, 1 | 2 | 4 | 0x8004) {
+                    VIEW.with(|v| v.borrow_mut().windows = crate::winreg::enumerate(hwnd.0 as isize));
+                }
                 let r = match code {
                     HSHELL_FLASH => Some(React::Perk),
                     HSHELL_WINDOWCREATED if env::is_crash_window(HWND(lp.0 as _)) => Some(React::Shocked),
