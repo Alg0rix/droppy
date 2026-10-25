@@ -123,8 +123,10 @@ mod imp {
     use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
 
     /// Droppy mesh GATT service + its single multiplexed characteristic.
-    const SERVICE: GUID = GUID::from_u128(0x9d05d2f4_a1b7_4c3e_8f6d_5e4c3b2a1908);
-    const MESH_CHAR: GUID = GUID::from_u128(0x9d05d2f5_a1b7_4c3e_8f6d_5e4c3b2a1908);
+    /// BitChat mainnet UUIDs so we interoperate with the real app
+    /// (BLEService.swift upstream: testnet ends …A4B5A).
+    const SERVICE: GUID = GUID::from_u128(0xf47b5e2d_4a9e_4c5a_9b3f_8e1d2c3a4b5c);
+    const MESH_CHAR: GUID = GUID::from_u128(0xa1b2c3d4_e5f6_4a5b_8c9d_0e1f2a3b4c5d);
     /// Don't re-dial a failed peer for this long.
     const RETRY_MS: u64 = 20_000;
     /// ATT payload when the negotiated value is unknown.
