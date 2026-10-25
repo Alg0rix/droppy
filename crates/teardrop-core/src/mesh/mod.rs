@@ -19,6 +19,7 @@ mod node;
 mod noise;
 mod packet;
 mod seen;
+mod sync;
 
 pub use fragment::{fragment_packet, Reassembler, FRAG_CHUNK_MAX};
 pub use identity::{Identity, PeerId};

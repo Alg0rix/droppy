@@ -75,6 +75,8 @@ struct Rt {
 
 static RT: Mutex<Option<Rt>> = Mutex::new(None);
 static REVISION: AtomicU32 = AtomicU32::new(0);
+/// Newest unseen incoming message `(who, text)` for the HUD pill.
+static ALERT: Mutex<Option<(String, String)>> = Mutex::new(None);
 static STARTED: AtomicBool = AtomicBool::new(false);
 
 fn rt() -> std::sync::MutexGuard<'static, Option<Rt>> {
@@ -175,9 +177,13 @@ pub fn start(nick_hint: &str, now_ms: u64) {
 /// wakes the UI (WM_APP_MESH) and once per second from the service tick so
 /// peer freshness ages out even when the mesh is quiet.
 pub fn pump() {
-    let evs = crate::mesh_ble::take_events();
+    let mut evs = crate::mesh_ble::take_events();
     if evs.is_empty() {
-        return;
+        // Quiet mesh: still re-read the peer list so freshness ages out.
+        if with(|r| r.peers.is_empty()) {
+            return;
+        }
+        evs.push(Event::PeersChanged);
     }
     let mut dirty = false;
     with(|r| {
@@ -197,6 +203,9 @@ pub fn pump() {
                 }
                 Event::Links(n) => r.links = n,
                 Event::Public { from: _, nick, id, text, ts, mine } => {
+                    if !mine {
+                        *ALERT.lock().unwrap() = Some((format!("{nick} #room"), text.clone()));
+                    }
                     push_msg(r, ROOM, Msg { id, who: if mine { "me".into() } else { nick }, text, ts: ts as i64, mine, ..Default::default() });
                     if !mine && r.sel.is_some() {
                         *r.unread.entry(ROOM.into()).or_default() += 1;
@@ -204,6 +213,9 @@ pub fn pump() {
                 }
                 Event::Private { from, to, id, text, ts, mine } => {
                     let conv = if mine { to.hex() } else { from.hex() };
+                    if !mine {
+                        *ALERT.lock().unwrap() = Some((peer_nick(r, &from), text.clone()));
+                    }
                     push_msg(r, &conv.clone(), Msg { id: id.clone(), who: if mine { "me".into() } else { peer_nick(r, &from) }, text, ts: ts as i64, mine, ..Default::default() });
                     if !mine {
                         if r.sel.as_deref() == Some(conv.as_str()) {
@@ -256,6 +268,11 @@ fn mark(r: &mut Rt, conv: &str, id: String, f: impl Fn(&mut Msg)) {
 
 fn peer_nick(r: &Rt, pid: &PeerId) -> String {
     r.peers.get(&pid.hex()).map(|p| p.nick.clone()).unwrap_or_else(|| format!("peer-{}", &pid.hex()[..8]))
+}
+
+/// Take the pending incoming-message alert (sender, text), if any.
+pub fn take_alert() -> Option<(String, String)> {
+    ALERT.lock().unwrap().take()
 }
 
 /// `revision()` bumped on every change — the UI re-snapshots when it moves.

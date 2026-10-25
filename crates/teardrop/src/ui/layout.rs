@@ -1021,6 +1021,18 @@ fn hud(c: &mut Ctx, r: Rect, h: &teardrop_core::Hud, cy: f32) {
                 c.text(h.detail.clone(), Rect::new(r.right() - 84.0, cy - 10.0, 72.0, 20.0), 12.0, Weight::Regular, TEXT_2, Align::Right);
             }
         }
+        HudKind::Chat => {
+            let acc = accent(Page::Chat);
+            let eyes = c.set.idle_look == IdleLook::Eyes;
+            let tail = if eyes { 14.0 + HUD_FACE_W } else { 14.0 };
+            icons::draw(&mut c.s, Icon::Chat, left + 8.0, cy, 17.0, acc);
+            let w = r.w - 42.0 - tail;
+            c.text(h.title.clone(), Rect::new(r.x + 42.0, cy - 17.0, w, 18.0), 13.0, Weight::Semibold, TEXT, Align::Left);
+            c.text(h.detail.clone(), Rect::new(r.x + 42.0, cy + 1.0, w, 16.0), 11.5, Weight::Regular, TEXT_2, Align::Left);
+            if eyes {
+                face(c, r, Spot::Hud, None);
+            }
+        }
         HudKind::Bluetooth => {
             // Round blue badge, device name over "Connected", battery at the end.
             let blue = Color::rgb(59, 130, 246);

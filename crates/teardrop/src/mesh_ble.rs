@@ -134,8 +134,12 @@ mod imp {
     /// (BLEService.swift upstream: testnet ends …A4B5A).
     const SERVICE: GUID = GUID::from_u128(0xf47b5e2d_4a9e_4c5a_9b3f_8e1d2c3a4b5c);
     const MESH_CHAR: GUID = GUID::from_u128(0xa1b2c3d4_e5f6_4a5b_8c9d_0e1f2a3b4c5d);
-    /// Don't re-dial a failed peer for this long.
-    const RETRY_MS: u64 = 20_000;
+    /// Re-dial backoff: base doubles per consecutive failure up to the cap
+    /// (an advertiser that never exposes our service must not be hammered).
+    const RETRY_MS: u64 = 10_000;
+    const RETRY_MAX_MS: u64 = 5 * 60_000;
+    /// Re-sync the subscriber set this often even without a change event.
+    const SYNC_MS: u64 = 5_000;
     /// ATT payload when the negotiated value is unknown.
     const DEFAULT_MTU: usize = 182;
 
@@ -144,9 +148,12 @@ mod imp {
         /// Watcher saw the service advertised.
         Seen(u64, BluetoothAddressType),
         /// Central-side connect finished: write-capable characteristic + mtu.
-        Up { addr: u64, ch: GattCharacteristic, dev: BluetoothLEDevice, mtu: usize },
-        /// Central-side link dropped (or dial failed).
-        Down(u64),
+        Up { addr: u64, gen: u64, ch: GattCharacteristic, dev: BluetoothLEDevice, mtu: usize },
+        /// Central-side link dropped; `gen` ties it to the dial that made it
+        /// so a stale handler can't kill a newer link.
+        Down { addr: u64, gen: u64 },
+        /// A dial attempt failed before a link existed.
+        DialFailed(u64),
         /// Peripheral-side subscribed-client set changed.
         Subs,
         /// Frame arrived on link `addr`.
@@ -162,6 +169,7 @@ mod imp {
         ch: Option<GattCharacteristic>,
         /// Keeps the BLE connection referenced & alive.
         _dev: Option<BluetoothLEDevice>,
+        gen: u64,
         /// Peripheral side: the remote's subscription we notify.
         client: Option<GattSubscribedClient>,
         mtu_ch: usize,
@@ -170,7 +178,11 @@ mod imp {
 
     impl Link {
         fn new() -> Self {
-            Self { ch: None, _dev: None, client: None, mtu_ch: DEFAULT_MTU, mtu_client: DEFAULT_MTU }
+            Self { ch: None, _dev: None, gen: 0, client: None, mtu_ch: DEFAULT_MTU, mtu_client: DEFAULT_MTU }
+        }
+
+        fn live(&self) -> bool {
+            self.ch.is_some() || self.client.is_some()
         }
     }
 
@@ -239,7 +251,9 @@ mod imp {
         }
 
         let mut links: HashMap<u64, Link> = HashMap::new();
-        let mut dial: HashMap<u64, u64> = HashMap::new(); // last connect attempt ms
+        let mut dial: HashMap<u64, (u64, u32)> = HashMap::new(); // addr -> (last attempt ms, consecutive fails)
+        let mut next_gen: u64 = 0;
+        let mut next_sync: u64 = 0;
 
         // Packet timestamps are wall-clock epoch ms (peers compare them
         // against their own dedup windows).
@@ -265,80 +279,62 @@ mod imp {
                     if links.get(&addr).map(|l| l.ch.is_some()).unwrap_or(false) {
                         continue; // already dialed
                     }
-                    let last = dial.get(&addr).copied().unwrap_or(0);
-                    if now().saturating_sub(last) < RETRY_MS {
+                    let (last, fails) = dial.get(&addr).copied().unwrap_or((0, 0));
+                    let wait = (RETRY_MS << fails.min(5)).min(RETRY_MAX_MS);
+                    if last != 0 && now().saturating_sub(last) < wait {
                         continue;
                     }
-                    dial.insert(addr, now());
+                    next_gen += 1;
+                    let gen = next_gen;
+                    dial.insert(addr, (now(), fails));
                     let tx = tx.clone();
                     std::thread::spawn(move || {
-                        if let Err(e) = dial_out(addr, atype, tx.clone()) {
-                            let _ = tx.send(Msg::Down(addr));
+                        if let Err(e) = dial_out(addr, gen, atype, tx.clone()) {
+                            let _ = tx.send(Msg::DialFailed(addr));
                             push_events([Event::Log(format!("mesh: connect {addr:012x} failed ({e})"))]);
                         }
                     });
+                    continue;
                 }
-                Some(Msg::Up { addr, ch, dev, mtu }) => {
+                Some(Msg::DialFailed(addr)) => {
+                    let e = dial.entry(addr).or_insert((now(), 0));
+                    e.1 = e.1.saturating_add(1);
+                    continue;
+                }
+                Some(Msg::Up { addr, gen, ch, dev, mtu }) => {
+                    dial.insert(addr, (now(), 0));
                     let l = links.entry(addr).or_insert_with(Link::new);
+                    let was_live = l.live();
                     l.ch = Some(ch);
                     l._dev = Some(dev);
+                    l.gen = gen;
                     l.mtu_ch = mtu.clamp(23, 512);
-                    evs.extend(node.on_link_up(addr as LinkId, now()));
+                    if !was_live {
+                        evs.extend(node.on_link_up(addr as LinkId, now()));
+                    }
                     push_events([Event::Log(format!("mesh: link up {addr:012x} (mtu {mtu})"))]);
                 }
-                Some(Msg::Down(addr)) => {
+                Some(Msg::Down { addr, gen }) => {
                     if let Some(l) = links.get_mut(&addr) {
+                        if l.gen != gen || l.ch.is_none() {
+                            continue; // stale handler from an older dial
+                        }
                         l.ch = None;
                         l._dev = None;
-                        if l.client.is_none() {
+                        if !l.live() {
                             links.remove(&addr);
+                            evs.extend(node.on_link_down(addr as LinkId));
                         }
-                        evs.extend(node.on_link_down(addr as LinkId));
                         push_events([Event::Log(format!("mesh: link down {addr:012x}"))]);
                     }
                 }
-                Some(Msg::Subs) => {
-                    if let Some(lc) = local_char() {
-                        let mut seen: HashSet<u64> = HashSet::new();
-                        if let Ok(list) = lc.SubscribedClients() {
-                            for c in list {
-                                let addr = c
-                                    .Session()
-                                    .and_then(|s| s.DeviceId())
-                                    .and_then(|d| d.Id())
-                                    .ok()
-                                    .and_then(|id| addr_of_device_id(&id));
-                                let Some(addr) = addr else { continue };
-                                seen.insert(addr);
-                                let l = links.entry(addr).or_insert_with(Link::new);
-                                if l.client.is_none() {
-                                    if let Ok(m) = c.MaxNotificationSize() {
-                                        l.mtu_client = (m as usize).clamp(23, 512);
-                                    }
-                                    l.client = Some(c);
-                                    evs.extend(node.on_link_up(addr as LinkId, now()));
-                                    push_events([Event::Log(format!("mesh: subscriber {addr:012x}"))]);
-                                }
-                            }
-                        }
-                        // Departed subscribers drop their side of the link.
-                        let gone: Vec<u64> = links
-                            .iter()
-                            .filter(|(a, l)| l.client.is_some() && !seen.contains(*a))
-                            .map(|(a, _)| *a)
-                            .collect();
-                        for addr in gone {
-                            if let Some(l) = links.get_mut(&addr) {
-                                l.client = None;
-                                if l.ch.is_none() {
-                                    links.remove(&addr);
-                                }
-                                evs.extend(node.on_link_down(addr as LinkId));
-                            }
-                        }
-                    }
-                }
+                Some(Msg::Subs) => sync_subs(&mut links, &mut node, &mut evs, now()),
                 Some(Msg::Frame { addr, bytes }) => {
+                    if !links.contains_key(&addr) {
+                        // A write can beat the subscription event; learn the
+                        // subscriber now so replies have a route.
+                        sync_subs(&mut links, &mut node, &mut evs, now());
+                    }
                     let (o, e) = node.on_frame(addr as LinkId, &bytes, now());
                     ops.extend(o);
                     evs.extend(e);
@@ -359,6 +355,10 @@ mod imp {
                 },
                 None => {}
             }
+            if now() >= next_sync {
+                next_sync = now() + SYNC_MS;
+                sync_subs(&mut links, &mut node, &mut evs, now());
+            }
             let (o, e) = node.tick(now());
             ops.extend(o);
             evs.extend(e);
@@ -367,6 +367,48 @@ mod imp {
             }
             *PEERS.lock().unwrap() = node.peers(now());
             push_events(evs);
+        }
+    }
+
+    /// Reconcile `links[..].client` with the characteristic's live subscribers.
+    fn sync_subs(links: &mut HashMap<u64, Link>, node: &mut Node, evs: &mut Vec<Event>, now_ms: u64) {
+        let Some(lc) = local_char() else { return };
+        let mut seen: HashSet<u64> = HashSet::new();
+        if let Ok(list) = lc.SubscribedClients() {
+            for c in list {
+                let addr = c
+                    .Session()
+                    .and_then(|s| s.DeviceId())
+                    .and_then(|d| d.Id())
+                    .ok()
+                    .and_then(|id| addr_of_device_id(&id));
+                let Some(addr) = addr else { continue };
+                seen.insert(addr);
+                let l = links.entry(addr).or_insert_with(Link::new);
+                let was_live = l.live();
+                if let Ok(m) = c.MaxNotificationSize() {
+                    l.mtu_client = (m as usize).clamp(23, 512);
+                }
+                if l.client.is_none() {
+                    push_events([Event::Log(format!("mesh: subscriber {addr:012x}"))]);
+                }
+                l.client = Some(c); // refresh: the object is replaced on resubscribe
+                if !was_live {
+                    evs.extend(node.on_link_up(addr as LinkId, now_ms));
+                }
+            }
+        }
+        // Departed subscribers drop their side of the link.
+        let gone: Vec<u64> = links.iter().filter(|(a, l)| l.client.is_some() && !seen.contains(*a)).map(|(a, _)| *a).collect();
+        for addr in gone {
+            if let Some(l) = links.get_mut(&addr) {
+                l.client = None;
+                if !l.live() {
+                    links.remove(&addr);
+                    evs.extend(node.on_link_down(addr as LinkId));
+                    push_events([Event::Log(format!("mesh: subscriber gone {addr:012x}"))]);
+                }
+            }
         }
     }
 
@@ -388,21 +430,39 @@ mod imp {
     /// else a notification to the subscribed client. Fragmented per-link MTU.
     fn send(node: &Node, link: &Link, bytes: &[u8], now_ms: u64) {
         if let Some(ch) = &link.ch {
+            let mut ok = true;
             for frame in Node::shard(bytes, node.peer_id(), link.mtu_ch.saturating_sub(3).max(20), now_ms) {
-                if let Ok(buf) = to_buffer(&frame) {
-                    if let Ok(op) = ch.WriteValueWithResultAndOptionAsync(&buf, GattWriteOption::WriteWithoutResponse) {
-                        let _ = op.get();
-                    }
+                let sent = to_buffer(&frame)
+                    .and_then(|buf| ch.WriteValueWithResultAndOptionAsync(&buf, GattWriteOption::WriteWithoutResponse))
+                    .and_then(|op| op.get())
+                    .and_then(|r| r.Status())
+                    .map(|s| s == GattCommunicationStatus::Success)
+                    .unwrap_or(false);
+                if !sent {
+                    ok = false;
+                    break;
                 }
             }
-            return;
+            if ok {
+                return;
+            }
+            push_events([Event::Log("mesh: central write failed".into())]);
+            if link.client.is_none() {
+                return;
+            }
+            // Central write died; the subscriber path may still work.
         }
         if let (Some(client), Some(lc)) = (&link.client, local_char()) {
             for frame in Node::shard(bytes, node.peer_id(), link.mtu_client.saturating_sub(3).max(20), now_ms) {
-                if let Ok(buf) = to_buffer(&frame) {
-                    if let Ok(op) = lc.NotifyValueForSubscribedClientAsync(&buf, client) {
-                        let _ = op.get();
-                    }
+                let sent = to_buffer(&frame)
+                    .and_then(|buf| lc.NotifyValueForSubscribedClientAsync(&buf, client))
+                    .and_then(|op| op.get())
+                    .and_then(|r| r.Status())
+                    .map(|s| s == GattCommunicationStatus::Success)
+                    .unwrap_or(false);
+                if !sent {
+                    push_events([Event::Log("mesh: notify failed".into())]);
+                    break;
                 }
             }
         }
@@ -519,7 +579,7 @@ mod imp {
 
     /// Dial one advertiser: connect, subscribe to its mesh characteristic.
     /// Reports `Msg::Up` on success. Runs on a short-lived thread.
-    fn dial_out(addr: u64, atype: BluetoothAddressType, tx: Sender<Msg>) -> windows::core::Result<()> {
+    fn dial_out(addr: u64, gen: u64, atype: BluetoothAddressType, tx: Sender<Msg>) -> windows::core::Result<()> {
         unsafe {
             let _ = RoInitialize(RO_INIT_MULTITHREADED);
         }
@@ -571,7 +631,7 @@ mod imp {
             dev.ConnectionStatusChanged(&TypedEventHandler::new(move |d: &Option<BluetoothLEDevice>, _a: &Option<windows::core::IInspectable>| {
                 if let Some(d) = d {
                     if d.ConnectionStatus().map(|s| s == BluetoothConnectionStatus::Disconnected).unwrap_or(false) {
-                        let _ = tx.send(Msg::Down(addr));
+                        let _ = tx.send(Msg::Down { addr, gen });
                     }
                 }
                 Ok(())
@@ -579,7 +639,7 @@ mod imp {
         }
 
         let mtu = svc.Session().and_then(|s| s.MaxPduSize()).map(|m| m as usize).unwrap_or(DEFAULT_MTU + 3);
-        let _ = tx.send(Msg::Up { addr, ch, dev, mtu });
+        let _ = tx.send(Msg::Up { addr, gen, ch, dev, mtu });
         Ok(())
     }
 }

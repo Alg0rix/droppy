@@ -182,6 +182,9 @@ pub struct Settings {
     /// BLE mesh chat radio (bitchat). Off stops advertising + scanning.
     #[serde(default = "yes")]
     pub mesh_chat: bool,
+    /// HUD bubble on incoming mesh message. Off = eyes react only, no text.
+    #[serde(default = "yes")]
+    pub mesh_hud: bool,
     /// Active AI Chat provider.
     #[serde(default)]
     pub ai_provider: AiProvider,
@@ -328,6 +331,7 @@ impl Default for Settings {
             calendar_urls: Vec::new(),
             hidden_pages: Vec::new(),
             mesh_chat: true,
+            mesh_hud: true,
             ai_provider: AiProvider::ChatGpt,
             ai_share_day: true,
             ai_chatgpt_model: default_chatgpt_model(),

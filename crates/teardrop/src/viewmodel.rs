@@ -441,6 +441,12 @@ pub fn hud_bluetooth(name: &str, battery: Option<u8>, now_ms: u64) -> Hud {
     h
 }
 
+/// Pill for an incoming mesh chat message.
+pub fn hud_chat(who: &str, text: &str, now_ms: u64) -> Hud {
+    let clip: String = text.chars().take(60).collect();
+    Hud::transient(HudKind::Chat, who, &clip, now_ms, 5000)
+}
+
 pub fn hud_water_logged(ml: u32, total_ml: u32, now_ms: u64) -> Hud {
     Hud::transient(HudKind::Water, "Water", &format!("+{} \u{00b7} {} today", teardrop_core::glasses_label(ml), teardrop_core::glasses_label(total_ml)), now_ms, 3200)
 }

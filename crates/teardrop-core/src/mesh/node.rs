@@ -2,10 +2,11 @@
 //! private messaging — pure logic. The transport layer calls `on_frame` /
 //! `on_link_*` / `tick` and executes the returned `Op`s on real links.
 
+use super::sync;
 use super::{fragment_packet, Identity, Packet, PacketType, PeerId, Reassembler, Seen, Session, PEER_DROP_MS, PEER_FRESH_MS};
 use ed25519_dalek::VerifyingKey;
 use rand::Rng;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// A transport-level link id (one BLE peer connection, either direction).
 pub type LinkId = u64;
@@ -203,6 +204,23 @@ struct Peer {
     queue: Vec<(String, String, u64)>,
 }
 
+/// §6.3 gossip sync tuning (GossipSyncManager defaults).
+const SYNC_INTERVAL_MS: u64 = 15_000;
+const SYNC_FIRST_MS: u64 = 5_000;
+const HISTORY_CAP: usize = 1000;
+const HISTORY_MAX_AGE_MS: u64 = 15 * 60_000;
+const GCS_MAX_BYTES: usize = 400;
+const GCS_FPR: f64 = 0.01;
+/// At most this many sync responses per requester per window.
+const SYNC_RESP_MAX: usize = 8;
+const SYNC_RESP_WINDOW_MS: u64 = 30_000;
+
+/// A packet kept for sync, with our arrival time (clock-skew proof ageing).
+struct Stored {
+    at: u64,
+    pkt: Packet,
+}
+
 struct Scheduled {
     at: u64,
     key: [u8; 16],
@@ -218,6 +236,12 @@ pub struct Node {
     seen: Seen,
     reasm: Reassembler,
     pending: Vec<Scheduled>,
+    /// Recent public broadcasts, oldest first.
+    history: VecDeque<Stored>,
+    /// Newest announce per sender.
+    announces: HashMap<PeerId, Stored>,
+    sync_rate: HashMap<PeerId, Vec<u64>>,
+    next_sync: u64,
     next_announce: u64,
     rng: rand::rngs::OsRng,
 }
@@ -232,6 +256,10 @@ impl Node {
             seen: Seen::default(),
             reasm: Reassembler::default(),
             pending: Vec::new(),
+            history: VecDeque::new(),
+            announces: HashMap::new(),
+            sync_rate: HashMap::new(),
+            next_sync: now_ms + SYNC_FIRST_MS,
             next_announce: now_ms + 400,
             rng: rand::rngs::OsRng,
         }
@@ -275,6 +303,7 @@ impl Node {
         self.links.insert(link);
         // Say hello quickly so the new neighbour learns us.
         self.next_announce = self.next_announce.min(now_ms + 300 + self.rng.gen_range(0..400));
+        self.next_sync = self.next_sync.min(now_ms + SYNC_FIRST_MS);
         vec![Event::Links(self.links.len())]
     }
 
@@ -312,13 +341,14 @@ impl Node {
                 }
             }
             PacketType::Announce => self.on_announce(pkt, now_ms),
-            PacketType::Message => self.on_message(pkt),
+            PacketType::Message => self.on_message(pkt, now_ms),
             PacketType::Leave => {
                 self.peers.remove(&pkt.sender);
                 (vec![], vec![Event::PeersChanged])
             }
             PacketType::NoiseHandshake => self.on_handshake(pkt, now_ms),
             PacketType::NoiseEncrypted => self.on_encrypted(pkt, now_ms),
+            PacketType::RequestSync => self.on_request_sync(link, pkt, now_ms),
             PacketType::Other(_) => (vec![], vec![]),
         }
     }
@@ -342,6 +372,7 @@ impl Node {
         if self.peers.get(&pkt.sender).map(|p| p.sign_pk != spk).unwrap_or(false) {
             return (vec![], vec![Event::Log(format!("mesh: sign key flip for {}", pkt.sender))]);
         }
+        self.announces.insert(pkt.sender, Stored { at: now_ms, pkt: pkt.clone() });
         let changed = match self.peers.get_mut(&pkt.sender) {
             Some(p) => {
                 let changed = p.nick != nick;
@@ -365,13 +396,16 @@ impl Node {
                         queue: Vec::new(),
                     },
                 );
+                // A newcomer may have missed our announce (link raced the
+                // subscription): answer soon so presence is symmetric.
+                self.next_announce = self.next_announce.min(now_ms + 200 + self.rng.gen_range(0..300));
                 true
             }
         };
         (vec![], if changed { vec![Event::PeersChanged] } else { vec![] })
     }
 
-    fn on_message(&mut self, pkt: Packet) -> (Vec<Op>, Vec<Event>) {
+    fn on_message(&mut self, pkt: Packet, now_ms: u64) -> (Vec<Op>, Vec<Event>) {
         let Some((id, nick, text)) = public_decode(&pkt.payload) else {
             let head = pkt.payload.iter().take(48).map(|b| format!("{b:02x}")).collect::<String>();
             return (vec![], vec![Event::Log(format!("mesh: public decode fail {}B {head}", pkt.payload.len()))]);
@@ -388,6 +422,7 @@ impl Node {
             }
             Some(_) | None => {}
         }
+        self.remember(&pkt, now_ms);
         // No wire id or nick in the payload: id = dedup key, nick = announce.
         let id = format!("{:x}", u64::from_be_bytes(pkt.dedup_key()[..8].try_into().unwrap_or_default()));
         let nick = self.nick_of(&pkt.sender).unwrap_or_else(|| nick);
@@ -539,6 +574,7 @@ impl Node {
         let mut pkt = Packet::new(PacketType::Message, self.peer_id(), now_ms, body);
         pkt.sign(&self.id.signing_key());
         self.seen.arrive(pkt.dedup_key(), now_ms);
+        self.remember(&pkt, now_ms);
         let wire = pkt.encode();
         (
             vec![Op::Send { to: SendTo::All, bytes: wire }],
@@ -626,7 +662,7 @@ impl Node {
 
     /// §4.2 controlled flood. Returns the scheduled relay (None = absorbed).
     fn relay(&mut self, pkt: &Packet, ingress: LinkId, now_ms: u64, key: [u8; 16]) -> Option<Scheduled> {
-        if pkt.ttl == 0 || pkt.ptype == PacketType::Fragment {
+        if pkt.ttl == 0 || matches!(pkt.ptype, PacketType::Fragment | PacketType::RequestSync) {
             return None; // fragments are hop-local
         }
         if pkt.recipient == Some(self.peer_id()) {
@@ -666,6 +702,83 @@ impl Node {
         Some(Scheduled { at: now_ms + jitter, key, to, bytes })
     }
 
+    // -------------------------------------------------------- gossip sync
+
+    /// Keep a public broadcast for sync (bounded, ageing out).
+    fn remember(&mut self, pkt: &Packet, now_ms: u64) {
+        if pkt.recipient.is_some() {
+            return;
+        }
+        let id = sync::packet_id(pkt);
+        if self.history.iter().any(|s| sync::packet_id(&s.pkt) == id) {
+            return;
+        }
+        self.history.push_back(Stored { at: now_ms, pkt: pkt.clone() });
+        while self.history.len() > HISTORY_CAP {
+            self.history.pop_front();
+        }
+    }
+
+    /// Broadcast (TTL 0) REQUEST_SYNC advertising what we already hold.
+    fn request_sync(&mut self, now_ms: u64) -> Op {
+        let mut cands: Vec<(u64, [u8; 16])> = self
+            .history
+            .iter()
+            .map(|s| &s.pkt)
+            .chain(self.announces.values().map(|s| &s.pkt))
+            .map(|p| (p.timestamp, sync::packet_id(p)))
+            .collect();
+        cands.sort_by(|a, b| b.0.cmp(&a.0)); // newest first
+        let ids: Vec<[u8; 16]> = cands.iter().map(|c| c.1).collect();
+        let p = sync::derive_p(GCS_FPR);
+        let take = ids.len().min(sync::estimate_max_elements(GCS_MAX_BYTES, p)).min(HISTORY_CAP);
+        let built = sync::build(&ids[..take], GCS_MAX_BYTES, GCS_FPR);
+        // Filter trimmed the oldest tail: those are outside it, not missing.
+        let since = (built.included > 0 && built.included < cands.len()).then(|| cands[built.included - 1].0);
+        let req = sync::Request { p: built.p, m: built.m, data: built.data, types: Some(sync::TYPE_ANNOUNCE | sync::TYPE_MESSAGE), since };
+        let mut pkt = Packet::new(PacketType::RequestSync, self.peer_id(), now_ms, req.encode());
+        pkt.ttl = 0;
+        pkt.sign(&self.id.signing_key());
+        Op::Send { to: SendTo::All, bytes: pkt.encode() }
+    }
+
+    /// A neighbour's request: send back what its filter lacks, on that link.
+    fn on_request_sync(&mut self, link: LinkId, pkt: Packet, now_ms: u64) -> (Vec<Op>, Vec<Event>) {
+        if pkt.recipient.is_some() && pkt.recipient != Some(self.peer_id()) {
+            return (vec![], vec![]);
+        }
+        let Some(req) = sync::Request::decode(&pkt.payload) else { return (vec![], vec![]) };
+        // Rate limit per requester.
+        let hits = self.sync_rate.entry(pkt.sender).or_default();
+        hits.retain(|t| now_ms.saturating_sub(*t) < SYNC_RESP_WINDOW_MS);
+        if hits.len() >= SYNC_RESP_MAX {
+            return (vec![], vec![]);
+        }
+        hits.push(now_ms);
+
+        let types = req.types.unwrap_or(sync::TYPE_ANNOUNCE | sync::TYPE_MESSAGE);
+        let has = sync::decode_sorted(req.p, req.m, &req.data);
+        let missing = |p: &Packet| !sync::contains(&has, sync::bucket(&sync::packet_id(p), req.m));
+        let mut out: Vec<Packet> = Vec::new();
+        if types & sync::TYPE_ANNOUNCE != 0 {
+            // Latest announce per peer; the since cursor never applies.
+            out.extend(self.announces.values().filter(|s| s.pkt.sender != pkt.sender && missing(&s.pkt)).map(|s| s.pkt.clone()));
+        }
+        if types & sync::TYPE_MESSAGE != 0 {
+            let since = req.since.unwrap_or(0);
+            out.extend(self.history.iter().filter(|s| s.pkt.timestamp >= since && s.pkt.sender != pkt.sender && missing(&s.pkt)).map(|s| s.pkt.clone()));
+        }
+        let ops = out
+            .into_iter()
+            .map(|mut p| {
+                p.ttl = 0; // local-only: the requester already floods onward itself
+                Op::Send { to: SendTo::Only(vec![link]), bytes: p.encode() }
+            })
+            .collect::<Vec<_>>();
+        let evs = if ops.is_empty() { vec![] } else { vec![Event::Log(format!("mesh: sync reply {} pkts to {}", ops.len(), pkt.sender))] };
+        (ops, evs)
+    }
+
     // -------------------------------------------------------------- timer
 
     /// Run due work: scheduled relays, announces, retries, expiry.
@@ -682,6 +795,16 @@ impl Node {
                 ops.push(Op::Send { to: s.to, bytes: s.bytes });
             }
         }
+
+        // Gossip sync: ask neighbours for public history we're missing.
+        if now_ms >= self.next_sync {
+            self.next_sync = now_ms + SYNC_INTERVAL_MS;
+            if !self.links.is_empty() {
+                ops.push(self.request_sync(now_ms));
+            }
+        }
+        self.history.retain(|s| now_ms.saturating_sub(s.at) <= HISTORY_MAX_AGE_MS);
+        self.announces.retain(|_, s| now_ms.saturating_sub(s.at) <= PEER_FRESH_MS);
 
         // Presence: every 4 s isolated, 15–30 s (jittered) when meshed.
         if now_ms >= self.next_announce {
@@ -737,7 +860,7 @@ impl Node {
 
     /// ms until `tick` has work (driver's sleep bound, capped).
     pub fn next_wake(&self, now_ms: u64) -> u64 {
-        let mut at = self.next_announce;
+        let mut at = self.next_announce.min(self.next_sync);
         if let Some(s) = self.pending.iter().map(|s| s.at).min() {
             at = at.min(s);
         }
@@ -756,6 +879,7 @@ impl Node {
         let mut pkt = Packet::new(PacketType::Announce, self.peer_id(), now_ms, body);
         pkt.sign(&self.id.signing_key());
         self.seen.arrive(pkt.dedup_key(), now_ms);
+        self.announces.insert(self.peer_id(), Stored { at: now_ms, pkt: pkt.clone() });
         Op::Send { to: SendTo::All, bytes: pkt.encode() }
     }
 
@@ -907,6 +1031,19 @@ mod tests {
         assert!(aev.iter().any(|e| matches!(e, Event::Secure(_))), "alice's session came up");
         assert!(bev.iter().any(|e| matches!(e, Event::Secure(_))), "bob's session came up");
         assert!(aev.iter().any(|e| matches!(e, Event::Delivered { .. })), "alice got the delivery ack");
+    }
+
+    #[test]
+    fn gossip_sync_backfills_a_missed_message() {
+        let mut a = Node::new(Identity::generate(), "alice".into(), 0);
+        let mut b = Node::new(Identity::generate(), "bob".into(), 0);
+        wired(&mut a, &mut b, 0);
+        // Alice speaks while Bob's radio hears nothing.
+        let _lost = a.send_public("you missed this", 20_000);
+        let (mut aev, mut bev) = (Vec::new(), Vec::new());
+        settle(&mut a, &mut b, 40_000, &mut aev, &mut bev);
+        let got = bev.iter().any(|e| matches!(e, Event::Public { text, mine: false, .. } if text == "you missed this"));
+        assert!(got, "bob backfilled alice's message via sync: {bev:?}");
     }
 
     #[test]

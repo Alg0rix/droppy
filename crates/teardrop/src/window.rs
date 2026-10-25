@@ -3446,6 +3446,13 @@ mod inner {
             _ if msg == WM_APP_MESH => {
                 crate::chat::pump();
                 sync_chat();
+                if let Some((who, text)) = crate::chat::take_alert() {
+                    if SETTINGS.with(|s| s.borrow().mesh_hud) {
+                        let ms = now_ms();
+                        VIEW.with(|v| v.borrow_mut().hud = Some(crate::viewmodel::hud_chat(&who, &text, ms)));
+                    }
+                    with_eyes(|e| e.react(React::Perk));
+                }
                 wake(hwnd);
                 LRESULT(0)
             }

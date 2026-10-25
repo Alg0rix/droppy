@@ -52,6 +52,8 @@ pub enum PacketType {
     NoiseEncrypted,
     /// One chunk of a larger packet (see `fragment`).
     Fragment,
+    /// Gossip-sync request (local-only, TTL 0).
+    RequestSync,
     /// Anything else on the BitChat type space — decoded then dropped.
     Other(u8),
 }
@@ -65,6 +67,7 @@ impl PacketType {
             0x10 => Self::NoiseHandshake,
             0x11 => Self::NoiseEncrypted,
             0x20 => Self::Fragment,
+            0x21 => Self::RequestSync,
             v => Self::Other(v),
         }
     }
@@ -77,6 +80,7 @@ impl PacketType {
             Self::NoiseHandshake => 0x10,
             Self::NoiseEncrypted => 0x11,
             Self::Fragment => 0x20,
+            Self::RequestSync => 0x21,
             Self::Other(v) => v,
         }
     }

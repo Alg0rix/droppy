@@ -30,10 +30,11 @@ pub enum SettingKey {
     HotkeyNote,
     HotkeyAi,
     MeshChat,
+    MeshHud,
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 16] = [
+    pub const ALL: [SettingKey; 17] = [
         SettingKey::OpenOnHover,
         SettingKey::Lyrics,
         SettingKey::WaterReminders,
@@ -50,6 +51,7 @@ impl SettingKey {
         SettingKey::HotkeyNote,
         SettingKey::HotkeyAi,
         SettingKey::MeshChat,
+        SettingKey::MeshHud,
     ];
 
     pub fn get(self, s: &Settings) -> bool {
@@ -70,6 +72,7 @@ impl SettingKey {
             SettingKey::HotkeyNote => s.hotkey_note,
             SettingKey::HotkeyAi => s.hotkey_ai,
             SettingKey::MeshChat => s.mesh_chat,
+            SettingKey::MeshHud => s.mesh_hud,
         }
     }
 
@@ -92,6 +95,7 @@ impl SettingKey {
             SettingKey::HotkeyNote => s.hotkey_note = v,
             SettingKey::HotkeyAi => s.hotkey_ai = v,
             SettingKey::MeshChat => s.mesh_chat = v,
+            SettingKey::MeshHud => s.mesh_hud = v,
         }
     }
 
@@ -113,6 +117,7 @@ impl SettingKey {
             SettingKey::HotkeyNote => "Alt+N",
             SettingKey::HotkeyAi => "Alt+I",
             SettingKey::MeshChat => "Mesh chat (BLE)",
+            SettingKey::MeshHud => "Mesh message HUD",
         }
     }
 }
