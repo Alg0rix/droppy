@@ -495,6 +495,13 @@ mod imp {
                         Ok(BluetoothAddressType::Public) => BluetoothAddressType::Public,
                         _ => BluetoothAddressType::Random,
                     };
+                    static SEEN_LOG: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<u64>>> = std::sync::OnceLock::new();
+                    let log_set = SEEN_LOG.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+                    if log_set.lock().unwrap().insert(addr) {
+                        let t = a.AdvertisementType().map(|t| format!("{t:?}")).unwrap_or_default();
+                        let rssi = a.RawSignalStrengthInDBm().unwrap_or(0);
+                        push_events([Event::Log(format!("mesh: ad {addr:012x} type={t} rssi={rssi}"))]);
+                    }
                     let _ = tx.send(Msg::Seen(addr, atype));
                 }
             }
@@ -505,8 +512,9 @@ mod imp {
 
     /// Wrap an HRESULT with the dial step it came from, so droppy.log shows
     /// exactly where connects die.
-    fn step(s: &'static str, e: windows::core::Error) -> windows::core::Error {
-        windows::core::Error::new(e.code(), format!("{s}: {}", e.message()))
+    fn step(s: impl Into<String>, e: windows::core::Error) -> windows::core::Error {
+        let m = s.into();
+        windows::core::Error::new(e.code(), format!("{m}: {}", e.message()))
     }
 
     /// Dial one advertiser: connect, subscribe to its mesh characteristic.
@@ -520,11 +528,20 @@ mod imp {
             .get()
             .map_err(|e| step("connect-await", e))?;
         // Uncached: without it, unpaired devices return empty service lists.
-        let services = dev
+        let services = match dev
             .GetGattServicesForUuidWithCacheModeAsync(SERVICE, BluetoothCacheMode::Uncached)
-            .map_err(|e| step("services", e))?
-            .get()
-            .map_err(|e| step("services-await", e))?;
+            .map_err(|e| step("services", e))
+        {
+            Ok(op) => op.get().or_else(|e| {
+                // Some stacks reject Uncached outright — retry Cached once.
+                let first = format!("{e}");
+                match dev.GetGattServicesForUuidWithCacheModeAsync(SERVICE, BluetoothCacheMode::Cached) {
+                    Ok(op2) => op2.get().map_err(|e2| step(format!("services-await ({first}) / cached"), e2)),
+                    Err(e2) => Err(step(format!("services ({first}) / cached"), e2)),
+                }
+            })?,
+            Err(e) => return Err(e),
+        };
         let svc = services.Services().map_err(|e| step("svc-list", e))?.GetAt(0).map_err(|e| step("svc-none", e))?;
         let chars = svc
             .GetCharacteristicsForUuidWithCacheModeAsync(MESH_CHAR, BluetoothCacheMode::Uncached)
