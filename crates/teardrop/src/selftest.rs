@@ -896,7 +896,7 @@ pub fn run(dir: &str) -> i32 {
     render.push(json!({"check": "progress_clamp", "ok": true}));
     // Shell config sanity.
     let st = Settings::default();
-    if st.sounds || !st.hide_in_fullscreen || !st.open_on_hover || st.goal_ml != 2000 {
+    if st.sounds || !st.hide_in_fullscreen || st.open_on_hover || st.goal_ml != 2000 {
         failures.push("settings defaults wrong".into());
     }
 

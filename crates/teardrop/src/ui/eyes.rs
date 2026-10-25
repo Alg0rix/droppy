@@ -4079,8 +4079,9 @@ mod tests {
     }
 
     #[test]
-    fn weather_is_opt_in() {
+    fn weather_respects_the_setting() {
         let (mut e, mut w) = settled();
+        w.set.weather_mood = false;
         w.env.weather = Weather::Rain;
         run(&mut e, &w, 0.1);
         assert_eq!(e.mood, Mood::Neutral);
