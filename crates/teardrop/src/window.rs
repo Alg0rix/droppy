@@ -2664,10 +2664,20 @@ mod inner {
                     close_island(hwnd);
                 }
             }
-            DropEvent::Drop(list, x, _) => {
+            DropEvent::Drop(payload, x, _) => {
                 DRAG_OPENED.set(false);
                 let zone = drop_zone(x);
                 UI.with(|u| u.borrow_mut().drag_files = 0);
+                let mut list = payload.paths;
+                // A dragged URL or a lump of text becomes a tiny file so the
+                // shelf (and Phone Link's file-only share) accepts it too.
+                if list.is_empty() {
+                    if let Some(t) = payload.text {
+                        if let Some(p) = text_to_file(&t) {
+                            list.push(p);
+                        }
+                    }
+                }
                 if !list.is_empty() {
                     UI.with(|u| {
                         let mut u = u.borrow_mut();
@@ -2690,6 +2700,21 @@ mod inner {
         let local = (screen_x - WIN_POS.get().0) as f32 / SCALE.get();
         let mid = ISLAND.with(|s| s.borrow().geom.card_w) / 2.0 + ui::theme::PAD;
         u8::from(local >= mid)
+    }
+
+    /// Persist a dropped text/URL payload as a small file in the data dir:
+    /// links become `.url` shortcuts, plain text becomes `.txt`. Returns the
+    /// path so it can ride the shelf/share pipeline like any other file.
+    fn text_to_file(text: &str) -> Option<String> {
+        let trimmed = text.trim();
+        let data = paths::ensure_dirs().0;
+        let (ext, body) = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+            ("url", format!("[InternetShortcut]\r\nURL={}\r\n", trimmed))
+        } else {
+            ("txt", text.to_string())
+        };
+        let path = data.join(format!("drop-{}.{}", now_ms(), ext));
+        std::fs::write(&path, body).ok().map(|_| path.to_string_lossy().into_owned())
     }
 
     /// Files dropped on the Phone Link half: resolve them off the UI thread,
