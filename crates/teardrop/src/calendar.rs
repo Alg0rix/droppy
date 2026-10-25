@@ -473,7 +473,8 @@ impl CalendarView {
         let Some(date) = NaiveDate::from_ymd_opt(year, month, day) else {
             return Vec::new();
         };
-        self.events.iter().filter(|e| event_on_date(e, date)).collect()
+        let (lo, hi) = local_span_bounds(date, date);
+        self.events.iter().filter(|e| may_overlap(e, lo, hi) && event_on_date(e, date)).collect()
     }
 
     pub fn agenda(&self, now: i64, limit: usize) -> Vec<&Event> {
@@ -683,16 +684,37 @@ pub fn event_on_date(e: &Event, date: NaiveDate) -> bool {
 
 /// Days of `year`/`month` (1-based) that have an event, for dots on the grid.
 pub fn busy_days(events: &[Event], year: i32, month: u32) -> Vec<u32> {
-    let mut days = Vec::new();
-    for d in 1..=31u32 {
-        let Some(date) = NaiveDate::from_ymd_opt(year, month, d) else {
-            break;
+    let Some(first) = NaiveDate::from_ymd_opt(year, month, 1) else {
+        return Vec::new();
+    };
+    let last = first.checked_add_months(chrono::Months::new(1)).and_then(|d| d.pred_opt()).unwrap_or(first);
+    let (lo, hi) = local_span_bounds(first, last);
+    let mut busy = [false; 32];
+    for e in events.iter().filter(|e| may_overlap(e, lo, hi)) {
+        let Some(s) = Local.timestamp_opt(e.start, 0).single().map(|d| d.date_naive()) else {
+            continue;
         };
-        if events.iter().any(|e| event_on_date(e, date)) {
-            days.push(d);
+        let end = Local.timestamp_opt((e.end - 1).max(e.start), 0).single().map(|d| d.date_naive()).unwrap_or(s);
+        let (from, to) = (s.max(first), end.min(last));
+        if from <= to {
+            for d in from.day()..=to.day() {
+                busy[d as usize] = true;
+            }
         }
     }
-    days
+    (1..=last.day()).filter(|&d| busy[d as usize]).collect()
+}
+
+/// Conservative Unix-second bounds around the local dates `first..=last`
+/// (padded past any UTC offset) so most events skip time-zone lookups.
+fn local_span_bounds(first: NaiveDate, last: NaiveDate) -> (i64, i64) {
+    const PAD: i64 = 2 * 86_400;
+    let ts = |d: NaiveDate| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp();
+    (ts(first) - PAD, ts(last) + 86_400 + PAD)
+}
+
+fn may_overlap(e: &Event, lo: i64, hi: i64) -> bool {
+    e.start < hi && e.end.max(e.start) >= lo
 }
 
 #[allow(dead_code)]
@@ -888,6 +910,28 @@ mod tests {
         assert_eq!(on_day[0].title, "Monthly review");
         let empty_day = view.events_on_day(start_local.year(), start_local.month(), 1);
         assert!(empty_day.is_empty());
+    }
+
+    #[test]
+    fn busy_days_matches_per_day_scan() {
+        let evs = vec![
+            ev("a", NOW, NOW + 3600),
+            ev("multi", NOW + 2 * 86_400, NOW + 5 * 86_400),
+            ev("span", NOW - 40 * 86_400, NOW - 20 * 86_400),
+            ev("zero", NOW + 9 * 86_400, NOW + 9 * 86_400),
+            ev("far", NOW + 120 * 86_400, NOW + 121 * 86_400),
+        ];
+        let base = Local.timestamp_opt(NOW, 0).single().unwrap().date_naive();
+        for off in -2..=2 {
+            let d = if off < 0 { base - chrono::Months::new((-off) as u32) } else { base + chrono::Months::new(off as u32) };
+            let (y, m) = (d.year(), d.month());
+            let slow: Vec<u32> = (1..=31)
+                .filter_map(|day| NaiveDate::from_ymd_opt(y, m, day))
+                .filter(|date| evs.iter().any(|e| event_on_date(e, *date)))
+                .map(|date| date.day())
+                .collect();
+            assert_eq!(busy_days(&evs, y, m), slow, "{y}-{m}");
+        }
     }
 
     #[test]
