@@ -546,7 +546,7 @@ fn face(c: &mut Ctx, r: Rect, spot: Spot, accent: Option<Color>) {
 /// The glance pill: the wide flat capsule the island rests at mid-morph.
 /// Every page gets its own quick-peek layout; transient activities
 /// (recording, imminent meeting) take over regardless of the page.
-fn glance(c: &mut Ctx, r: Rect) {
+fn glance(c: &mut Ctx, r: Rect, page: Page) {
     let vm = c.vm;
     let cy = r.cy();
 
@@ -573,7 +573,7 @@ fn glance(c: &mut Ctx, r: Rect) {
         return;
     }
 
-    match vm.page {
+    match page {
         Page::Music => glance_music(c, r, cy),
         Page::Focus => glance_focus(c, r, cy),
         Page::Water => glance_water(c, r, cy),
@@ -957,9 +957,17 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
     if ga > 0.01 {
         c.s.clip(Rect::new(body.x + 1.0, 0.0, body.w - 2.0, body.h));
         // Quick actions are only live once the pill is resting at the glance.
-        c.live = (open - 0.5).abs() < 0.08;
-        c.s.set_transform(0.0, 0.0, ga);
-        glance(&mut c, body);
+        let ease = ui.page_ease();
+        let sliding = ui.page_t < 1.0;
+        if sliding {
+            c.live = false;
+            c.s.set_transform(-ui.page_dir * 26.0 * ease, 0.0, ga * (1.0 - ease));
+            glance(&mut c, body, ui.prev_page);
+        }
+        c.live = (open - 0.5).abs() < 0.08 && !sliding;
+        let (dx, a) = if sliding { (ui.page_dir * 26.0 * (1.0 - ease), ga * ease) } else { (0.0, ga) };
+        c.s.set_transform(dx, 0.0, a);
+        glance(&mut c, body, vm.page);
         c.s.reset_transform();
         c.live = true;
         c.s.pop_clip();

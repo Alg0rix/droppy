@@ -267,6 +267,9 @@ pub struct UiState {
     /// resizes itself per activity instead of snapping to one fixed card.
     pub card_w: f32,
     pub card_h: f32,
+    /// Glance-pill size, eased per page like `card_w`/`card_h`.
+    pub glance_w: f32,
+    pub glance_h: f32,
     pub peek_until_ms: u64,
     pub peek_amt: f32,
     track_key: String,
@@ -332,6 +335,8 @@ impl UiState {
             compact_h: 42.0,
             card_w: 680.0,
             card_h: 318.0,
+            glance_w: Self::glance_target(page).0,
+            glance_h: Self::glance_target(page).1,
             peek_until_ms: 0,
             peek_amt: 0.0,
             track_key: String::new(),
@@ -627,6 +632,12 @@ impl UiState {
         let (cw, ch) = Self::card_target(vm.page);
         moving |= approach(&mut self.card_w, cw, 14.0, dt);
         moving |= approach(&mut self.card_h, ch, 14.0, dt);
+
+        // Glance size eases per page too, so switching pages while peeking
+        // reflows the pill instead of snapping.
+        let (gw, gh) = Self::glance_target(vm.page);
+        moving |= approach(&mut self.glance_w, gw, 14.0, dt);
+        moving |= approach(&mut self.glance_h, gh, 14.0, dt);
 
         // Track-change peek.
         let key = format!("{}\0{}", vm.track.title, vm.track.artist);

@@ -230,9 +230,8 @@ mod inner {
                 st.geom.pill_h = ui.compact_h;
                 st.geom.card_w = ui.card_w;
                 st.geom.card_h = ui.card_h;
-                let (gw, gh) = VIEW.with(|v| ui::state::UiState::glance_target(v.borrow().page));
-                st.geom.glance_w = gw;
-                st.geom.glance_h = gh;
+                st.geom.glance_w = ui.glance_w;
+                st.geom.glance_h = ui.glance_h;
             });
             let view = IslandView { geom: st.geom, open: st.open.value, wobble_px: st.wobble_px };
             VIEW.with(|v| {
