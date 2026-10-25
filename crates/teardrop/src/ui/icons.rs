@@ -42,6 +42,8 @@ pub enum Icon {
     File,
     Pin,
     Search,
+    /// A CPU package with pins — the System page.
+    Chip,
 }
 
 /// Draw `icon` centred at (cx, cy) inside a `size`px box.
@@ -223,6 +225,20 @@ pub fn draw(s: &mut Scene, icon: Icon, cx: f32, cy: f32, size: f32, c: Color) {
             let (x5, y5) = p(9.8, 6.2);
             let (x6, y6) = p(13.8, 2.2);
             s.line(x5, y5, x6, y6, sw, c);
+        }
+        Icon::Chip => {
+            s.stroke(rect(4.0, 4.0, 8.0, 8.0), 1.8 * u, sw, c);
+            s.rect(rect(6.4, 6.4, 3.2, 3.2), 0.8 * u, c);
+            for t in [6.0, 10.0] {
+                let (a0, a1) = (p(t, 1.6), p(t, 4.0));
+                s.line(a0.0, a0.1, a1.0, a1.1, sw * 0.9, c);
+                let (b0, b1) = (p(t, 12.0), p(t, 14.4));
+                s.line(b0.0, b0.1, b1.0, b1.1, sw * 0.9, c);
+                let (c0, c1) = (p(1.6, t), p(4.0, t));
+                s.line(c0.0, c0.1, c1.0, c1.1, sw * 0.9, c);
+                let (d0, d1) = (p(12.0, t), p(14.4, t));
+                s.line(d0.0, d0.1, d1.0, d1.1, sw * 0.9, c);
+            }
         }
         Icon::Search => {
             let (rx, ry) = p(6.5, 6.5);

@@ -48,6 +48,9 @@ mod launcher;
 mod appicons;
 #[cfg(windows)]
 mod winsearch;
+mod sysmon;
+#[cfg(windows)]
+mod btdev;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

@@ -12,6 +12,8 @@ pub enum Page {
     Notes,
     Clipboard,
     Today,
+    /// Live CPU / GPU / memory / drives / network / battery monitor.
+    System,
     Speed,
     Usage,
     Voice,
@@ -29,7 +31,7 @@ impl Default for Page {
 }
 
 impl Page {
-    /// The twelve tab pages in header order (Settings is reached via the gear).
+    /// The tab pages in header order (Settings is reached via the gear).
     pub fn all() -> &'static [Page] {
         &[
             Page::Music,
@@ -41,6 +43,7 @@ impl Page {
             Page::Notes,
             Page::Clipboard,
             Page::Today,
+            Page::System,
             Page::Speed,
             Page::Usage,
             Page::Voice,
@@ -58,6 +61,7 @@ impl Page {
             Page::Notes => "Notes",
             Page::Clipboard => "Clipboard",
             Page::Today => "Today",
+            Page::System => "System",
             Page::Speed => "Speed",
             Page::Usage => "Usage",
             Page::Voice => "Voice",

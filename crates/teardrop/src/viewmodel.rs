@@ -37,6 +37,8 @@ pub struct ViewModel {
     pub windows: Vec<crate::winreg::WindowInfo>,
     /// Per-app audio sessions shown as mixers on the Windows page.
     pub audio: Vec<crate::mixer::AudioSession>,
+    /// Live system monitor readings (System page).
+    pub sys: teardrop_core::SysView,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -181,6 +183,7 @@ impl ViewModel {
             voice: Default::default(),
             windows: Vec::new(),
             audio: Vec::new(),
+            sys: Default::default(),
             calendar: Default::default(),
             calendar_feeds: 0,
             ai: crate::ai::AiView {
@@ -219,6 +222,7 @@ impl ViewModel {
             voice: Default::default(),
             windows: Vec::new(),
             audio: Vec::new(),
+            sys: Default::default(),
             calendar: Default::default(),
             calendar_feeds: 0,
             ai: Default::default(),
@@ -403,6 +407,14 @@ pub fn hud_brightness(pct: u8, now_ms: u64) -> Hud {
 pub fn hud_water_due(now_ms: u64) -> Hud {
     let mut h = Hud::transient(HudKind::Water, "Water", "Time to hydrate", now_ms, 9000);
     h.action_label = Some("+1 glass".to_string());
+    h
+}
+
+/// "Sound Buds - Connected - 80%" card for a Bluetooth device that just linked.
+pub fn hud_bluetooth(name: &str, battery: Option<u8>, now_ms: u64) -> Hud {
+    let name = if name.trim().is_empty() { "Bluetooth device" } else { name.trim() };
+    let mut h = Hud::transient(HudKind::Bluetooth, name, "Connected", now_ms, 4500);
+    h.progress = battery.map(|b| b.min(100) as f32 / 100.0);
     h
 }
 

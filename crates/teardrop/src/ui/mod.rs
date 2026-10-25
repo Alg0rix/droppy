@@ -10,6 +10,7 @@ pub mod markdown;
 pub mod pages;
 pub mod scene;
 pub mod state;
+pub mod system;
 pub mod textedit;
 pub mod theme;
 pub mod viz;

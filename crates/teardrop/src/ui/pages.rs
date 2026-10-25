@@ -20,6 +20,7 @@ pub fn draw(c: &mut Ctx, page: Page, a: Rect) {
         Page::Notes => notes(c, a),
         Page::Clipboard => clipboard(c, a),
         Page::Today => today(c, a),
+        Page::System => super::system::system(c, a),
         Page::Speed => speed(c, a),
         Page::Usage => usage(c, a),
         Page::Voice => voice(c, a),

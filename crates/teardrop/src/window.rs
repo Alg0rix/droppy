@@ -81,6 +81,8 @@ mod inner {
     const WM_APP_VOLUME: u32 = 0x8004;
     /// Launcher search results / app icons finished on a worker thread.
     const WM_APP_SEARCH: u32 = 0x8005;
+    /// A Bluetooth device connected (btdev worker thread).
+    const WM_APP_BT: u32 = 0x8007;
     const HSHELL_WINDOWCREATED: u32 = 1;
     const HSHELL_FLASH: u32 = 0x8006;
     const HSHELL_WINDOWACTIVATED: u32 = 4;
@@ -121,6 +123,7 @@ mod inner {
         static USAGE_REV: Cell<u32> = Cell::new(u32::MAX);
         static USAGE_STARTED: Cell<bool> = Cell::new(false);
         static AI_REV: Cell<u32> = Cell::new(u32::MAX);
+        static SYS_REV: Cell<u64> = Cell::new(u64::MAX);
         static DRAG_OPENED: Cell<bool> = Cell::new(false);
         static HOVER_PENDING: Cell<bool> = Cell::new(false);
         static LAST_MOUSE: Cell<(f32, f32)> = Cell::new((-1.0, -1.0));
@@ -228,6 +231,19 @@ mod inner {
             vm.env.caps = env::caps();
             vm.env.audio_peak = peak;
         });
+
+        // System page: tell the sampler what is on screen, pull in new samples.
+        {
+            let open = ISLAND.with(|s| s.borrow().open.value);
+            let on = VIEW.with(|v| v.borrow().page) == Page::System && open > 0.05;
+            let tab = UI.with(|u| u.borrow().sys_tab);
+            crate::sysmon::set_active(on.then_some(tab));
+            let rev = crate::sysmon::revision();
+            if SYS_REV.replace(rev) != rev {
+                let snap = crate::sysmon::snapshot();
+                VIEW.with(|v| v.borrow_mut().sys = snap);
+            }
+        }
 
         let frame = ISLAND.with(|isl| {
             let mut st = isl.borrow_mut();
@@ -952,6 +968,10 @@ mod inner {
                 if set.hidden_pages.iter().any(|h| h == VIEW.with(|v| v.borrow().page.title())) {
                     VIEW.with(|v| v.borrow_mut().page = ui::layout::visible_pages(&set)[0]);
                 }
+            }
+            Action::SysTab(t) => {
+                UI.with(|u| u.borrow_mut().sys_tab = t);
+                save = false;
             }
             Action::Tab(p) => {
                 // Leaving the notes editor closes it (and prunes a blank note).
@@ -2768,6 +2788,15 @@ mod inner {
             0x43 if page == Page::Clipboard => perform(hwnd, Action::ClipClear),
             0x56 if page == Page::Shelf => paste_to_shelf(hwnd),
             0x2E if page == Page::Shelf => perform(hwnd, Action::ShelfRemove(0)),
+            0x31..=0x36 if page == Page::System => {
+                if let Some(t) = teardrop_core::SysTab::ALL.get((vk - 0x31) as usize) {
+                    perform(hwnd, Action::SysTab(*t));
+                }
+            }
+            0x26 | 0x28 if page == Page::System => {
+                let t = UI.with(|u| u.borrow().sys_tab);
+                perform(hwnd, Action::SysTab(t.step(if vk == 0x26 { -1 } else { 1 })));
+            }
             0x31..=0x36 if page == Page::Shelf => {
                 let scroll = UI.with(|u| u.borrow().scroll_of(Page::Shelf));
                 perform(hwnd, Action::ShelfOpen((scroll * 2 + (vk - 0x31) as usize) as u16));
@@ -3016,6 +3045,14 @@ mod inner {
                     crate::launcher::set_notify(move || unsafe {
                         let _ = PostMessageW(HWND(raw as *mut _), WM_APP_SEARCH, WPARAM(0), LPARAM(0));
                     });
+                    crate::sysmon::set_notify(move || unsafe {
+                        let _ = PostMessageW(HWND(raw as *mut _), WM_APP_SEARCH, WPARAM(0), LPARAM(0));
+                    });
+                    crate::sysmon::start();
+                    crate::btdev::set_notify(move || unsafe {
+                        let _ = PostMessageW(HWND(raw as *mut _), WM_APP_BT, WPARAM(0), LPARAM(0));
+                    });
+                    crate::btdev::start();
                 }
                 let _ = RegisterPowerSettingNotification(HANDLE(hwnd.0), &GUID_VIDEO_CURRENT_MONITOR_BRIGHTNESS, DEVICE_NOTIFY_WINDOW_HANDLE);
                 if SETTINGS.with(|s| s.borrow().weather_mood) {
@@ -3184,7 +3221,10 @@ mod inner {
             _ if msg == WM_DEVICECHANGE => {
                 if wp.0 as u32 == 0x8000 {
                     let ms = now_ms();
-                    VIEW.with(|v| v.borrow_mut().hud = Some(Hud::transient(HudKind::Bluetooth, "Device", "connected", ms, 3000)));
+                    // Bluetooth shows its own card (name + battery) once the watcher
+                    // sees the link; anything else gets the generic notice.
+                    crate::btdev::nudge();
+                    VIEW.with(|v| v.borrow_mut().hud = Some(Hud::transient(HudKind::Device, "Device", "connected", ms, 3000)));
                     with_eyes(|e| e.react(React::Perk));
                     wake(hwnd);
                 }
@@ -3317,6 +3357,15 @@ mod inner {
             }
             _ if msg == WM_APP_SEARCH => {
                 wake(hwnd);
+                LRESULT(0)
+            }
+            _ if msg == WM_APP_BT => {
+                if let Some(dev) = crate::btdev::take() {
+                    let ms = now_ms();
+                    VIEW.with(|v| v.borrow_mut().hud = Some(crate::viewmodel::hud_bluetooth(&dev.name, dev.battery, ms)));
+                    with_eyes(|e| e.react(React::Perk));
+                    wake(hwnd);
+                }
                 LRESULT(0)
             }
             _ if msg == WM_APP_VOLUME => {

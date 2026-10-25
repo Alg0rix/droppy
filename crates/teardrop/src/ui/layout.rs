@@ -181,6 +181,7 @@ pub fn tab_icon(p: Page) -> Icon {
         Page::Notes => Icon::Notes,
         Page::Clipboard => Icon::Clipboard,
         Page::Today => Icon::Calendar,
+        Page::System => Icon::Chip,
         Page::Speed => Icon::Gauge,
         Page::Usage => Icon::Chart,
         Page::Voice => Icon::Mic,
@@ -200,6 +201,7 @@ fn tab_label_w(p: Page) -> f32 {
         Page::Notes => 82.0,
         Page::Clipboard => 104.0,
         Page::Today => 84.0,
+        Page::System => 90.0,
         Page::Speed => 84.0,
         Page::Usage => 84.0,
         Page::Voice => 82.0,
@@ -597,6 +599,7 @@ fn glance(c: &mut Ctx, r: Rect, page: Page) {
         Page::Notes => glance_notes(c, r, cy),
         Page::Clipboard => glance_clip(c, r, cy),
         Page::Today => glance_today(c, r, cy),
+        Page::System => glance_system(c, r, cy),
         Page::Speed => glance_speed(c, r, cy),
         Page::Usage => glance_usage(c, r, cy),
         Page::Voice => glance_voice(c, r, cy),
@@ -795,6 +798,36 @@ fn glance_today(c: &mut Ctx, r: Rect, cy: f32) {
     }
 }
 
+/// CPU / GPU / memory at a glance: a label, the live value and a thin meter each.
+fn glance_system(c: &mut Ctx, r: Rect, cy: f32) {
+    let acc = accent(Page::System);
+    icons::draw(&mut c.s, tab_icon(Page::System), r.x + 28.0, cy, 17.0, acc);
+    let s = &c.vm.sys;
+    if !s.loaded {
+        c.text("Reading your system\u{2026}", Rect::new(r.x + 52.0, cy - 10.0, 220.0, 20.0), 13.0, Weight::Medium, TEXT_2, Align::Left);
+        return;
+    }
+    let gpu = if s.gpu.available { Some(s.gpu.util) } else { None };
+    let items = [
+        ("CPU", Some(s.cpu.total), Color::rgb(96, 165, 250)),
+        ("GPU", gpu, Color::rgb(74, 222, 128)),
+        ("MEM", Some(s.mem.pct()), Color::rgb(167, 139, 250)),
+    ];
+    let x0 = r.x + 56.0;
+    let w = (r.right() - 18.0 - x0) / items.len() as f32;
+    for (i, (label, v, col)) in items.iter().enumerate() {
+        let x = x0 + i as f32 * w;
+        c.text(*label, Rect::new(x, cy - 22.0, w - 12.0, 13.0), 9.5, Weight::Semibold, TEXT_3, Align::Left);
+        let shown = v.map_or("\u{2014}".to_string(), |v| format!("{v:.0}%"));
+        c.text(shown, Rect::new(x, cy - 10.0, w - 12.0, 24.0), 18.0, Weight::Bold, TEXT, Align::Left);
+        let bar = Rect::new(x, cy + 17.0, w - 18.0, 4.0);
+        c.s.rect(bar, 2.0, Color::rgba(255, 255, 255, 0.12));
+        if let Some(v) = v {
+            c.s.rect(Rect::new(bar.x, bar.y, (bar.w * v / 100.0).max(4.0), 4.0), 2.0, *col);
+        }
+    }
+}
+
 fn glance_speed(c: &mut Ctx, r: Rect, cy: f32) {
     let acc = accent(Page::Speed);
     let sp = c.vm.speed;
@@ -943,10 +976,37 @@ fn hud(c: &mut Ctx, r: Rect, h: &teardrop_core::Hud, cy: f32) {
                 c.text(h.detail.clone(), Rect::new(r.right() - 84.0, cy - 10.0, 72.0, 20.0), 12.0, Weight::Regular, TEXT_2, Align::Right);
             }
         }
+        HudKind::Bluetooth => {
+            // Round blue badge, device name over "Connected", battery at the end.
+            let blue = Color::rgb(59, 130, 246);
+            let eyes = c.set.idle_look == IdleLook::Eyes;
+            let tail = if eyes { 14.0 + HUD_FACE_W } else { 14.0 };
+            let badge = Rect::new(r.x + 14.0, cy - 19.0, 38.0, 38.0);
+            c.s.circle(badge.cx(), badge.cy(), 19.0, blue);
+            icons::draw(&mut c.s, Icon::Headphones, badge.cx(), badge.cy(), 18.0, Color::rgb(255, 255, 255));
+            let batt_w = if h.progress.is_some() { 84.0 } else { 0.0 };
+            let tr = Rect::new(badge.right() + 12.0, cy - 20.0, r.w - 14.0 - 38.0 - 12.0 - tail - batt_w - 6.0, 22.0);
+            c.text(h.title.clone(), tr, 14.0, Weight::Semibold, TEXT, Align::Left);
+            c.text(h.detail.clone(), Rect::new(tr.x, cy + 2.0, tr.w, 16.0), 11.5, Weight::Regular, TEXT_3, Align::Left);
+            if let Some(p) = h.progress {
+                let col = if p <= 0.15 { RED } else if p <= 0.30 { AMBER } else { GREEN };
+                let body = Rect::new(r.right() - tail - 80.0, cy - 7.0, 28.0, 14.0);
+                c.s.stroke(body, 4.0, 1.4, TEXT_2);
+                c.s.rect(Rect::new(body.right() + 1.5, cy - 2.5, 2.4, 5.0), 1.0, TEXT_2);
+                let fill = Rect::new(body.x + 2.4, body.y + 2.4, (body.w - 4.8) * p.clamp(0.0, 1.0), body.h - 4.8);
+                if fill.w > 0.5 {
+                    c.s.rect(fill, 2.0, col);
+                }
+                c.text(format!("{:.0}%", p * 100.0), Rect::new(body.right() + 8.0, cy - 10.0, 44.0, 20.0), 13.0, Weight::Medium, TEXT, Align::Left);
+            }
+            if eyes {
+                face(c, r, Spot::Hud, None);
+            }
+        }
         _ => {
             let (icon, col) = match h.kind {
                 HudKind::Charging => (Icon::Bolt, GREEN),
-                HudKind::Bluetooth => (Icon::Headphones, accent(Page::Today)),
+                HudKind::Device => (Icon::Chip, accent(Page::System)),
                 HudKind::Timer => (Icon::Timer, accent(Page::Focus)),
                 _ => (Icon::Note, TEXT),
             };
@@ -1071,6 +1131,8 @@ mod tests {
         let now = Utc::now();
         let mut vm = ViewModel::demo(now);
         vm.page = page;
+        // The System page only draws its live meters once a sample has landed.
+        vm.sys.loaded = true;
         let set = Settings::default();
         let mut ui = UiState::new(page);
         let now_ms = now.timestamp_millis() as u64;
@@ -1113,6 +1175,22 @@ mod tests {
     fn midway_morph_has_no_interactive_content() {
         let f = frame(Page::Music, 0.4);
         assert!(!f.hits.iter().any(|h| matches!(h.action, Action::Tab(_) | Action::MediaPlayPause)));
+    }
+
+    /// No page may cover its glance with a click target of its own: that
+    /// swallows the click that expands the island (the System glance once
+    /// did, so its pill could not be opened).
+    #[test]
+    fn no_glance_covers_the_pill_with_its_own_hit() {
+        for &p in Page::all() {
+            let f = frame(p, 0.5);
+            let pill = (f.w - 2.0 * PAD) * (f.h - PAD);
+            for h in &f.hits {
+                let area = h.rect.w * h.rect.h;
+                assert!(h.action == Action::Island || area < 0.6 * pill, "{p:?} glance has a {:?} hit covering {:.0}% of the pill", h.action, 100.0 * area / pill);
+            }
+            assert!(f.hits.iter().any(|h| h.action == Action::Island), "{p:?} glance lost its expand hit");
+        }
     }
 
     #[test]

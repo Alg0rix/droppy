@@ -13,7 +13,19 @@ pub struct Hud {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum HudKind { Volume, Charging, Bluetooth, Water, Timer, Muted, Meeting, Brightness }
+pub enum HudKind {
+    Volume,
+    Charging,
+    /// A Bluetooth device connected: name in `title`, battery (0..1) in `progress`.
+    Bluetooth,
+    /// Any other hardware arrival (USB drive, dock...).
+    Device,
+    Water,
+    Timer,
+    Muted,
+    Meeting,
+    Brightness,
+}
 
 impl Hud {
     pub fn transient(kind: HudKind, title: &str, detail: &str, now_ms: u64, ttl_ms: u64) -> Self {

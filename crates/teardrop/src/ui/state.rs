@@ -117,6 +117,8 @@ impl SettingKey {
 pub enum Action {
     Island,
     Tab(Page),
+    /// System page sub-tab (CPU / GPU / Memory / ...).
+    SysTab(teardrop_core::SysTab),
     /// Settings chip: keep this page out of the nav and the page cycle.
     TogglePage(Page),
     /// Bring the n-th registered desktop window to the foreground.
@@ -262,7 +264,7 @@ pub struct Hit {
 }
 
 /// Per-page animation slots (every tab plus Settings, with headroom).
-pub const PAGE_SLOTS: usize = 14;
+pub const PAGE_SLOTS: usize = 15;
 
 pub fn page_index(p: Page) -> usize {
     Page::all().iter().position(|&x| x == p).unwrap_or(Page::all().len())
@@ -315,6 +317,8 @@ pub struct UiState {
     /// Task / note / AI text being typed (None = field not focused).
     /// Task text being typed (None = field not focused).
     pub input: Option<super::textedit::TextField>,
+    /// Selected sub-tab on the System page.
+    pub sys_tab: teardrop_core::SysTab,
     /// Highlighted row in the Windows-page launcher results (arrow keys move it).
     pub win_sel: usize,
     /// Id of the note the input buffer belongs to (`None` while typing a brand
@@ -381,6 +385,7 @@ impl UiState {
             cal_selected_day: None,
             cal_selected_event: None,
             input: None,
+            sys_tab: teardrop_core::SysTab::Cpu,
             win_sel: 0,
             note_edit: None,
             note_search: None,
@@ -459,10 +464,13 @@ impl UiState {
                 Volume | Muted | Brightness => 270.0,
                 Water => 310.0,
                 Meeting => 340.0,
+                Bluetooth if s.idle_look == IdleLook::Eyes => 350.0 + super::layout::HUD_FACE_W,
+                Bluetooth => 350.0,
                 _ if s.idle_look == IdleLook::Eyes => 290.0 + super::layout::HUD_FACE_W,
                 _ => 290.0,
             };
-            return (w, 44.0);
+            // The Bluetooth card stacks a name over its status, so it is taller.
+            return (w, if h.kind == Bluetooth { 62.0 } else { 44.0 });
         }
         if vm.voice.phase == crate::voice::VoicePhase::Recording {
             return (if s.idle_look == IdleLook::Eyes { 214.0 } else { 170.0 }, 42.0);
@@ -531,7 +539,7 @@ impl UiState {
         }
         if let Some(h) = vm.live_hud(now_ms) {
             use teardrop_core::HudKind::*;
-            return matches!(h.kind, Volume | Muted | Brightness | Charging | Bluetooth | Timer).then_some(Spot::Hud);
+            return matches!(h.kind, Volume | Muted | Brightness | Charging | Bluetooth | Device | Timer).then_some(Spot::Hud);
         }
         if vm.meeting_soon().is_some() {
             None
@@ -558,6 +566,7 @@ impl UiState {
             Page::Notes => 500.0,
             Page::Clipboard => 480.0,
             Page::Today => 520.0,
+            Page::System => 480.0,
             Page::Speed => 440.0,
             Page::Usage => 480.0,
             Page::Voice => 420.0,
@@ -580,6 +589,7 @@ impl UiState {
             Page::Notes => (620.0, 310.0),
             Page::Clipboard => (480.0, 270.0),
             Page::Today => (620.0, 310.0),
+            Page::System => (720.0, 400.0),
             Page::Speed => (420.0, 270.0),
             Page::Usage => (480.0, 270.0),
             Page::Voice => (420.0, 260.0),

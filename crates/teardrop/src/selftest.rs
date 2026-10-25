@@ -106,6 +106,88 @@ fn shot(name: &'static str, open: f32, page: Page) -> Shot {
     Shot { name, open, wobble: 0.0, page, hover: None, setup: nothing, ticks: 180 }
 }
 
+/// A believable machine for the System page frames: hybrid 12-core CPU, a
+/// discrete GPU, busy disk and network, a laptop battery on AC.
+fn demo_sys(vm: &mut ViewModel, _: &mut Settings, ui: &mut UiState, tab: teardrop_core::SysTab) {
+    use teardrop_core::sysmon::{CoreClass, ProcLoad, Series, Volume};
+    let wave = |base: f32, amp: f32, ph: f32, i: usize| (base + amp * ((i as f32 * 0.21 + ph).sin() * 0.6 + (i as f32 * 0.07 + ph).cos() * 0.4)).max(0.0);
+    let series = |base: f32, amp: f32, ph: f32, cap: f32| {
+        let mut s = Series::default();
+        for i in 0..60 {
+            s.push(wave(base, amp, ph, i).min(cap));
+        }
+        s
+    };
+    let sys = &mut vm.sys;
+    sys.loaded = true;
+    sys.cpu.name = "13th Gen Intel Core i7-13700H".into();
+    sys.cpu.total = 23.0;
+    sys.cpu.user = 14.0;
+    sys.cpu.system = 9.0;
+    sys.cpu.idle = 77.0;
+    sys.cpu.physical = 12;
+    sys.cpu.ghz = 3.4;
+    sys.cpu.temp_c = Some(54.0);
+    sys.cpu.cores = (0..20).map(|i| wave(24.0, 22.0, i as f32 * 0.9, 3)).collect();
+    sys.cpu.classes = (0..20).map(|i| if i < 16 { CoreClass::Performance } else { CoreClass::Efficiency }).collect();
+    sys.cpu.history = series(28.0, 20.0, 0.0, 100.0);
+    sys.procs = [("Microsoft Edge", 9.1), ("Spotify", 4.2), ("Desktop Window Manager", 2.3), ("Visual Studio Code", 1.8), ("Windows Explorer", 1.3), ("Discord", 0.9), ("Antimalware Service Executable", 0.4)]
+        .iter()
+        .map(|(n, v)| ProcLoad { name: n.to_string(), path: String::new(), value: *v })
+        .collect();
+
+    sys.gpu.available = true;
+    sys.gpu.name = "NVIDIA GeForce RTX 4060 Laptop GPU".into();
+    sys.gpu.util = 31.0;
+    sys.gpu.mem_used_gb = 3.4;
+    sys.gpu.mem_total_gb = 8.0;
+    sys.gpu.temp_c = Some(47.0);
+    sys.gpu.engines = vec![("3D".into(), 31.0), ("Video decode".into(), 12.0), ("Copy".into(), 3.0)];
+    sys.gpu.history = series(34.0, 26.0, 1.3, 100.0);
+    sys.gpu.mem_history = series(3.3, 0.5, 0.4, 8.0);
+    sys.gpu.procs = [("Microsoft Edge", 18.0), ("Desktop Window Manager", 9.0), ("Discord", 2.0)]
+        .iter()
+        .map(|(n, v)| ProcLoad { name: n.to_string(), path: String::new(), value: *v })
+        .collect();
+
+    sys.mem.total_gb = 31.7;
+    sys.mem.used_gb = 19.0;
+    sys.mem.available_gb = 12.7;
+    sys.mem.cached_gb = 9.2;
+    sys.mem.commit_used_gb = 27.4;
+    sys.mem.commit_limit_gb = 47.5;
+    sys.mem.history = series(59.0, 5.0, 2.1, 100.0);
+    sys.mem.procs = [("Microsoft Edge", 3.4), ("Visual Studio Code", 1.9), ("Docker Desktop", 1.6), ("Discord", 0.8), ("Spotify", 0.6)]
+        .iter()
+        .map(|(n, v)| ProcLoad { name: n.to_string(), path: String::new(), value: *v })
+        .collect();
+
+    sys.drives.read_bps = 1.5e6;
+    sys.drives.write_bps = 0.6e6;
+    sys.drives.busy = 14.0;
+    sys.drives.read_hist = series(1.2e6, 1.0e6, 0.3, 9e6);
+    sys.drives.write_hist = series(0.6e6, 0.5e6, 2.0, 9e6);
+    sys.drives.volumes = vec![
+        Volume { label: "C:".into(), used_gb: 312.0, total_gb: 476.0 },
+        Volume { label: "D:".into(), used_gb: 822.0, total_gb: 931.0 },
+    ];
+
+    sys.net.adapter = "Intel Wi-Fi 6E AX211".into();
+    sys.net.down_bps = 1.2e6;
+    sys.net.up_bps = 0.18e6;
+    sys.net.down_hist = series(1.1e6, 0.9e6, 0.8, 6e6);
+    sys.net.up_hist = series(0.2e6, 0.15e6, 1.7, 6e6);
+    sys.net.session_down = 4_200_000_000;
+    sys.net.session_up = 380_000_000;
+
+    sys.battery.present = true;
+    sys.battery.pct = 76.0;
+    sys.battery.charging = true;
+    sys.battery.on_ac = true;
+    sys.battery.history = series(75.0, 0.8, 0.0, 100.0);
+    ui.sys_tab = tab;
+}
+
 /// Fake events around "now" for the calendar frames.
 fn demo_calendar(vm: &mut ViewModel, _: &mut Settings, _: &mut UiState, _: u64) {
     use crate::calendar::{CalendarView, Event, FeedState, Join};
@@ -171,6 +253,18 @@ fn shots() -> Vec<Shot> {
             ..shot("04-collapsed-eyes", 0.0, Page::Music)
         },
         Shot { setup: |vm, _, _, ms| vm.hud = Some(hud_volume(64, false, ms)), ..shot("05-hud-volume", 0.0, Page::Music) },
+        Shot { setup: |vm, _, _, ms| vm.hud = Some(crate::viewmodel::hud_bluetooth("Sound Buds", Some(80), ms)), ..shot("05b-hud-bluetooth", 0.0, Page::Music) },
+        Shot { setup: |vm, _, _, ms| vm.hud = Some(crate::viewmodel::hud_bluetooth("Keychron K3 Pro", None, ms)), ..shot("05c-hud-bluetooth-nobattery", 0.0, Page::Music) },
+        Shot { setup: |vm, _, _, ms| vm.hud = Some(crate::viewmodel::hud_bluetooth("Sound Buds", Some(12), ms)), ..shot("05d-hud-bluetooth-low", 0.0, Page::Music) },
+        Shot {
+            setup: |vm, set, ui, ms| {
+                eyes(vm, set, EyeStyle::Round, false);
+                vm.hud = Some(crate::viewmodel::hud_bluetooth("Sound Buds", Some(80), ms));
+                ui.eyes.noted(60);
+            },
+            ticks: 40,
+            ..shot("05e-hud-bluetooth-eyes", 0.0, Page::Music)
+        },
         Shot { setup: |vm, _, _, ms| vm.hud = Some(hud_water_due(ms)), ..shot("06-hud-water", 0.0, Page::Music) },
         Shot {
             setup: |vm, _, _, ms| vm.hud = Some(Hud::transient(HudKind::Charging, "Charging", "87%", ms, 5000)),
@@ -293,6 +387,14 @@ fn shots() -> Vec<Shot> {
         },
         shot("25-page-clipboard", 1.0, Page::Clipboard),
         shot("26-page-today", 1.0, Page::Today),
+        Shot { setup: |vm, set, ui, _| demo_sys(vm, set, ui, teardrop_core::SysTab::Cpu), ..shot("26q-system-cpu", 1.0, Page::System) },
+        Shot { setup: |vm, set, ui, _| demo_sys(vm, set, ui, teardrop_core::SysTab::Gpu), ..shot("26r-system-gpu", 1.0, Page::System) },
+        Shot { setup: |vm, set, ui, _| demo_sys(vm, set, ui, teardrop_core::SysTab::Memory), ..shot("26s-system-memory", 1.0, Page::System) },
+        Shot { setup: |vm, set, ui, _| demo_sys(vm, set, ui, teardrop_core::SysTab::Drives), ..shot("26t-system-drives", 1.0, Page::System) },
+        Shot { setup: |vm, set, ui, _| demo_sys(vm, set, ui, teardrop_core::SysTab::Network), ..shot("26u-system-network", 1.0, Page::System) },
+        Shot { setup: |vm, set, ui, _| demo_sys(vm, set, ui, teardrop_core::SysTab::Battery), ..shot("26v-system-battery", 1.0, Page::System) },
+        Shot { setup: |vm, set, ui, _| demo_sys(vm, set, ui, teardrop_core::SysTab::Cpu), ..shot("26w-system-glance", 0.5, Page::System) },
+        shot("26x-system-loading", 1.0, Page::System),
         Shot { setup: demo_calendar, ..shot("26i-today-agenda", 1.0, Page::Today) },
         Shot {
             setup: |vm, set, ui, ms| {
