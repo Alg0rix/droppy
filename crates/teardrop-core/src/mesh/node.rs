@@ -495,10 +495,23 @@ impl Node {
         let from = pkt.sender;
         let mut ops = Vec::new();
         let mut evs = Vec::new();
-        let Some(peer) = self.peers.get_mut(&from) else { return (vec![], vec![]) };
-        let Some(ps) = peer.session.as_mut() else { return (vec![], vec![]) };
-        let Some(plain) = ps.s.decrypt(&pkt.payload) else {
-            return (vec![], vec![Event::Log(format!("mesh: undecryptable frame from {from}"))]);
+        if !self.peers.contains_key(&from) {
+            self.peers.insert(from, Peer::placeholder(from, now_ms));
+        }
+        // BitChat handshake recovery: a ciphertext we can't decrypt means the
+        // sessions have drifted (stale session on their side, restart on
+        // ours) — kick a fresh XX handshake to resync rather than drop.
+        // Note: decrypt mutates the transport counter, so try it exactly once.
+        let no_session = self.peers.get(&from).map(|p| p.session.is_none()).unwrap_or(true);
+        let plain = if no_session {
+            None
+        } else {
+            self.peers.get_mut(&from).unwrap().session.as_mut().unwrap().s.decrypt(&pkt.payload)
+        };
+        let Some(plain) = plain else {
+            evs.push(Event::Log(format!("mesh: undecryptable from {from} — re-handshaking")));
+            self.ensure_handshake(from, now_ms, &mut ops, &mut evs);
+            return (ops, evs);
         };
         let Some(inner) = inner_decode(&plain) else { return (vec![], vec![]) };
         match inner {
