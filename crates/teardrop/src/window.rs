@@ -2633,7 +2633,7 @@ mod inner {
             0x25 | 0x27 => VIEW.with(|v| {
                 let mut vm = v.borrow_mut();
                 let d = if vk == 0x25 { -1 } else { 1 };
-                vm.page = if vm.page == Page::Settings { LAST_TAB.get() } else { vm.page.step(d) };
+                vm.page = if vm.page == Page::Settings { LAST_TAB.get() } else { ui::layout::step_page(vm.page, d, &SETTINGS.with(|s| s.borrow().clone())) };
             }),
             0x20 if page == Page::Music => perform(hwnd, Action::MediaPlayPause),
             0x20 if page == Page::Tasks => {
