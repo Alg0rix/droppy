@@ -2943,7 +2943,7 @@ mod inner {
                 PRESS_AT.set(Some((x, y)));
                 let is_text_hit = matches!(
                     act,
-                    Some(Action::TaskInput) | Some(Action::AiInput) | Some(Action::AiFocusModel) | Some(Action::AiFocusBaseUrl) | Some(Action::NoteSearchInput)
+                    Some(Action::TaskInput) | Some(Action::AiInput) | Some(Action::AiFocusModel) | Some(Action::AiFocusBaseUrl) | Some(Action::NoteSearchInput) | Some(Action::WinSearch)
                 );
                 let page = VIEW.with(|v| v.borrow().page);
                 if !is_text_hit && page == Page::Ai {

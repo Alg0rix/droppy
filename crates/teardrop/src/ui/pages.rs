@@ -40,10 +40,20 @@ fn windows_page(c: &mut Ctx, a: Rect) {
     let field = Rect::new(a.x + 8.0, a.y + 20.0, a.w - 16.0, 28.0);
     c.s.rect(field, 14.0, SURFACE);
     let q = c.ui.input.as_ref().map(|f| f.as_str().to_string()).unwrap_or_default();
-    if q.is_empty() {
-        c.text("Search apps and windows…", Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 11.5, Weight::Regular, TEXT_3, Align::Left);
-    } else {
-        c.text(q.clone(), Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 12.0, Weight::Medium, TEXT, Align::Left);
+    match &c.ui.input {
+        Some(f) if !f.is_empty() => {
+            let ed = field_edit(c, f, acc);
+            c.s.text_edit(f.as_str().to_string(), Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 12.0, Weight::Medium, TEXT, ed);
+        }
+        Some(_) => {
+            c.text("Search apps and windows…", Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 11.5, Weight::Regular, TEXT_3, Align::Left);
+            if (c.ui.clock_s * 1.8) % 2.0 < 1.0 {
+                c.s.line(field.x + 12.0, field.y + 6.0, field.x + 12.0, field.y + field.h - 6.0, 1.5, acc);
+            }
+        }
+        None => {
+            c.text("Search apps and windows…", Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 11.5, Weight::Regular, TEXT_3, Align::Left);
+        }
     }
     c.hit(field, Action::WinSearch);
     let mut y = field.bottom() + 8.0;
