@@ -64,7 +64,12 @@ fn windows_page(c: &mut Ctx, a: Rect) {
             if c.hov(Action::WinLaunch(i as u16)) > 0.01 {
                 c.s.rect(row, 9.0, SURFACE_HOVER);
             }
-            c.s.rect(Rect::new(row.x + 4.0, row.y + 3.0, 18.0, 18.0), 5.0, acc.fade(0.35));
+            let tile = Rect::new(row.x + 4.0, row.y + 3.0, 18.0, 18.0);
+            c.s.rect(tile, 5.0, acc.fade(0.35));
+            // Letter tile until real icon extraction lands (HICON -> bitmap
+            // is a whole pipeline the vector scene doesn't have yet).
+            let initial = name.chars().next().unwrap_or('?').to_uppercase().collect::<String>();
+            c.text(initial, tile, 10.5, Weight::Semibold, TEXT, Align::Center);
             c.text(name.clone(), Rect::new(row.x + 30.0, row.y + 3.0, row.w - 80.0, 17.0), 11.5, Weight::Medium, TEXT, Align::Left);
             c.text("app", Rect::new(row.right() - 40.0, row.y + 4.0, 34.0, 15.0), 9.5, Weight::Medium, TEXT_3, Align::Right);
             c.hit(row, Action::WinLaunch(i as u16));
