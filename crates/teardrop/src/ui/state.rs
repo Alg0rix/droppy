@@ -25,10 +25,14 @@ pub enum SettingKey {
     WeatherMood,
     FocusApps,
     AiShareDay,
+    HotkeyIsland,
+    HotkeySearch,
+    HotkeyNote,
+    HotkeyAi,
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 11] = [
+    pub const ALL: [SettingKey; 15] = [
         SettingKey::OpenOnHover,
         SettingKey::Lyrics,
         SettingKey::WaterReminders,
@@ -40,6 +44,10 @@ impl SettingKey {
         SettingKey::WeatherMood,
         SettingKey::FocusApps,
         SettingKey::AiShareDay,
+        SettingKey::HotkeyIsland,
+        SettingKey::HotkeySearch,
+        SettingKey::HotkeyNote,
+        SettingKey::HotkeyAi,
     ];
 
     pub fn get(self, s: &Settings) -> bool {
@@ -55,6 +63,10 @@ impl SettingKey {
             SettingKey::WeatherMood => s.weather_mood,
             SettingKey::FocusApps => s.focus_app_eyes,
             SettingKey::AiShareDay => s.ai_share_day,
+            SettingKey::HotkeyIsland => s.hotkey_island,
+            SettingKey::HotkeySearch => s.hotkey_search,
+            SettingKey::HotkeyNote => s.hotkey_note,
+            SettingKey::HotkeyAi => s.hotkey_ai,
         }
     }
 
@@ -72,6 +84,10 @@ impl SettingKey {
             SettingKey::WeatherMood => s.weather_mood = v,
             SettingKey::FocusApps => s.focus_app_eyes = v,
             SettingKey::AiShareDay => s.ai_share_day = v,
+            SettingKey::HotkeyIsland => s.hotkey_island = v,
+            SettingKey::HotkeySearch => s.hotkey_search = v,
+            SettingKey::HotkeyNote => s.hotkey_note = v,
+            SettingKey::HotkeyAi => s.hotkey_ai = v,
         }
     }
 
@@ -88,6 +104,10 @@ impl SettingKey {
             SettingKey::WeatherMood => "Weather",
             SettingKey::FocusApps => "App eyes",
             SettingKey::AiShareDay => "Share my day",
+            SettingKey::HotkeyIsland => "Win+Shift+T",
+            SettingKey::HotkeySearch => "Alt+Space",
+            SettingKey::HotkeyNote => "Alt+N",
+            SettingKey::HotkeyAi => "Alt+I",
         }
     }
 }
@@ -565,7 +585,7 @@ impl UiState {
             Page::Voice => (420.0, 260.0),
             Page::Ai => (640.0, 400.0),
             Page::Windows => (500.0, 300.0),
-            Page::Settings => (680.0, 318.0),
+            Page::Settings => (680.0, 350.0),
         }
     }
 

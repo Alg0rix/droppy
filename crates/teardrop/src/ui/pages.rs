@@ -2359,6 +2359,17 @@ fn settings(c: &mut Ctx, a: Rect) {
         c.switch(Rect::new(lx + col_w - 42.0, y + 2.0, 42.0, 20.0), *k, acc_on());
     }
 
+    // Global hotkeys: one chip per shortcut, lit = registered. Switch off any
+    // that collides with another app.
+    let hy = ty + keys.len() as f32 * row_h + 8.0;
+    c.text("Hotkeys", Rect::new(lx, hy, 60.0, 16.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    c.text("island \u{00b7} search \u{00b7} note \u{00b7} AI", Rect::new(lx + 62.0, hy, col_w - 62.0, 16.0), 10.0, Weight::Regular, TEXT_3.fade(0.8), Align::Left);
+    let hk_w = (col_w - 18.0) / 4.0;
+    for (i, k) in [SettingKey::HotkeyIsland, SettingKey::HotkeySearch, SettingKey::HotkeyNote, SettingKey::HotkeyAi].iter().enumerate() {
+        let on = k.get(c.set);
+        c.pill(Rect::new(lx + i as f32 * (hk_w + 6.0), hy + 20.0, hk_w, 24.0), Action::Toggle(*k), k.label(), on.then_some(acc_on()), 10.0);
+    }
+
     // RIGHT COLUMN: Top buttons + Appearance & Mascot
     c.pill(Rect::new(rx + col_w - 60.0, a.y, 60.0, 24.0), Action::Quit, "Quit", None, 11.0);
     update_pill(c, Rect::new(rx, a.y, col_w - 68.0, 24.0));
@@ -2416,7 +2427,7 @@ fn settings(c: &mut Ctx, a: Rect) {
     }
 
     // Keyboard hint at bottom
-    c.text("Win+Shift+T toggles island \u{00b7} Esc closes", Rect::new(rx, a.bottom() - 16.0, col_w, 16.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+    c.text("Esc closes the island", Rect::new(rx, a.bottom() - 16.0, col_w, 16.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
 }
 
 const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

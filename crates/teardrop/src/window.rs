@@ -46,7 +46,7 @@ mod inner {
     use windows::Win32::UI::HiDpi::{GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         keybd_event, RegisterHotKey, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, UnregisterHotKey, KEYBD_EVENT_FLAGS,
-        KEYEVENTF_KEYUP, MOD_ALT, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN, TME_LEAVE, TRACKMOUSEEVENT, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE,
+        HOT_KEY_MODIFIERS, KEYEVENTF_KEYUP, MOD_ALT, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN, TME_LEAVE, TRACKMOUSEEVENT, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE,
         VK_MEDIA_PREV_TRACK,
     };
     use windows::Win32::UI::Shell::{
@@ -63,6 +63,9 @@ mod inner {
     const HOTKEY_VK: u32 = 0x54; // T
     /// Alt+Space: open straight into the launcher search.
     const SEARCH_HOTKEY_ID: i32 = 2;
+    /// Alt+N: new note. Alt+I: AI prompt.
+    const NOTE_HOTKEY_ID: i32 = 3;
+    const AI_HOTKEY_ID: i32 = 4;
     /// Upper bound for one note's text (characters, not bytes).
     const NOTE_MAX_CHARS: usize = 4000;
     const CF_UNICODETEXT_U32: u32 = 13;
@@ -399,9 +402,36 @@ mod inner {
         }
     }
 
-    /// Jump to the Windows page with a fresh, focused launcher search field.
-    fn focus_win_search(hwnd: HWND) {
-        if VIEW.with(|v| v.borrow().page) == Page::Notes {
+    /// (id, enabled, modifiers, virtual key, label) for every global hotkey.
+    fn hotkey_table(s: &Settings) -> [(i32, bool, HOT_KEY_MODIFIERS, u32, &'static str); 4] {
+        [
+            (HOTKEY_ID, s.hotkey_island, MOD_WIN | MOD_SHIFT, HOTKEY_VK, "Win+Shift+T"),
+            (SEARCH_HOTKEY_ID, s.hotkey_search, MOD_ALT | MOD_NOREPEAT, 0x20, "Alt+Space"),
+            (NOTE_HOTKEY_ID, s.hotkey_note, MOD_ALT | MOD_NOREPEAT, 0x4E, "Alt+N"),
+            (AI_HOTKEY_ID, s.hotkey_ai, MOD_ALT | MOD_NOREPEAT, 0x49, "Alt+I"),
+        ]
+    }
+
+    /// Re-register the global hotkeys to match settings. Returns the labels of
+    /// enabled hotkeys another app already owns (Windows refuses duplicates).
+    fn apply_hotkeys(hwnd: HWND) -> Vec<&'static str> {
+        let set = SETTINGS.with(|s| s.borrow().clone());
+        let mut taken = Vec::new();
+        for (id, on, mods, vk, label) in hotkey_table(&set) {
+            unsafe {
+                let _ = UnregisterHotKey(hwnd, id);
+                if on && RegisterHotKey(hwnd, id, mods, vk).is_err() {
+                    taken.push(label);
+                }
+            }
+        }
+        taken
+    }
+
+    /// Switch pages from a hotkey: saves a note being edited, remembers the
+    /// page we came from for the Settings round trip.
+    fn goto_page(page: Page) {
+        if VIEW.with(|v| v.borrow().page) == Page::Notes && page != Page::Notes {
             finish_note_edit();
         }
         VIEW.with(|v| {
@@ -409,8 +439,25 @@ mod inner {
             if vm.page != Page::Settings {
                 LAST_TAB.set(vm.page);
             }
-            vm.page = Page::Windows;
+            vm.page = page;
         });
+    }
+
+    /// Open the island on `page` and run `focus` to put the cursor in its
+    /// field. Pressing the hotkey again while that field is live closes it.
+    fn hotkey_jump(hwnd: HWND, page: Page, focus: impl FnOnce(HWND)) {
+        let live = is_open() && VIEW.with(|v| v.borrow().page) == page && UI.with(|u| u.borrow().input.is_some());
+        if live {
+            close_island(hwnd);
+            return;
+        }
+        open_island(hwnd, true);
+        goto_page(page);
+        focus(hwnd);
+    }
+
+    /// Fresh, focused launcher search field on the Windows page.
+    fn focus_win_search(hwnd: HWND) {
         UI.with(|u| {
             let mut ui = u.borrow_mut();
             ui.input = Some(crate::ui::textedit::TextField::default());
@@ -1336,6 +1383,12 @@ mod inner {
                     SettingKey::WaterReminders => VIEW.with(|v| v.borrow_mut().water.reminders_enabled = on),
                     SettingKey::ClipboardHistory if !on => VIEW.with(|v| v.borrow_mut().clipboard.clear()),
                     SettingKey::WeatherMood if on => env::refresh_weather(),
+                    SettingKey::HotkeyIsland | SettingKey::HotkeySearch | SettingKey::HotkeyNote | SettingKey::HotkeyAi => {
+                        let taken = apply_hotkeys(hwnd);
+                        if on && taken.contains(&k.label()) {
+                            toast(&format!("{} is used by another app", k.label()));
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -2948,8 +3001,7 @@ mod inner {
                 let _ = RegisterDragDrop(hwnd, &DropTarget::new(hwnd, drop_event));
                 let _ = AddClipboardFormatListener(hwnd);
                 let _ = SetTimer(hwnd, T_SLOW, 1000, None);
-                let _ = RegisterHotKey(hwnd, HOTKEY_ID, MOD_WIN | MOD_SHIFT, HOTKEY_VK);
-                let _ = RegisterHotKey(hwnd, SEARCH_HOTKEY_ID, MOD_ALT | MOD_NOREPEAT, 0x20);
+                apply_hotkeys(hwnd);
                 add_tray(hwnd);
                 // Eye food: lock/unlock, apps asking for attention, crashes, downloads.
                 let _ = WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);
@@ -3140,15 +3192,11 @@ mod inner {
             }
             WM_HOTKEY => {
                 if wp.0 as i32 == SEARCH_HOTKEY_ID {
-                    let searching = is_open()
-                        && VIEW.with(|v| v.borrow().page) == Page::Windows
-                        && UI.with(|u| u.borrow().input.is_some());
-                    if searching {
-                        close_island(hwnd);
-                    } else {
-                        open_island(hwnd, true);
-                        focus_win_search(hwnd);
-                    }
+                    hotkey_jump(hwnd, Page::Windows, focus_win_search);
+                } else if wp.0 as i32 == NOTE_HOTKEY_ID {
+                    hotkey_jump(hwnd, Page::Notes, |h| perform(h, Action::NoteNew));
+                } else if wp.0 as i32 == AI_HOTKEY_ID {
+                    hotkey_jump(hwnd, Page::Ai, |h| perform(h, Action::AiInput));
                 } else if is_open() {
                     close_island(hwnd);
                 } else {
@@ -3235,8 +3283,9 @@ mod inner {
                 crate::voice::stop_and_wait();
                 save_all();
                 let _ = RemoveClipboardFormatListener(hwnd);
-                let _ = UnregisterHotKey(hwnd, HOTKEY_ID);
-                let _ = UnregisterHotKey(hwnd, SEARCH_HOTKEY_ID);
+                for (id, ..) in hotkey_table(&Settings::default()) {
+                    let _ = UnregisterHotKey(hwnd, id);
+                }
                 let _ = WTSUnRegisterSessionNotification(hwnd);
                 let _ = DeregisterShellHookWindow(hwnd);
                 remove_tray(hwnd);

@@ -137,6 +137,15 @@ pub struct Settings {
     pub hide_in_fullscreen: bool,
     pub start_with_windows: bool,
     pub goal_ml: u32,
+    /// Global hotkeys (each can be switched off if it collides with another app).
+    #[serde(default = "yes")]
+    pub hotkey_island: bool,
+    #[serde(default = "yes")]
+    pub hotkey_search: bool,
+    #[serde(default = "yes")]
+    pub hotkey_note: bool,
+    #[serde(default = "yes")]
+    pub hotkey_ai: bool,
     /// Open the island when the pointer rests on it (collapses again on leave).
     /// Off by default: the island opens on click or hotkey.
     #[serde(default)]
@@ -301,6 +310,10 @@ impl Default for Settings {
             hide_in_fullscreen: true,
             start_with_windows: false,
             goal_ml: 2000,
+            hotkey_island: true,
+            hotkey_search: true,
+            hotkey_note: true,
+            hotkey_ai: true,
             open_on_hover: false,
             eye_style: EyeStyle::Round,
             mood_ring: true,
@@ -334,6 +347,7 @@ mod tests {
         let old = r#"{"idle_look":"eyes","lyrics_enabled":true,"water_reminders":true,"clipboard_history":true,"sounds":false,"hide_in_fullscreen":true,"start_with_windows":false,"goal_ml":2000}"#;
         let s: Settings = serde_json::from_str(old).unwrap();
         assert_eq!(s.eye_style, EyeStyle::Round);
+        assert!(s.hotkey_island && s.hotkey_search && s.hotkey_note && s.hotkey_ai, "hotkeys default on");
         assert!(s.weather_mood && s.mood_ring && !s.open_on_hover && s.focus_app_eyes && s.birthday.is_none());
         assert_eq!(s.ai_provider, AiProvider::ChatGpt);
         assert!(s.ai_share_day);
