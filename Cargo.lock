@@ -366,7 +366,7 @@ dependencies = [
 
 [[package]]
 name = "teardrop"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -380,7 +380,7 @@ dependencies = [
 
 [[package]]
 name = "teardrop-core"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "chrono",
  "serde",
