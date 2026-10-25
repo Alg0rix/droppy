@@ -83,6 +83,23 @@ Type: filesandordirs; Name: "{localappdata}\{#AppDir}"
 const
   WM_CLOSE = $0010;
 
+function OpenMutexW(dwDesiredAccess: DWORD; bInheritHandle: BOOL; lpName: String): THandle;
+  external 'OpenMutexW@kernel32.dll stdcall';
+function CloseHandle(hObject: THandle): BOOL;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+// The app holds this mutex for its whole lifetime (the single-instance
+// guard), so it existing means a teardrop.exe is still running.
+function TeardropRunning(): Boolean;
+var
+  M: THandle;
+begin
+  M := OpenMutexW($00100000, False, 'Local\TeardropIslandMutex');
+  Result := M <> 0;
+  if Result then
+    CloseHandle(M);
+end;
+
 procedure StopTeardrop();
 var
   I, ResultCode: Integer;
@@ -108,9 +125,22 @@ begin
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  I: Integer;
 begin
-  StopTeardrop();
-  Result := '';
+  // A surviving teardrop.exe means DeleteFile fails mid-install with a raw
+  // "Access is denied" retry dialog; retry the kill a few times, then abort
+  // cleanly with a message instead.
+  for I := 1 to 4 do
+  begin
+    StopTeardrop();
+    if not TeardropRunning() then
+    begin
+      Result := '';
+      exit;
+    end;
+  end;
+  Result := 'Teardrop is still running and could not be closed. Quit it from its menu, then run this installer again.';
 end;
 
 // True when Teardrop is already installed (this run is an update).

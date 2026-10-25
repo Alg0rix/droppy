@@ -2,8 +2,9 @@
 //!
 //! `check()` asks the GitHub API for the latest published release and compares
 //! its tag with this build. `install()` downloads the one-click installer from
-//! that release, verifies it against the release's `SHA256SUMS.txt` and runs
-//! it (the installer closes Teardrop, replaces it and relaunches).
+//! that release, verifies it against the release's `SHA256SUMS.txt`, runs it,
+//! then closes Teardrop itself so the installer never has to kill a running
+//! copy before replacing the exe.
 //!
 //! Nothing is downloaded or run without the user clicking "Update", and a
 //! missing or mismatching checksum aborts the install.
@@ -205,14 +206,32 @@ pub fn install() {
             let path = dir.join(&release.setup_name);
             std::fs::write(&path, &bytes).ok()?;
             std::process::Command::new(&path).spawn().ok()?;
+            quit_app();
             Some(())
         })();
         if ok.is_none() {
             set(|s| s.view.phase = UpdatePhase::Failed);
         }
-        // On success the installer closes this process and relaunches the new one.
     });
 }
+
+/// Close the island like the user quit it: WM_CLOSE runs the normal
+/// WM_DESTROY cleanup (saving state, stopping recordings). A running exe
+/// can't be replaced, and the installer's own taskkill is only a fallback.
+#[cfg(windows)]
+fn quit_app() {
+    use windows::core::{w, PCWSTR};
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW, WM_CLOSE};
+    unsafe {
+        if let Ok(hwnd) = FindWindowW(w!("TeardropIsland"), PCWSTR::null()) {
+            let _ = PostMessageW(hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn quit_app() {}
 
 mod net {
     /// Blocking HTTPS GET (follows redirects) of up to `limit` bytes.
