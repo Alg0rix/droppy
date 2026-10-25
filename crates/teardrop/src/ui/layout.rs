@@ -276,8 +276,8 @@ fn blob_nav(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
     let right = card_x + geom.card_w - 70.0;
     let iw = ((right - left) / n as f32).min(26.0);
     let mut x = left + (right - left - iw * n as f32) / 2.0;
-    for (i, &p) in visible_pages(c.set).iter().enumerate() {
-        let amt = c.ui.tab_amt[i];
+    for &p in visible_pages(c.set).iter() {
+        let amt = c.ui.tab_amt[super::state::page_index(p).min(super::state::PAGE_SLOTS - 1)];
         let r = Rect::new(x, y - 3.0, iw - 2.0, 24.0);
         let a = Action::Tab(p);
         let h = c.hov(a);
@@ -322,12 +322,12 @@ fn header(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
     let widths: Vec<f32> = visible_pages(c.set)
         .iter()
         .enumerate()
-        .map(|(i, &p)| TAB_W + (tab_label_w(p) - TAB_W) * c.ui.tab_amt[i])
+        .map(|(_, &p)| TAB_W + (tab_label_w(p) - TAB_W) * c.ui.tab_amt[super::state::page_index(p).min(super::state::PAGE_SLOTS - 1)])
         .collect();
     let total: f32 = widths.iter().sum::<f32>() + (widths.len() - 1) as f32 * 2.0;
     let mut x = card_x + (geom.card_w - total) / 2.0;
     for (i, &p) in visible_pages(c.set).iter().enumerate() {
-        let amt = c.ui.tab_amt[i];
+        let amt = c.ui.tab_amt[super::state::page_index(p).min(super::state::PAGE_SLOTS - 1)];
         let w = widths[i];
         let r = Rect::new(x, HEADER_Y, w, HEADER_H);
         let a = Action::Tab(p);
