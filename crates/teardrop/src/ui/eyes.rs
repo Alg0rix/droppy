@@ -7,9 +7,10 @@
 //! - [`React`]: a short one-off played over the mood (surprise, wink,
 //!   sneeze...). Window events queue them with [`Eyes::react`]; anything
 //!   queued while the face is hidden plays once it shows again.
-//! - [`Mood::Work`]: during a running Focus block the face acts out the kind
-//!   of app in front (`teardrop_core::apps`): one pose and one ambient
-//!   effect per [`AppCategory`], in `work_pose` / `work_parts`.
+//! - [`Mood::Work`]: the face acts out the kind of app in front
+//!   (`teardrop_core::apps`): one pose and one ambient effect per
+//!   [`AppCategory`], in `work_pose` / `work_parts`. Ambient pick below the
+//!   real states, promoted above them while a Focus block runs.
 //! - [`Pose`]: plain numbers the painter draws. Moods and reactions only
 //!   produce a target pose; the brain eases toward it and layers blinks,
 //!   gaze and particles on top.
@@ -43,6 +44,9 @@ pub enum Spot {
     Music,
     /// Replaces the phase label next to the focus ring.
     Focus,
+    /// Focus ring shares the pill with the music capsule: the face sits
+    /// between the visualizer and the countdown.
+    FocusMusic,
     /// Rides at the right end of a level HUD (volume, brightness) and
     /// reacts to the level live.
     Hud,
@@ -56,6 +60,7 @@ pub fn place(spot: Spot, body: Rect) -> (f32, f32, f32) {
         Spot::Idle => (body.cx(), body.cy() + 1.0, 1.0),
         Spot::Music => (body.right() - 31.0, body.cy(), 0.78),
         Spot::Focus => (body.x + 66.0, body.cy(), 0.72),
+        Spot::FocusMusic => (body.right() - 95.0, body.cy(), 0.72),
         Spot::Hud => (body.right() - 26.0, body.cy(), 0.62),
         Spot::Rec => (body.x + 104.0, body.cy(), 0.66),
     }
@@ -94,7 +99,7 @@ pub struct Senses<'a> {
     pub thinking: bool,
     /// Seconds left on a running focus/break timer.
     pub focus_left: Option<f32>,
-    /// What the app in front is themed as, while a Focus block runs.
+    /// What the app in front is themed as.
     pub app: Option<AppTheme>,
     /// Mic level 0..1 while voice recording runs.
     pub recording: Option<f32>,
@@ -137,7 +142,7 @@ pub enum Mood {
     Typing,
     /// Waiting on the AI: eyes up and to the side, dots drifting.
     Thinking,
-    /// Focus block running: acting out the kind of app in front.
+    /// Acting out the kind of app in front.
     Work(AppCategory),
     /// Recording: ear cocked toward the mic, eyes pulse with your voice.
     Listening,
@@ -768,7 +773,7 @@ pub struct Eyes {
     tick_sec: i32,
     /// A skip button was pressed: the track change that follows is ours.
     skip_until: f32,
-    /// The work theme playing (Focus block + known app).
+    /// The work theme playing (themed app in front).
     work: Option<AppTheme>,
     /// Eased mic level while recording.
     listen_lvl: f32,
@@ -1556,6 +1561,10 @@ impl Eyes {
         }
         if e.idle_ms > 150_000 {
             return Mood::Drowsy;
+        }
+        // Nothing more pressing: act out whatever app is in front.
+        if let Some(a) = s.app {
+            return Mood::Work(a.cat);
         }
         if e.offline {
             return Mood::Lost;
@@ -2436,7 +2445,7 @@ impl Eyes {
 
     /// Act out the level in a volume or brightness HUD. Runs last so it wins
     /// over the mood; the face sits right of the bar and watches it fill.
-    /// Acting out the app in front during a Focus block. Each category gets
+    /// Acting out the app in front. Each category gets
     /// a gaze pattern that reads as the job (reading code line by line,
     /// hopping spreadsheet cells, scrubbing a timeline...) plus a few lid
     /// and brow settings; `work_parts` adds the matching particles.
@@ -4405,6 +4414,34 @@ mod tests {
         s.app = None;
         e.tick(1.0 / 60.0, &s);
         assert_eq!(e.mood, Mood::Determined);
+    }
+
+    #[test]
+    fn app_acting_needs_no_focus_block_but_loses_to_music_and_typing() {
+        let (mut e, mut w) = settled();
+        let mut s = work_senses(&w, AppCategory::Coding);
+        s.focus = None; // no timer at all: the theme still plays
+        for _ in 0..90 {
+            e.tick(1.0 / 60.0, &s);
+        }
+        assert_eq!(e.mood, Mood::Work(AppCategory::Coding));
+        // Real states still win over the ambient app theme.
+        s.music = true;
+        e.tick(1.0 / 60.0, &s);
+        assert_eq!(e.mood, Mood::Dance);
+        s.music = false;
+        for _ in 0..5 {
+            e.keys.push_back(e.t);
+        }
+        e.tick(1.0 / 60.0, &s);
+        assert_eq!(e.mood, Mood::Typing);
+        // Walked away? It still falls asleep instead of working forever.
+        e.keys.clear();
+        w.env.idle_ms = 400_000;
+        let mut s = work_senses(&w, AppCategory::Coding);
+        s.focus = None;
+        e.tick(1.0 / 60.0, &s);
+        assert_eq!(e.mood, Mood::Asleep);
     }
 
     #[test]

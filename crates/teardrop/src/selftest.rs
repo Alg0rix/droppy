@@ -583,6 +583,14 @@ fn shots() -> Vec<Shot> {
             },
             ..shot("56-page-focus-app", 1.0, Page::Focus)
         },
+        Shot {
+            setup: |vm, set, _, _| {
+                eyes(vm, set, EyeStyle::Round, true);
+                let now = vm.now;
+                vm.pomo.start_focus(now - chrono::Duration::minutes(6));
+            },
+            ..shot("57-collapsed-focus-music", 0.0, Page::Music)
+        },
     ]
 }
 

@@ -130,6 +130,8 @@ mod inner {
         static SHELL_MSG: Cell<u32> = Cell::new(0);
         static HOVER_ARM: Cell<(f32, f32)> = Cell::new((-1.0, -1.0));
         static HIDE_AT: Cell<Option<u64>> = Cell::new(None);
+        /// Last focus-eyes state written to the log (only changes are logged).
+        static FOCUS_LOG: RefCell<String> = RefCell::new(String::new());
     }
 
     fn with_eyes(f: impl FnOnce(&mut Eyes)) {
@@ -1990,25 +1992,46 @@ mod inner {
         }
     }
 
-    /// During a Focus block, what kind of app is in front (the eyes act it
-    /// out). Our own window, menus and the desktop keep the last app.
+    /// What kind of app is in front (the eyes act it out). Our own window,
+    /// menus and the desktop keep the last app.
     fn poll_focus_app(hwnd: HWND) {
-        let want = eyes_on() && SETTINGS.with(|s| s.borrow().focus_app_eyes) && VIEW.with(|v| v.borrow().focus_working());
-        if !want {
+        let enabled = SETTINGS.with(|s| s.borrow().focus_app_eyes);
+        if !(eyes_on() && enabled) {
             VIEW.with(|v| v.borrow_mut().env.app = None);
+            let why = if !eyes_on() {
+                "off (idle look is not Eyes)"
+            } else {
+                "off (Focus apps is turned off in Settings)"
+            };
+            log_focus(why.to_string());
             return;
         }
         let fg = unsafe { GetForegroundWindow() };
         if fg.0.is_null() || fg == hwnd || is_shell_window(fg) {
             return;
         }
-        let Some((exe, title)) = env::window_app(fg) else { return };
+        let Some((exe, title)) = env::window_app(fg) else {
+            log_focus("on, but the window in front can't be read (elevated app?)".to_string());
+            return;
+        };
         let (theme, source) = SETTINGS.with(|s| {
             let s = s.borrow();
             apps::classify(&exe, &title, &s.app_themes, &s.eye_themes)
         });
         let app = FocusApp { exe: apps::exe_stem(&exe), theme, source };
+        // Exe name and category only: the window title is never logged.
+        log_focus(format!("on, {} -> {} ({:?})", app.exe, theme.map(|t| t.cat.id()).unwrap_or("no theme"), source));
         VIEW.with(|v| v.borrow_mut().env.app = Some(app));
+    }
+
+    /// Note a focus-eyes state change in `teardrop.log`, for "why don't I see it".
+    fn log_focus(state: String) {
+        if FOCUS_LOG.with(|l| *l.borrow() == state) {
+            return;
+        }
+        let (_d, cache) = paths::ensure_dirs();
+        store::log_line(&cache, &format!("focus eyes: {state}"));
+        FOCUS_LOG.with(|l| *l.borrow_mut() = state);
     }
 
     /// Step the eye theme for the app in front (Focus page chip: click

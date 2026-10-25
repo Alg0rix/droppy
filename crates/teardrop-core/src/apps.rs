@@ -1,4 +1,4 @@
-//! Which kind of app is in front: the eyes act it out during a Focus block.
+//! Which kind of app is in front: the eyes act it out.
 //!
 //! Pure and table-driven so the catalog grows by adding lines:
 //! - [`EXES`]: category -> executable names (lowercase, no `.exe`).

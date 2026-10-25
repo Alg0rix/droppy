@@ -116,13 +116,16 @@ Each page is `core` state + a thin Windows sampler:
   shouts; long hovers giggle and leaving pouts; unplugging gasps, 10%
   battery faints. Pausing mid-dance is a record scratch.
 
-- **Work**: during a running Focus block, `Mood::Work(AppCategory)` acts out
-  the app in front (`work_pose` gaze pattern + `work_parts` particles).
+- **Work**: `Mood::Work(AppCategory)` acts out the app in front
+  (`work_pose` gaze pattern + `work_parts` particles): the ambient pick
+  below the real states (music, typing, recording, sleep…), promoted
+  above them only while a Focus block runs.
   `teardrop_core::apps` classifies it: an exe table, whole-word title hints
   (longest phrase wins) for browsers and app hosts, then the user's
   `app_themes` / `eye_themes` overrides from `settings.json`. `window.rs`
   samples the foreground window once a second and on every activation
-  (only while Focus runs); just the exe name is kept in `Ambient.app`.
+  (only while the eyes are the idle look); just the exe name is kept in
+  `Ambient.app`.
   New app: one string in `apps::EXES` or `TITLE_HINTS`. New theme: an
   `AppCategory` arm plus a pose and a particle line in `eyes.rs`.
 
