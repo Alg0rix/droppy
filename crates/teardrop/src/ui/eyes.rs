@@ -617,7 +617,7 @@ fn genre_of(t: &Track) -> Genre {
 /// Onset detector over the output peak meter. Falls back to a steady
 /// 120 bpm when there is no meter (or it reads silence while "playing").
 #[derive(Debug, Clone)]
-struct Beat {
+pub(crate) struct Beat {
     slow: f32,
     energy: f32,
     last: f32,
@@ -627,15 +627,15 @@ struct Beat {
     silent_s: f32,
     /// Strength of the latest beat 0..1 (how far the onset jumped over the
     /// running level); filler beats are soft.
-    hit: f32,
+    pub(crate) hit: f32,
 }
 
 impl Beat {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { slow: 0.0, energy: 0.35, last: 0.0, period: 0.5, count: 0, real: false, silent_s: 0.0, hit: 0.5 }
     }
 
-    fn feed(&mut self, peak: Option<f32>, playing: bool, t: f32, dt: f32) {
+    pub(crate) fn feed(&mut self, peak: Option<f32>, playing: bool, t: f32, dt: f32) {
         if !playing {
             self.real = false;
             return;
@@ -674,7 +674,7 @@ impl Beat {
         ((t - self.last) / self.period).clamp(0.0, 1.0)
     }
 
-    fn pulse(&self, t: f32) -> f32 {
+    pub(crate) fn pulse(&self, t: f32) -> f32 {
         (-(t - self.last).max(0.0) * 7.0).exp()
     }
 

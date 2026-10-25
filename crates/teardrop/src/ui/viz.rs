@@ -7,15 +7,18 @@
 
 pub const BARS: usize = 24;
 
+use super::eyes::Beat;
+
 #[derive(Debug, Clone)]
 pub struct Visualizer {
     bars: [f32; BARS],
     t: f32,
+    beat: Beat,
 }
 
 impl Default for Visualizer {
     fn default() -> Self {
-        Self { bars: [0.0; BARS], t: 0.0 }
+        Self { bars: [0.0; BARS], t: 0.0, beat: Beat::new() }
     }
 }
 
@@ -24,6 +27,10 @@ impl Visualizer {
     /// gentle idle motion while `playing`).
     pub fn tick(&mut self, dt: f32, peak: Option<f32>, playing: bool) {
         self.t += dt;
+        self.beat.feed(peak, playing, self.t, dt);
+        // Detected onsets kick the bars, bass end hardest; the pulse decays
+        // fast so the spectrum snaps back between beats.
+        let kick = self.beat.pulse(self.t) * self.beat.hit;
         let level = match (playing, peak) {
             (false, _) => 0.0,
             (true, Some(p)) => p.clamp(0.0, 1.0).powf(0.55),
@@ -34,7 +41,7 @@ impl Visualizer {
             let tilt = 1.0 - 0.55 * f;
             let k = i as f32;
             let wob = 0.5 + 0.5 * ((self.t * (4.0 + 0.37 * k) + k * 1.9).sin() * 0.6 + (self.t * (7.3 + 0.21 * k) + k * 0.7).sin() * 0.4);
-            let target = (level * tilt * (0.25 + 0.75 * wob)).clamp(0.0, 1.0);
+            let target = (level * tilt * (0.25 + 0.75 * wob) + kick * (0.2 + 0.5 * tilt)).clamp(0.0, 1.0);
             let rate = if target > *b { 28.0 } else { 7.0 };
             *b += (target - *b) * (1.0 - (-rate * dt).exp());
             if *b < 0.002 {
