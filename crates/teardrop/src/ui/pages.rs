@@ -137,14 +137,21 @@ fn music(c: &mut Ctx, a: Rect) {
     let seekable = has && t.duration_ms > 0;
     let sh = if seekable { c.hov(Action::SeekBar) } else { 0.0 };
     let bh = 5.0 + sh * 3.0;
-    let track = Rect::new(bar.x, sy - bh * 0.5, bar.w, bh);
-    c.s.rect(track, bh * 0.5, Color::rgba(255, 255, 255, 0.12 + 0.06 * sh));
     let p = t.progress();
-    if p > 0.0 {
-        c.s.rect(Rect::new(track.x, track.y, (track.w * p).max(bh), bh), bh * 0.5, Fill::DGrad(acc, acc.mix(WHITE, 0.35)));
+    // Seek bar as a live visualizer: each bar's height rides the music,
+    // accent up to the play position and dim beyond it.
+    let n = (bar.w / 7.0).floor().clamp(12.0, 40.0) as usize;
+    let bw = bar.w / n as f32;
+    let bars = c.ui.viz.sample(n);
+    for (i, b) in bars.iter().enumerate() {
+        let bx = bar.x + i as f32 * bw;
+        let h = (3.0 + b * (13.0 + sh * 4.0)).max(bh);
+        let played = (bx + bw * 0.5 - bar.x) / bar.w <= p;
+        let col = if played { acc.mix(WHITE, 0.18) } else { Color::rgba(255, 255, 255, 0.16 + 0.10 * sh) };
+        c.s.rect(Rect::new(bx + 1.0, sy - h * 0.5, (bw - 2.0).max(1.5), h), (bw - 2.0) * 0.4, col);
     }
     if p > 0.0 || sh > 0.01 {
-        c.s.circle(track.x + track.w * p, sy, 5.0 + sh * 1.5, WHITE);
+        c.s.circle(bar.x + bar.w * p, sy, 5.0 + sh * 1.5, WHITE);
     }
     if seekable {
         c.hit(Rect::new(bar.x, sy - 12.0, bar.w, 24.0), Action::SeekBar);
