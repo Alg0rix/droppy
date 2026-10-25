@@ -186,14 +186,18 @@ impl Packet {
     }
 
     /// The signed bytes: the frame encoded at its own version with TTL=0,
-    /// no signature and the RSR bit clear (whitepaper §4.1; BitChat's
-    /// `toBinaryDataForSigning`). Route stays — it is signed. The payload is
+    /// no signature and the RSR bit clear, then PKCS#7-padded to the
+    /// 256/512/1024/2048 bucket — BitChat's `toBinaryDataForSigning` runs
+    /// `BinaryProtocol.encode` with default padding, so the pad bytes are
+    /// part of the signed form. Route stays — it is signed. The payload is
     /// the wire payload: for compressed packets exactly what was hashed.
     fn signable(&self) -> Vec<u8> {
         let mut c = self.clone();
         c.ttl = 0;
         c.signature = None;
-        c.encode_unpadded()
+        let mut out = c.encode_unpadded();
+        pad_frame(&mut out);
+        out
     }
 
     pub fn sign(&mut self, sk: &SigningKey) {
@@ -338,8 +342,10 @@ impl Packet {
 }
 
 /// PKCS#7-style pad toward the next bucket; >255 needed → unpadded (§4.1).
+/// Bucket choice matches BitChat's `optimalBlockSize`: smallest block that
+/// fits the frame plus 16 bytes of crypto overhead.
 fn pad_frame(out: &mut Vec<u8>) {
-    let Some(&bucket) = PAD_BUCKETS.iter().find(|&&b| b >= out.len() + 1) else { return };
+    let Some(&bucket) = PAD_BUCKETS.iter().find(|&&b| b >= out.len() + 16) else { return };
     let n = bucket - out.len();
     if n > 255 {
         return;
