@@ -406,7 +406,7 @@ impl Node {
     }
 
     fn on_message(&mut self, pkt: Packet, now_ms: u64) -> (Vec<Op>, Vec<Event>) {
-        let Some((id, nick, text)) = public_decode(&pkt.payload) else {
+        let Some((_id, nick, text)) = public_decode(&pkt.payload) else {
             let head = pkt.payload.iter().take(48).map(|b| format!("{b:02x}")).collect::<String>();
             return (vec![], vec![Event::Log(format!("mesh: public decode fail {}B {head}", pkt.payload.len()))]);
         };
