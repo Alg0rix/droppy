@@ -10,7 +10,7 @@ use super::scene::Rect;
 use super::theme::PAD;
 use crate::viewmodel::{local_naive, ViewModel};
 use std::collections::HashMap;
-use teardrop_core::{AiProvider, EyeStyle, IdleLook, NoteDateFilter, Page, Settings};
+use teardrop_core::{AiProvider, EyeStyle, IdleLook, NoteDateFilter, Page, Settings, Spring};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SettingKey {
@@ -270,6 +270,8 @@ pub struct UiState {
     /// Glance-pill size, eased per page like `card_w`/`card_h`.
     pub glance_w: f32,
     pub glance_h: f32,
+    pub glance_ws: Spring,
+    pub glance_hs: Spring,
     pub peek_until_ms: u64,
     pub peek_amt: f32,
     track_key: String,
@@ -337,6 +339,8 @@ impl UiState {
             card_h: 318.0,
             glance_w: Self::glance_target(page).0,
             glance_h: Self::glance_target(page).1,
+            glance_ws: Spring::new(Self::glance_target(page).0, 170.0, 20.0),
+            glance_hs: Spring::new(Self::glance_target(page).1, 170.0, 20.0),
             peek_until_ms: 0,
             peek_amt: 0.0,
             track_key: String::new(),
@@ -644,8 +648,10 @@ impl UiState {
         // Glance size eases per page too, so switching pages while peeking
         // reflows the pill instead of snapping.
         let (gw, gh) = Self::glance_target(vm.page);
-        moving |= approach(&mut self.glance_w, gw, 14.0, dt);
-        moving |= approach(&mut self.glance_h, gh, 14.0, dt);
+        moving |= self.glance_ws.step(gw, dt);
+        moving |= self.glance_hs.step(gh, dt);
+        self.glance_w = self.glance_ws.value;
+        self.glance_h = self.glance_hs.value;
 
         // Track-change peek.
         let key = format!("{}\0{}", vm.track.title, vm.track.artist);
