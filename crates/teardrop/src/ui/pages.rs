@@ -36,17 +36,48 @@ fn windows_page(c: &mut Ctx, a: Rect) {
     c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
     c.text("ON THE DESKTOP", Rect::new(a.x + 12.0, a.y, a.w - 130.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
     c.text(format!("{n} windows"), Rect::new(a.right() - 118.0, a.y, 118.0, 15.0), 10.5, Weight::Medium, TEXT_3, Align::Right);
-    let mut y = a.y + 34.0;
+    // Launcher field: type to search apps + windows, Enter launches the top hit.
+    let field = Rect::new(a.x + 8.0, a.y + 20.0, a.w - 16.0, 28.0);
+    c.s.rect(field, 14.0, SURFACE);
+    let q = c.ui.input.as_ref().map(|f| f.as_str().to_string()).unwrap_or_default();
+    if q.is_empty() {
+        c.text("Search apps and windows…", Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 11.5, Weight::Regular, TEXT_3, Align::Left);
+    } else {
+        c.text(q.clone(), Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 12.0, Weight::Medium, TEXT, Align::Left);
+    }
+    c.hit(field, Action::WinSearch);
+    let mut y = field.bottom() + 8.0;
+    if !q.is_empty() {
+        for (i, (name, _)) in crate::launcher::hits(&q).iter().enumerate() {
+            if y > a.bottom() - 26.0 { break; }
+            let row = Rect::new(a.x + 8.0, y, a.w - 16.0, 24.0);
+            if c.hov(Action::WinLaunch(i as u16)) > 0.01 {
+                c.s.rect(row, 9.0, SURFACE_HOVER);
+            }
+            c.s.rect(Rect::new(row.x + 4.0, row.y + 3.0, 18.0, 18.0), 5.0, acc.fade(0.35));
+            c.text(name.clone(), Rect::new(row.x + 30.0, row.y + 3.0, row.w - 80.0, 17.0), 11.5, Weight::Medium, TEXT, Align::Left);
+            c.text("app", Rect::new(row.right() - 40.0, row.y + 4.0, 34.0, 15.0), 9.5, Weight::Medium, TEXT_3, Align::Right);
+            c.hit(row, Action::WinLaunch(i as u16));
+            y += 25.0;
+        }
+    }
+    let q_lower = q.to_lowercase();
+    let filtered: Vec<(usize, &crate::winreg::WindowInfo)> = c
+        .vm
+        .windows
+        .iter()
+        .enumerate()
+        .filter(|(_, w)| q.is_empty() || w.title.to_lowercase().contains(&q_lower) || w.app.to_lowercase().contains(&q_lower))
+        .collect();
     let row_h = 26.0;
     let scroll = c.ui.scroll_of(Page::Windows);
     // Group consecutive windows of the same exe under an app header.
     let mut last_exe = String::new();
-    let mut i = 0usize;
-    for w in c.vm.windows.iter().skip(scroll) {
+    for (orig, w) in filtered.iter().skip(scroll) {
         if y > a.bottom() - 26.0 { break; }
         if w.exe != last_exe {
             last_exe = w.exe.clone();
-            let n = c.vm.windows.iter().filter(|x| x.exe == w.exe).count();
+            let n = filtered.iter().filter(|(_, x)| x.exe == w.exe).count();
             c.s.rect(Rect::new(a.x + 8.0, y + 3.0, 16.0, 16.0), 5.0, acc.fade(0.2));
             c.text(w.app.clone(), Rect::new(a.x + 30.0, y, a.w - 130.0, 22.0), 12.5, Weight::Semibold, TEXT, Align::Left);
             c.text(if n == 1 { "1 window".to_string() } else { format!("{} windows", n) }, Rect::new(a.right() - 120.0, y + 4.0, 112.0, 15.0), 10.0, Weight::Medium, TEXT_3, Align::Right);
@@ -66,13 +97,12 @@ fn windows_page(c: &mut Ctx, a: Rect) {
         }
         if y > a.bottom() - 26.0 { break; }
         let row = Rect::new(a.x + 34.0, y, a.w - 42.0, row_h - 4.0);
-        if c.hov(Action::WinActivate(i as u16)) > 0.01 {
+        if c.hov(Action::WinActivate(*orig as u16)) > 0.01 {
             c.s.rect(row, 9.0, SURFACE_HOVER);
         }
         c.text(w.title.clone(), Rect::new(row.x + 10.0, row.y + 3.0, row.w - 16.0, 16.0), 11.5, Weight::Regular, TEXT_2, Align::Left);
-        c.hit(row, Action::WinActivate(i as u16));
+        c.hit(row, Action::WinActivate(*orig as u16));
         y += row_h;
-        i += 1;
     }
 }
 

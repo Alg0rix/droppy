@@ -42,6 +42,8 @@ mod window;
 mod winreg;
 #[cfg(windows)]
 mod mixer;
+#[cfg(windows)]
+mod launcher;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

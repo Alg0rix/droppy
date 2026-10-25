@@ -837,6 +837,24 @@ mod inner {
                 save = false;
             }
             Action::MixerVol(_) => save = false,
+            Action::WinSearch => {
+                UI.with(|u| {
+                    let mut ui = u.borrow_mut();
+                    if ui.input.is_none() {
+                        ui.input = Some(crate::ui::textedit::TextField::default());
+                    }
+                });
+                activate(hwnd);
+                save = false;
+            }
+            Action::WinLaunch(i) => {
+                let hits = crate::launcher::hits(&UI.with(|u| u.borrow().input.as_ref().map(|f| f.as_str().to_string()).unwrap_or_default()));
+                if let Some((_, path)) = hits.get(i as usize) {
+                    crate::launcher::launch(path);
+                    UI.with(|u| u.borrow_mut().input = None);
+                }
+                save = false;
+            }
             Action::TogglePage(p) => {
                 SETTINGS.with(|s| {
                     let mut st = s.borrow_mut();

@@ -103,6 +103,10 @@ pub enum Action {
     WinActivate(u16),
     /// Drag/click the n-th audio session's volume track (position -> level).
     MixerVol(u16),
+    /// Focus the Windows page search field.
+    WinSearch,
+    /// Launch the n-th launcher hit on the Windows page.
+    WinLaunch(u16),
     Gear,
     Pin,
     MediaPrev,
