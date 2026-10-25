@@ -16,6 +16,7 @@ mod share;
 mod shelf_drag;
 mod ai;
 mod calendar;
+mod chat;
 mod http;
 mod lyrics_service;
 mod media_smtc;
@@ -53,6 +54,7 @@ mod winsearch;
 mod sysmon;
 #[cfg(windows)]
 mod btdev;
+mod mesh_ble;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

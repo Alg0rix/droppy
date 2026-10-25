@@ -867,7 +867,12 @@ pub fn run(dir: &str) -> i32 {
     if vm.pomo.remaining_ms(now) == 0 {
         failures.push("focus start failed".into());
     }
-    if Page::Music.step(1) != Page::Focus || Page::Voice.step(1) != Page::Ai || Page::Ai.step(1) != Page::Music || Page::Settings.step(1) != Page::Music {
+    if Page::Music.step(1) != Page::Focus
+        || Page::Voice.step(1) != Page::Ai
+        || Page::Ai.step(1) != Page::Chat
+        || Page::Chat.step(1) != Page::Music
+        || Page::Settings.step(1) != Page::Music
+    {
         failures.push("page stepping wrong".into());
     }
     interactions.push(json!({"action": "tasks/focus/page-step", "open": vm.tasks.open_count()}));

@@ -8,3 +8,10 @@ license.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
+
+# BLE mesh (bitchat-style) protocol: Noise XX sessions, Ed25519 packet
+# signatures, X25519/SHA-256 identity. All pure Rust, still no OS deps.
+snow = { version = "0.10", default-features = false, features = ["default-resolver", "default-resolver-crypto", "std"] }
+ed25519-dalek = "3"
+sha2 = "0.10"
+rand = "0.8"

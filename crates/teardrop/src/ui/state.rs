@@ -29,10 +29,11 @@ pub enum SettingKey {
     HotkeySearch,
     HotkeyNote,
     HotkeyAi,
+    MeshChat,
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 15] = [
+    pub const ALL: [SettingKey; 16] = [
         SettingKey::OpenOnHover,
         SettingKey::Lyrics,
         SettingKey::WaterReminders,
@@ -48,6 +49,7 @@ impl SettingKey {
         SettingKey::HotkeySearch,
         SettingKey::HotkeyNote,
         SettingKey::HotkeyAi,
+        SettingKey::MeshChat,
     ];
 
     pub fn get(self, s: &Settings) -> bool {
@@ -67,6 +69,7 @@ impl SettingKey {
             SettingKey::HotkeySearch => s.hotkey_search,
             SettingKey::HotkeyNote => s.hotkey_note,
             SettingKey::HotkeyAi => s.hotkey_ai,
+            SettingKey::MeshChat => s.mesh_chat,
         }
     }
 
@@ -88,6 +91,7 @@ impl SettingKey {
             SettingKey::HotkeySearch => s.hotkey_search = v,
             SettingKey::HotkeyNote => s.hotkey_note = v,
             SettingKey::HotkeyAi => s.hotkey_ai = v,
+            SettingKey::MeshChat => s.mesh_chat = v,
         }
     }
 
@@ -108,6 +112,7 @@ impl SettingKey {
             SettingKey::HotkeySearch => "Alt+Space",
             SettingKey::HotkeyNote => "Alt+N",
             SettingKey::HotkeyAi => "Alt+I",
+            SettingKey::MeshChat => "Mesh chat (BLE)",
         }
     }
 }
@@ -252,6 +257,14 @@ pub enum Action {
     AiCopyReply(u16),
     /// Undo an AI-performed action `(msg_idx, action_idx)`.
     AiUndoAction(u16, u8),
+    /// Chat sidebar row: 0 = mesh room, n = peer index + 1.
+    ChatSelect(u16),
+    /// Focus the chat message input.
+    ChatInput,
+    /// Send the chat input.
+    ChatSend,
+    /// Edit our mesh nickname.
+    ChatNick,
     Quit,
 }
 
@@ -264,7 +277,7 @@ pub struct Hit {
 }
 
 /// Per-page animation slots (every tab plus Settings, with headroom).
-pub const PAGE_SLOTS: usize = 15;
+pub const PAGE_SLOTS: usize = 16;
 
 pub fn page_index(p: Page) -> usize {
     Page::all().iter().position(|&x| x == p).unwrap_or(Page::all().len())
@@ -571,6 +584,7 @@ impl UiState {
             Page::Usage => 480.0,
             Page::Voice => 420.0,
             Page::Ai => 480.0,
+            Page::Chat => 460.0,
             Page::Windows => 500.0,
             Page::Settings => 440.0,
         };
@@ -594,6 +608,7 @@ impl UiState {
             Page::Usage => (480.0, 270.0),
             Page::Voice => (420.0, 260.0),
             Page::Ai => (640.0, 400.0),
+            Page::Chat => (620.0, 330.0),
             Page::Windows => (500.0, 300.0),
             Page::Settings => (680.0, 350.0),
         }

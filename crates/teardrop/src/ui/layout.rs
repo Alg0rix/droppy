@@ -7,7 +7,7 @@ use super::pages;
 use super::scene::{Align, Color, Fill, Rect, Scene, Weight};
 use super::state::{Action, Hit, UiState};
 use super::theme::*;
-use crate::viewmodel::{local_naive, mmss, ViewModel};
+use crate::viewmodel::{local_naive, mmss, one_line, ViewModel};
 use teardrop_core::{DropletGeom, HudKind, IdleLook, Page, Playback, Settings};
 
 /// Morph input from the island spring.
@@ -186,6 +186,7 @@ pub fn tab_icon(p: Page) -> Icon {
         Page::Usage => Icon::Chart,
         Page::Voice => Icon::Mic,
         Page::Ai => Icon::Sparkle,
+        Page::Chat => Icon::Chat,
         Page::Windows => Icon::Grid,
         Page::Settings => Icon::Gear,
     }
@@ -207,6 +208,7 @@ fn tab_label_w(p: Page) -> f32 {
         Page::Voice => 82.0,
         Page::Windows => 86.0,
         Page::Ai => 64.0,
+        Page::Chat => 82.0,
         Page::Settings => 36.0,
     }
 }
@@ -610,7 +612,39 @@ fn glance(c: &mut Ctx, r: Rect, page: Page) {
         Page::Usage => glance_usage(c, r, cy),
         Page::Voice => glance_voice(c, r, cy),
         Page::Windows => glance_windows(c, r, cy),
+        Page::Chat => glance_chat(c, r, cy),
         Page::Ai | Page::Settings => glance_ai(c, r, cy),
+    }
+}
+
+
+fn glance_chat(c: &mut Ctx, r: Rect, cy: f32) {
+    let acc = accent(Page::Chat);
+    let vm = c.vm;
+    icons::draw(&mut c.s, tab_icon(Page::Chat), r.x + 28.0, cy, 17.0, acc);
+    let chat = &vm.chat;
+    if let Some(m) = chat.msgs.last() {
+        let who = if m.mine { "you" } else { m.who.as_str() };
+        c.text(format!("{who}: {}", one_line(&m.text)), Rect::new(r.x + 46.0, cy - 10.0, r.w - 190.0, 20.0), 12.5, Weight::Medium, TEXT, Align::Left);
+    } else {
+        c.text(
+            if chat.peers.is_empty() { "no droppys in range" } else { "mesh is quiet" },
+            Rect::new(r.x + 46.0, cy - 10.0, 260.0, 20.0),
+            13.5,
+            Weight::Semibold,
+            TEXT,
+            Align::Left,
+        );
+    }
+    let n = chat.peers.iter().filter(|p| p.fresh).count();
+    let badge = if chat.unread_total > 0 {
+        format!("{} unread", chat.unread_total)
+    } else {
+        format!("{n} peer{}", if n == 1 { "" } else { "s" })
+    };
+    c.text(badge, Rect::new(r.right() - 130.0, cy - 10.0, 118.0, 20.0), 11.5, Weight::Semibold, if chat.unread_total > 0 { acc } else { TEXT_3 }, Align::Right);
+    if c.set.idle_look == IdleLook::Eyes {
+        face(c, r, Spot::Music, None);
     }
 }
 
