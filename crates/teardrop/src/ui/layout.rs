@@ -710,8 +710,12 @@ fn glance_tasks(c: &mut Ctx, r: Rect, cy: f32) {
             c.s.ring(r.x + 51.0, ry + 6.0, 6.5, 1.5, 0.0, 1.0, TEXT_3);
             c.text(t.title.clone(), Rect::new(r.x + 66.0, ry, r.w - 240.0, 16.0), 12.5, Weight::Medium, TEXT, Align::Left);
         }
-        c.text(format!("{} open", vm.tasks.open_count()), Rect::new(r.right() - 140.0, cy - 8.0, 130.0, 16.0), 11.0, Weight::Medium, TEXT_3, Align::Right);
+        c.text(format!("{} open", vm.tasks.open_count()), Rect::new(r.right() - 140.0, cy - 22.0, 130.0, 16.0), 11.0, Weight::Medium, TEXT_3, Align::Right);
     }
+    let add = Rect::new(r.right() - 108.0, cy + 6.0, 96.0, 24.0);
+    c.s.rect(add, 12.0, acc);
+    c.text("+ task", add, 11.5, Weight::Semibold, Color::rgb(16, 16, 20), Align::Center);
+    c.hit(add, Action::TaskInput);
     if c.set.idle_look == IdleLook::Eyes {
         face(c, r, Spot::Music, None);
     }
@@ -725,10 +729,14 @@ fn glance_notes(c: &mut Ctx, r: Rect, cy: f32) {
         let (first, rest) = note.text.split_once('\n').map(|(a, b)| (a, b)).unwrap_or((note.text.as_str(), ""));
         c.text(first.to_string(), Rect::new(r.x + 46.0, cy - 14.0, r.w - 190.0, 18.0), 13.5, Weight::Semibold, TEXT, Align::Left);
         c.text(rest.trim().to_string(), Rect::new(r.x + 46.0, cy + 3.0, r.w - 190.0, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
-        c.text(format!("{} notes", vm.notes.notes.len()), Rect::new(r.right() - 140.0, cy - 8.0, 130.0, 16.0), 11.0, Weight::Medium, TEXT_3, Align::Right);
+        c.text(format!("{} notes", vm.notes.notes.len()), Rect::new(r.right() - 140.0, cy - 22.0, 130.0, 16.0), 11.0, Weight::Medium, TEXT_3, Align::Right);
     } else {
         c.text("No notes yet", Rect::new(r.x + 46.0, cy - 10.0, 200.0, 20.0), 13.5, Weight::Semibold, TEXT_2, Align::Left);
     }
+    let add = Rect::new(r.right() - 108.0, cy + 6.0, 96.0, 24.0);
+    c.s.rect(add, 12.0, acc);
+    c.text("+ note", add, 11.5, Weight::Semibold, Color::rgb(16, 16, 20), Align::Center);
+    c.hit(add, Action::NoteNew);
     if c.set.idle_look == IdleLook::Eyes {
         face(c, r, Spot::Music, None);
     }

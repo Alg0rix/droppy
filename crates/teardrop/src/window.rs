@@ -117,6 +117,10 @@ mod inner {
         static DRAG_OPENED: Cell<bool> = Cell::new(false);
         static HOVER_PENDING: Cell<bool> = Cell::new(false);
         static LAST_MOUSE: Cell<(f32, f32)> = Cell::new((-1.0, -1.0));
+        /// Wheel page-step damping: accumulated delta and last step time so
+        /// touchpad momentum doesn't flick through pages.
+        static WHEEL_ACC: Cell<i32> = Cell::new(0);
+        static WHEEL_LAST: Cell<u64> = Cell::new(0);
         static PRESS_AT: Cell<Option<(f32, f32)>> = Cell::new(None);
         static SEEK_AT: Cell<Option<u64>> = Cell::new(None);
         static WIN_POS: Cell<(i32, i32)> = Cell::new((0, 0));
@@ -1128,6 +1132,7 @@ mod inner {
                 }
             }
             Action::TaskInput => {
+                open_island(hwnd, false);
                 UI.with(|u| {
                     let mut ui = u.borrow_mut();
                     if ui.input.is_none() {
@@ -1142,6 +1147,7 @@ mod inner {
                 with_eyes(|e| e.react(React::Sweep));
             }
             Action::NoteNew => {
+                open_island(hwnd, false);
                 UI.with(|u| {
                     let mut ui = u.borrow_mut();
                     ui.input = Some(crate::ui::textedit::TextField::default());
@@ -2302,11 +2308,21 @@ mod inner {
         if in_content && n > 0 {
             UI.with(|u| u.borrow_mut().scroll_by(page, dir, n));
         } else {
-            VIEW.with(|v| {
-                let mut vm = v.borrow_mut();
-                vm.page = if vm.page == Page::Settings { LAST_TAB.get() } else { vm.page.step(dir) };
-            });
-            save_all();
+            // Touchpads stream many small deltas per gesture; turn a page only
+            // once the accumulated travel passes a notch, and pace the steps.
+            let now = now_ms();
+            let acc = if now - WHEEL_LAST.get() > 600 { delta as i32 } else { WHEEL_ACC.get() + delta as i32 };
+            WHEEL_ACC.set(acc);
+            if acc.abs() >= 120 && now - WHEEL_LAST.get() >= 220 {
+                let dir = if acc > 0 { -1 } else { 1 };
+                WHEEL_ACC.set(0);
+                WHEEL_LAST.set(now);
+                VIEW.with(|v| {
+                    let mut vm = v.borrow_mut();
+                    vm.page = if vm.page == Page::Settings { LAST_TAB.get() } else { vm.page.step(dir) };
+                });
+                save_all();
+            }
         }
         wake(hwnd);
     }
