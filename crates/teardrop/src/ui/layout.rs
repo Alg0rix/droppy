@@ -544,14 +544,13 @@ fn face(c: &mut Ctx, r: Rect, spot: Spot, accent: Option<Color>) {
 }
 
 /// The glance pill: the wide flat capsule the island rests at mid-morph.
-/// Shows the live activity with a couple of quick actions; clicking
-/// anywhere expands to the full page.
+/// Every page gets its own quick-peek layout; transient activities
+/// (recording, imminent meeting) take over regardless of the page.
 fn glance(c: &mut Ctx, r: Rect) {
     let vm = c.vm;
     let cy = r.cy();
 
     if vm.voice.phase == crate::voice::VoicePhase::Recording {
-        // REC: red dot, elapsed, stop button.
         let acc = accent(Page::Voice);
         c.s.circle(r.x + 28.0, cy, 7.0, acc);
         c.text("Recording", Rect::new(r.x + 44.0, cy - 13.0, 160.0, 18.0), 14.5, Weight::Semibold, TEXT, Align::Left);
@@ -563,7 +562,6 @@ fn glance(c: &mut Ctx, r: Rect) {
         return;
     }
     if let Some(ev) = vm.meeting_soon() {
-        // Next meeting: icon, title, countdown, Join pill.
         let acc = accent(Page::Today);
         icons::draw(&mut c.s, Icon::Calendar, r.x + 28.0, cy, 19.0, acc);
         c.text(ev.title.clone(), Rect::new(r.x + 48.0, cy - 13.0, r.w - 190.0, 18.0), 13.5, Weight::Semibold, TEXT, Align::Left);
@@ -574,78 +572,274 @@ fn glance(c: &mut Ctx, r: Rect) {
         c.hit(pill, Action::MeetingJoin);
         return;
     }
-    if vm.focus_visible() {
-        // Focus: ring, label + session, big timer, pause/reset.
-        let acc = accent(Page::Focus);
-        let rcx = r.x + 30.0;
-        c.s.ring(rcx, cy, 14.0, 4.0, 0.0, 1.0, Color::rgba(255, 255, 255, 0.16));
-        let p = vm.focus_progress();
-        if p > 0.003 {
-            c.s.ring(rcx, cy, 14.0, 4.0, 0.0, p, acc);
-        }
-        let n = vm.pomo.sessions_before_long.max(1);
-        let cur = (vm.pomo.completed_focus % n) + 1;
-        c.text("Focus", Rect::new(r.x + 54.0, cy - 13.0, 150.0, 18.0), 14.0, Weight::Semibold, TEXT, Align::Left);
-        let sub = match vm.pomo.phase {
-            teardrop_core::Phase::ShortBreak => "Take a breather".to_string(),
-            teardrop_core::Phase::LongBreak => "Long break".to_string(),
-            _ => format!("Session {} of {}", cur.min(n), n),
-        };
-        c.text(sub, Rect::new(r.x + 54.0, cy + 4.0, 150.0, 15.0), 11.0, Weight::Medium, TEXT_3, Align::Left);
-        c.text(mmss(vm.focus_remaining_ms()), Rect::new(r.right() - 196.0, cy - 17.0, 90.0, 30.0), 24.0, Weight::Semibold, TEXT, Align::Right);
-        let label = if vm.focus_running() { "Pause" } else if vm.pomo.remaining_ms_when_paused.is_some() { "Resume" } else { "Start" };
-        let pill = Rect::new(r.right() - 96.0, cy - 14.0, 78.0, 28.0);
-        c.s.rect(pill, 14.0, acc);
-        c.text(label, pill, 12.0, Weight::Semibold, Color::rgb(28, 18, 6), Align::Center);
-        c.hit(pill, Action::FocusToggle);
-        return;
+
+    match vm.page {
+        Page::Music => glance_music(c, r, cy),
+        Page::Focus => glance_focus(c, r, cy),
+        Page::Water => glance_water(c, r, cy),
+        Page::Shelf => glance_shelf(c, r, cy),
+        Page::Tasks => glance_tasks(c, r, cy),
+        Page::Notes => glance_notes(c, r, cy),
+        Page::Clipboard => glance_clip(c, r, cy),
+        Page::Today => glance_today(c, r, cy),
+        Page::Speed => glance_speed(c, r, cy),
+        Page::Usage => glance_usage(c, r, cy),
+        Page::Voice => glance_voice(c, r, cy),
+        Page::Ai | Page::Settings => glance_ai(c, r, cy),
     }
-    if vm.music_active() {
-        // Music: note tile, title, artist, viz, transport.
-        let acc = accent(Page::Music);
-        let t = &vm.track;
+}
+
+fn glance_music(c: &mut Ctx, r: Rect, cy: f32) {
+    let acc = accent(Page::Music);
+    let t = &c.vm.track;
+    let art = Rect::new(r.x + 16.0, cy - 22.0, 44.0, 44.0);
+    if t.title.is_empty() {
+        c.s.rect(art, 12.0, SURFACE);
+        icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy(), 18.0, TEXT_3);
+        c.text("Play something", Rect::new(art.right() + 12.0, cy - 10.0, 220.0, 20.0), 14.0, Weight::Semibold, TEXT_2, Align::Left);
+    } else {
         let (c1, c2) = art_colors(&t.title);
-        let art = Rect::new(r.x + 16.0, cy - 20.0, 40.0, 40.0);
         c.s.rect(art, 12.0, Fill::DGrad(c1, c2));
-        icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy(), 18.0, Color::rgb(255, 255, 255).fade(0.92));
-        c.text(t.title.clone(), Rect::new(art.right() + 12.0, cy - 14.0, r.w - 230.0, 18.0), 13.5, Weight::Semibold, TEXT, Align::Left);
-        c.text(t.display_artist(), Rect::new(art.right() + 12.0, cy + 4.0, r.w - 230.0, 15.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
-        let x0 = r.right() - 160.0;
+        c.s.rect(Rect::new(art.x, art.y, art.w, art.h * 0.55), 12.0, Fill::VGrad(Color::rgba(255, 255, 255, 0.2), Color::rgba(255, 255, 255, 0.0)));
+        icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy(), 19.0, Color::rgb(255, 255, 255).fade(0.92));
+        let tx = art.right() + 12.0;
+        let tw = r.right() - 190.0 - tx;
+        c.text(t.title.clone(), Rect::new(tx, cy - 20.0, tw, 18.0), 14.0, Weight::Semibold, TEXT, Align::Left);
+        c.text(t.display_artist(), Rect::new(tx, cy - 3.0, tw, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+        // Karaoke line under the title when synced lyrics exist.
+        if let Some(i) = c.vm.lyric_idx {
+            if let Some(l) = c.vm.lyric_lines.get(i) {
+                c.text(l.text.clone(), Rect::new(tx, cy + 11.0, tw, 14.0), 11.5, Weight::Semibold, acc, Align::Left);
+            }
+        }
+        // Visualizer + transport on the right.
+        let x0 = r.right() - 176.0;
         for (i, b) in c.ui.viz.sample(8).iter().enumerate() {
             let h = 4.0 + b * 16.0;
             c.s.rect(Rect::new(x0 + i as f32 * 6.0, cy - h / 2.0, 3.0, h), 1.5, acc.fade(0.85));
         }
-        let px = r.right() - 108.0;
+        let px = r.right() - 118.0;
         icons::draw(&mut c.s, Icon::Prev, px, cy, 15.0, TEXT_2);
-        c.hit(Rect::new(px - 11.0, cy - 13.0, 22.0, 26.0), Action::MediaPrev);
-        let pp = if vm.track.playback == Playback::Playing { Icon::Pause } else { Icon::Play };
-        c.s.circle(px + 36.0, cy, 15.0, Color::rgb(255, 255, 255));
-        icons::draw(&mut c.s, pp, px + 36.0, cy, 15.0, Color::rgb(20, 20, 26));
-        c.hit(Rect::new(px + 21.0, cy - 15.0, 30.0, 30.0), Action::MediaPlayPause);
-        icons::draw(&mut c.s, Icon::Next, px + 66.0, cy, 15.0, TEXT_2);
-        c.hit(Rect::new(px + 55.0, cy - 13.0, 22.0, 26.0), Action::MediaNext);
-        return;
+        c.hit(Rect::new(px - 11.0, cy - 14.0, 22.0, 28.0), Action::MediaPrev);
+        let pp = if t.playback == Playback::Playing { Icon::Pause } else { Icon::Play };
+        c.s.circle(px + 36.0, cy, 16.0, Color::rgb(255, 255, 255));
+        icons::draw(&mut c.s, pp, px + 36.0, cy, 16.0, Color::rgb(20, 20, 26));
+        c.hit(Rect::new(px + 19.0, cy - 17.0, 34.0, 34.0), Action::MediaPlayPause);
+        icons::draw(&mut c.s, Icon::Next, px + 72.0, cy, 15.0, TEXT_2);
+        c.hit(Rect::new(px + 61.0, cy - 14.0, 22.0, 28.0), Action::MediaNext);
     }
+}
 
-    // Idle/other pages: page icon, name, one-line status, eyes face on the right.
-    let acc = accent(vm.page);
-    icons::draw(&mut c.s, tab_icon(vm.page), r.x + 28.0, cy, 18.0, acc);
-    c.text(vm.page.title(), Rect::new(r.x + 46.0, cy - 13.0, 140.0, 18.0), 14.0, Weight::Semibold, TEXT, Align::Left);
-    let sub = match vm.page {
-        Page::Music => "Nothing playing".to_string(),
-        Page::Focus => "Ready when you are".to_string(),
-        Page::Water => {
-            let d = vm.day();
-            format!("{} / {} ml", vm.water.today(d), vm.water.goal_ml)
-        }
-        Page::Tasks => format!("{} open tasks", vm.tasks.open_count()),
-        Page::Today => vm.calendar.agenda(vm.now.timestamp(), 1).first().map(|e| e.title.clone()).unwrap_or_else(|| "No meetings".to_string()),
-        _ => local_naive(vm.now).format("%a %d %b  %H:%M").to_string(),
+fn glance_focus(c: &mut Ctx, r: Rect, cy: f32) {
+    let acc = accent(Page::Focus);
+    let vm = c.vm;
+    let rcx = r.x + 32.0;
+    c.s.ring(rcx, cy, 16.0, 4.5, 0.0, 1.0, Color::rgba(255, 255, 255, 0.16));
+    let p = vm.focus_progress();
+    if p > 0.003 {
+        c.s.ring(rcx, cy, 16.0, 4.5, 0.0, p, acc);
+    }
+    let n = vm.pomo.sessions_before_long.max(1);
+    let cur = (vm.pomo.completed_focus % n) + 1;
+    let sub = match vm.pomo.phase {
+        teardrop_core::Phase::Idle => "Ready when you are".to_string(),
+        teardrop_core::Phase::ShortBreak => "Take a breather".to_string(),
+        teardrop_core::Phase::LongBreak => "Long break".to_string(),
+        _ => format!("Session {} of {}", cur.min(n), n),
     };
-    c.text(sub, Rect::new(r.x + 46.0, cy + 4.0, r.w - 160.0, 15.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
+    c.text(sub, Rect::new(r.x + 56.0, cy - 9.0, r.w - 250.0, 17.0), 14.0, Weight::Semibold, TEXT, Align::Left);
+    c.text(mmss(vm.focus_remaining_ms()), Rect::new(r.right() - 200.0, cy - 16.0, 92.0, 30.0), 24.0, Weight::Semibold, TEXT, Align::Right);
+    let label = if vm.focus_running() { "Pause" } else if vm.pomo.remaining_ms_when_paused.is_some() { "Resume" } else { "Start" };
+    let pill = Rect::new(r.right() - 98.0, cy - 14.0, 80.0, 28.0);
+    c.s.rect(pill, 14.0, acc);
+    c.text(label, pill, 12.0, Weight::Semibold, Color::rgb(28, 18, 6), Align::Center);
+    c.hit(pill, Action::FocusToggle);
+}
+
+fn glance_water(c: &mut Ctx, r: Rect, cy: f32) {
+    let acc = accent(Page::Water);
+    let vm = c.vm;
+    let day = vm.day();
+    let today = vm.water.today(day);
+    let goal = vm.water.goal_ml.max(1);
+    icons::draw(&mut c.s, Icon::Drop, r.x + 28.0, cy, 19.0, acc);
+    c.text(format!("{} ml", today), Rect::new(r.x + 46.0, cy - 15.0, 130.0, 24.0), 19.0, Weight::Bold, TEXT, Align::Left);
+    c.text(format!("of {goal} ml"), Rect::new(r.x + 46.0, cy + 9.0, 130.0, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+    let bw = r.w - 300.0;
+    let bar = Rect::new(r.x + 176.0, cy - 3.0, bw, 6.0);
+    c.s.rect(bar, 3.0, Color::rgba(255, 255, 255, 0.12));
+    let f = vm.water.progress(day).clamp(0.0, 1.0);
+    if f > 0.0 {
+        c.s.rect(Rect::new(bar.x, bar.y, (bar.w * f).max(6.0), 6.0), 3.0, acc);
+    }
+    for (i, ml) in [250u32, 500].iter().enumerate() {
+        let pill = Rect::new(r.right() - 122.0 + i as f32 * 62.0, cy - 13.0, 56.0, 26.0);
+        c.s.rect(pill, 13.0, if *ml == 250 { acc } else { SURFACE_HOVER });
+        c.text(format!("+{ml}"), pill, 11.5, Weight::Semibold, if *ml == 250 { Color::rgb(8, 24, 32) } else { TEXT }, Align::Center);
+        c.hit(pill, Action::WaterAdd(*ml));
+    }
+}
+
+fn glance_shelf(c: &mut Ctx, r: Rect, cy: f32) {
+    let acc = accent(Page::Shelf);
+    let vm = c.vm;
+    icons::draw(&mut c.s, Icon::Tray, r.x + 28.0, cy, 18.0, acc);
+    if let Some(item) = vm.shelf.items.last() {
+        c.text(item.name.clone(), Rect::new(r.x + 46.0, cy - 14.0, r.w - 200.0, 18.0), 13.5, Weight::Semibold, TEXT, Align::Left);
+        c.text(pages::parent_of(&item.path), Rect::new(r.x + 46.0, cy + 3.0, r.w - 200.0, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+        c.text(format!("{} on the shelf", vm.shelf.items.len()), Rect::new(r.right() - 150.0, cy - 8.0, 140.0, 16.0), 11.0, Weight::Medium, TEXT_3, Align::Right);
+    } else {
+        c.text("Shelf is empty", Rect::new(r.x + 46.0, cy - 14.0, 200.0, 18.0), 13.5, Weight::Semibold, TEXT_2, Align::Left);
+        c.text("Drag files onto the island", Rect::new(r.x + 46.0, cy + 3.0, 240.0, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+    }
     if c.set.idle_look == IdleLook::Eyes {
         face(c, r, Spot::Music, None);
     }
+}
+
+fn glance_tasks(c: &mut Ctx, r: Rect, cy: f32) {
+    let acc = accent(Page::Tasks);
+    let vm = c.vm;
+    icons::draw(&mut c.s, tab_icon(Page::Tasks), r.x + 28.0, cy, 17.0, acc);
+    let open: Vec<_> = vm.tasks.tasks.iter().filter(|t| !t.done).take(2).collect();
+    if open.is_empty() {
+        c.text("All clear", Rect::new(r.x + 46.0, cy - 10.0, 200.0, 20.0), 14.0, Weight::Semibold, TEXT, Align::Left);
+    } else {
+        for (i, t) in open.iter().enumerate() {
+            let ry = cy - 17.0 + i as f32 * 19.0;
+            c.s.ring(r.x + 51.0, ry + 6.0, 6.5, 1.5, 0.0, 1.0, TEXT_3);
+            c.text(t.title.clone(), Rect::new(r.x + 66.0, ry, r.w - 240.0, 16.0), 12.5, Weight::Medium, TEXT, Align::Left);
+        }
+        c.text(format!("{} open", vm.tasks.open_count()), Rect::new(r.right() - 140.0, cy - 8.0, 130.0, 16.0), 11.0, Weight::Medium, TEXT_3, Align::Right);
+    }
+    if c.set.idle_look == IdleLook::Eyes {
+        face(c, r, Spot::Music, None);
+    }
+}
+
+fn glance_notes(c: &mut Ctx, r: Rect, cy: f32) {
+    let acc = accent(Page::Notes);
+    let vm = c.vm;
+    icons::draw(&mut c.s, tab_icon(Page::Notes), r.x + 28.0, cy, 17.0, acc);
+    if let Some(note) = vm.notes.notes.last() {
+        let (first, rest) = note.text.split_once('\n').map(|(a, b)| (a, b)).unwrap_or((note.text.as_str(), ""));
+        c.text(first.to_string(), Rect::new(r.x + 46.0, cy - 14.0, r.w - 190.0, 18.0), 13.5, Weight::Semibold, TEXT, Align::Left);
+        c.text(rest.trim().to_string(), Rect::new(r.x + 46.0, cy + 3.0, r.w - 190.0, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+        c.text(format!("{} notes", vm.notes.notes.len()), Rect::new(r.right() - 140.0, cy - 8.0, 130.0, 16.0), 11.0, Weight::Medium, TEXT_3, Align::Right);
+    } else {
+        c.text("No notes yet", Rect::new(r.x + 46.0, cy - 10.0, 200.0, 20.0), 13.5, Weight::Semibold, TEXT_2, Align::Left);
+    }
+    if c.set.idle_look == IdleLook::Eyes {
+        face(c, r, Spot::Music, None);
+    }
+}
+
+fn glance_clip(c: &mut Ctx, r: Rect, cy: f32) {
+    let acc = accent(Page::Clipboard);
+    let vm = c.vm;
+    icons::draw(&mut c.s, tab_icon(Page::Clipboard), r.x + 28.0, cy, 17.0, acc);
+    let items = vm.clipboard.items();
+    if let Some(latest) = items.first() {
+        let one = latest.split_whitespace().collect::<Vec<_>>().join(" ");
+        c.text(one, Rect::new(r.x + 46.0, cy - 14.0, r.w - 190.0, 18.0), 12.5, Weight::Medium, TEXT, Align::Left);
+        c.text(format!("{} in history", items.len()), Rect::new(r.x + 46.0, cy + 3.0, 200.0, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+    } else {
+        c.text("Nothing copied yet", Rect::new(r.x + 46.0, cy - 10.0, 240.0, 20.0), 13.5, Weight::Semibold, TEXT_2, Align::Left);
+    }
+    if c.set.idle_look == IdleLook::Eyes {
+        face(c, r, Spot::Music, None);
+    }
+}
+
+fn glance_today(c: &mut Ctx, r: Rect, cy: f32) {
+    let acc = accent(Page::Today);
+    let vm = c.vm;
+    icons::draw(&mut c.s, Icon::Calendar, r.x + 28.0, cy, 18.0, acc);
+    let next = vm.calendar.agenda(vm.now.timestamp(), 2);
+    if let Some(ev) = next.first() {
+        c.text(ev.title.clone(), Rect::new(r.x + 46.0, cy - 14.0, r.w - 220.0, 18.0), 13.5, Weight::Semibold, TEXT, Align::Left);
+        let tail = next.get(1).map(|e| format!("then {}", e.title)).unwrap_or_default();
+        c.text(format!("{}   {}", crate::calendar::countdown(ev, vm.now.timestamp()), tail), Rect::new(r.x + 46.0, cy + 3.0, r.w - 220.0, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+        let pill = Rect::new(r.right() - 80.0, cy - 13.0, 64.0, 26.0);
+        c.s.rect(pill, 13.0, acc);
+        c.text("Join", pill, 11.5, Weight::Semibold, Color::rgb(8, 16, 32), Align::Center);
+        c.hit(pill, Action::MeetingJoin);
+    } else {
+        c.text("No meetings coming up", Rect::new(r.x + 46.0, cy - 10.0, 240.0, 20.0), 13.5, Weight::Semibold, TEXT_2, Align::Left);
+    }
+}
+
+fn glance_speed(c: &mut Ctx, r: Rect, cy: f32) {
+    let acc = accent(Page::Speed);
+    let sp = c.vm.speed;
+    icons::draw(&mut c.s, tab_icon(Page::Speed), r.x + 28.0, cy, 17.0, acc);
+    let idle = sp.phase == crate::viewmodel::SpeedPhase::Idle;
+    if idle {
+        c.text("Test your connection", Rect::new(r.x + 46.0, cy - 10.0, 220.0, 20.0), 13.5, Weight::Semibold, TEXT_2, Align::Left);
+    } else {
+        c.text(format!("{:.0}", sp.down), Rect::new(r.x + 46.0, cy - 16.0, 90.0, 26.0), 20.0, Weight::Bold, TEXT, Align::Left);
+        c.text("Mbps \u{2193}", Rect::new(r.x + 46.0, cy + 10.0, 90.0, 13.0), 9.5, Weight::Semibold, TEXT_3, Align::Left);
+        c.text(format!("{:.0}", sp.up), Rect::new(r.x + 140.0, cy - 16.0, 80.0, 26.0), 20.0, Weight::Bold, TEXT_2, Align::Left);
+        c.text("Mbps \u{2191}", Rect::new(r.x + 140.0, cy + 10.0, 80.0, 13.0), 9.5, Weight::Semibold, TEXT_3, Align::Left);
+        if let Some(p) = sp.ping_ms {
+            c.text(format!("ping {:.0} ms", p), Rect::new(r.x + 226.0, cy - 7.0, 110.0, 15.0), 11.0, Weight::Medium, TEXT_3, Align::Left);
+        }
+    }
+    let pill = Rect::new(r.right() - 96.0, cy - 14.0, 80.0, 28.0);
+    c.s.rect(pill, 14.0, acc);
+    c.text(if idle { "GO" } else { "Again" }, pill, 12.0, Weight::Semibold, Color::rgb(6, 20, 24), Align::Center);
+    c.hit(pill, Action::SpeedTest);
+}
+
+fn glance_usage(c: &mut Ctx, r: Rect, cy: f32) {
+    let acc = accent(Page::Usage);
+    let u = &c.vm.usage;
+    let now = chrono::Utc::now().timestamp();
+    icons::draw(&mut c.s, tab_icon(Page::Usage), r.x + 28.0, cy, 16.0, acc);
+    let rows = [("Claude", u.claude.primary.as_ref()), ("Codex", u.codex.primary.as_ref())];
+    for (i, (name, w)) in rows.iter().enumerate() {
+        let ry = cy - 16.0 + i as f32 * 20.0;
+        c.text(*name, Rect::new(r.x + 46.0, ry, 60.0, 14.0), 10.5, Weight::Medium, TEXT_2, Align::Left);
+        let bar = Rect::new(r.x + 108.0, ry + 4.0, r.w - 280.0, 5.0);
+        c.s.rect(bar, 2.5, Color::rgba(255, 255, 255, 0.12));
+        if let Some(w) = w {
+            let used = w.used_now(now);
+            if used > 0.0 {
+                let col = if used > 85.0 { Color::rgb(239, 68, 68) } else if used > 65.0 { AMBER } else { acc };
+                c.s.rect(Rect::new(bar.x, bar.y, (bar.w * used / 100.0).max(5.0), 5.0), 2.5, col);
+            }
+            c.text(format!("{used:.0}%"), Rect::new(bar.right() + 8.0, ry - 1.0, 44.0, 14.0), 10.5, Weight::Semibold, TEXT, Align::Left);
+        } else {
+            c.text("\u{2014}", Rect::new(bar.right() + 8.0, ry - 1.0, 40.0, 14.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+        }
+    }
+    c.text(format!("${:.2} today", u.opencode.today_cost), Rect::new(r.right() - 110.0, cy - 8.0, 100.0, 16.0), 11.0, Weight::Semibold, TEXT_3, Align::Right);
+}
+
+fn glance_voice(c: &mut Ctx, r: Rect, cy: f32) {
+    let acc = accent(Page::Voice);
+    icons::draw(&mut c.s, tab_icon(Page::Voice), r.x + 28.0, cy, 18.0, acc);
+    c.text("Voice recorder", Rect::new(r.x + 46.0, cy - 14.0, 200.0, 18.0), 13.5, Weight::Semibold, TEXT, Align::Left);
+    let sub = match &c.vm.voice.saved {
+        Some(name) => format!("Saved \u{00b7} {name}"),
+        None => "Tap REC to start".to_string(),
+    };
+    c.text(sub, Rect::new(r.x + 46.0, cy + 3.0, r.w - 160.0, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+    let btn = Rect::new(r.right() - 84.0, cy - 14.0, 66.0, 28.0);
+    c.s.rect(btn, 14.0, acc);
+    c.text("REC", btn, 12.0, Weight::Bold, Color::rgb(40, 8, 8), Align::Center);
+    c.hit(btn, Action::VoiceToggle);
+}
+
+fn glance_ai(c: &mut Ctx, r: Rect, cy: f32) {
+    let acc = accent(Page::Ai);
+    icons::draw(&mut c.s, tab_icon(Page::Ai), r.x + 28.0, cy, 18.0, acc);
+    let field = Rect::new(r.x + 46.0, cy - 15.0, r.w - 190.0, 30.0);
+    c.s.rect(field, 15.0, SURFACE);
+    c.s.stroke(field, 15.0, 1.0, acc.fade(0.3));
+    c.text("Ask anything\u{2026}", Rect::new(field.x + 14.0, field.y, field.w - 20.0, field.h), 12.5, Weight::Regular, TEXT_3, Align::Left);
+    let model = c.set.active_ai_model();
+    c.text(model, Rect::new(r.right() - 130.0, cy - 8.0, 116.0, 16.0), 10.5, Weight::Medium, TEXT_3, Align::Right);
 }
 
 fn hud(c: &mut Ctx, r: Rect, h: &teardrop_core::Hud, cy: f32) {

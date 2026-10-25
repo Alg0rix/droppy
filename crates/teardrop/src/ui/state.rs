@@ -496,6 +496,27 @@ impl UiState {
         }
     }
 
+    /// Glance-pill size for `page` (w, h): the mid-morph peek is sized for
+    /// what each page wants to show quickly.
+    pub fn glance_target(page: Page) -> (f32, f32) {
+        let w = match page {
+            Page::Music => 560.0,
+            Page::Focus => 440.0,
+            Page::Water => 420.0,
+            Page::Shelf => 500.0,
+            Page::Tasks => 460.0,
+            Page::Notes => 500.0,
+            Page::Clipboard => 480.0,
+            Page::Today => 520.0,
+            Page::Speed => 440.0,
+            Page::Usage => 480.0,
+            Page::Voice => 420.0,
+            Page::Ai => 480.0,
+            Page::Settings => 440.0,
+        };
+        (w, 80.0)
+    }
+
     /// Open-card size the island wants for `page` (w, h). Pages drawn as
     /// blobs get their own size; the rest share the classic card.
     pub fn card_target(page: Page) -> (f32, f32) {

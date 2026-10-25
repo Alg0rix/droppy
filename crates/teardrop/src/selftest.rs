@@ -185,6 +185,23 @@ fn shots() -> Vec<Shot> {
         },
         Shot { wobble: 1.5, ..shot("10-morph-hover-peek", 0.08, Page::Music) },
         Shot { wobble: -2.0, ..shot("11-morph-necking", 0.45, Page::Music) },
+        shot("14-glance-music", 0.5, Page::Music),
+        Shot {
+            setup: |vm, _, _, _| {
+                let now = vm.now;
+                vm.pomo.completed_focus = 2;
+                vm.pomo.start_focus(now - chrono::Duration::minutes(9));
+            },
+            ..shot("15-glance-focus", 0.5, Page::Focus)
+        },
+        Shot {
+            setup: |vm, set, _, _| {
+                vm.track.playback = teardrop_core::Playback::Stopped;
+                set.idle_look = IdleLook::Eyes;
+                vm.idle_look = IdleLook::Eyes;
+            },
+            ..shot("16-glance-idle", 0.5, Page::Water)
+        },
         Shot { wobble: 3.0, ..shot("12-morph-bulb", 0.7, Page::Music) },
         Shot { wobble: 4.0, ..shot("13-morph-settling", 0.92, Page::Music) },
         Shot {

@@ -534,7 +534,7 @@ fn ext_of(name: &str) -> String {
     }
 }
 
-fn parent_of(path: &str) -> String {
+pub fn parent_of(path: &str) -> String {
     let p = path.replace('/', "\\");
     let mut parts: Vec<&str> = p.split('\\').collect();
     parts.pop();

@@ -226,6 +226,9 @@ mod inner {
                 st.geom.pill_h = ui.compact_h;
                 st.geom.card_w = ui.card_w;
                 st.geom.card_h = ui.card_h;
+                let (gw, gh) = VIEW.with(|v| ui::state::UiState::glance_target(v.borrow().page));
+                st.geom.glance_w = gw;
+                st.geom.glance_h = gh;
             });
             let view = IslandView { geom: st.geom, open: st.open.value, wobble_px: st.wobble_px };
             VIEW.with(|v| {
@@ -2178,20 +2181,17 @@ mod inner {
         UI.with(|u| u.borrow_mut().set_hover(act));
         let over_body = matches!(act, Some(Action::Island) | Some(Action::HudWater));
         let collapsed = ISLAND.with(|s| s.borrow().mode == IslandMode::Collapsed);
-        let hover_open = SETTINGS.with(|s| s.borrow().open_on_hover);
         ISLAND.with(|s| {
             let mut st = s.borrow_mut();
             if st.mode == IslandMode::Collapsed {
-                // The pre-stretch only hints that the island is about to open;
-                // with open-on-hover off it would lurch and fade the content
-                // for nothing every time the pointer brushes it.
-                st.set_hover(over_body && hover_open);
+                // Pre-stretch hints that a glance is coming.
+                st.set_hover(over_body);
             } else {
                 st.hover = true;
             }
         });
         unsafe {
-            if over_body && collapsed && hover_open {
+            if over_body && collapsed {
                 if !HOVER_PENDING.get() {
                     HOVER_PENDING.set(true);
                     HOVER_ARM.set((x, y));
@@ -2944,7 +2944,10 @@ mod inner {
                         let (x, y) = LAST_MOUSE.get();
                         let still = matches!(hit_at(x, y).map(|h| h.action), Some(Action::Island) | Some(Action::HudWater));
                         let petting = UI.with(|u| u.borrow().eyes.petting());
-                        if still && !petting {
+                        // Dwell continues to the full island only when
+                        // open-on-hover is on; otherwise the glance is a peek.
+                        let hover_open = SETTINGS.with(|s| s.borrow().open_on_hover);
+                        if still && !petting && hover_open {
                             open_island(hwnd, false);
                         }
                     }
