@@ -569,6 +569,11 @@ mod inner {
                 vm.idle_look = st.idle_look;
             });
             CPU.with(|c| vm.system = sample_all(&mut c.borrow_mut(), &vm.system));
+            // A page hidden after it was last saved stays hidden on restore.
+            let vis = SETTINGS.with(|s| crate::ui::layout::visible_pages(&s.borrow()));
+            if !vis.contains(&vm.page) {
+                vm.page = vis[0];
+            }
             UI.with(|u| *u.borrow_mut() = UiState::new(vm.page));
         });
         AI_REV.set(u32::MAX);
