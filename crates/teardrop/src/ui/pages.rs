@@ -51,6 +51,18 @@ fn windows_page(c: &mut Ctx, a: Rect) {
             c.text(w.app.clone(), Rect::new(a.x + 30.0, y, a.w - 130.0, 22.0), 12.5, Weight::Semibold, TEXT, Align::Left);
             c.text(if n == 1 { "1 window".to_string() } else { format!("{} windows", n) }, Rect::new(a.right() - 120.0, y + 4.0, 112.0, 15.0), 10.0, Weight::Medium, TEXT_3, Align::Right);
             y += 24.0;
+            // The app's audio session becomes a slim mixer under its header.
+            if let Some(si) = c.vm.audio.iter().position(|s| s.exe == w.exe) {
+                let s = &c.vm.audio[si];
+                icons::draw(&mut c.s, Icon::Speaker, a.x + 32.0, y + 10.0, 12.0, TEXT_3);
+                let track = Rect::new(a.x + 48.0, y + 6.0, a.w - 160.0, 8.0);
+                c.s.rect(track, 4.0, SURFACE_HOVER);
+                let fill = (track.w * s.volume).max(4.0);
+                c.s.rect(Rect::new(track.x, track.y, fill, track.h), 4.0, if s.muted { TEXT_3 } else { acc });
+                c.text(if s.muted { "muted".to_string() } else { format!("{:.0}%", s.volume * 100.0) }, Rect::new(a.right() - 104.0, y + 2.0, 96.0, 15.0), 10.5, Weight::Medium, TEXT_3, Align::Right);
+                c.hit(Rect::new(track.x - 4.0, track.y - 5.0, track.w + 8.0, track.h + 10.0), Action::MixerVol(si as u16));
+                y += 20.0;
+            }
         }
         if y > a.bottom() - 26.0 { break; }
         let row = Rect::new(a.x + 34.0, y, a.w - 42.0, row_h - 4.0);

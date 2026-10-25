@@ -101,6 +101,8 @@ pub enum Action {
     TogglePage(Page),
     /// Bring the n-th registered desktop window to the foreground.
     WinActivate(u16),
+    /// Drag/click the n-th audio session's volume track (position -> level).
+    MixerVol(u16),
     Gear,
     Pin,
     MediaPrev,

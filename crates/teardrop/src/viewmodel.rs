@@ -35,6 +35,8 @@ pub struct ViewModel {
     pub now: DateTime<Utc>,
     /// Desktop windows for the switcher page (slow-tick snapshot).
     pub windows: Vec<crate::winreg::WindowInfo>,
+    /// Per-app audio sessions shown as mixers on the Windows page.
+    pub audio: Vec<crate::mixer::AudioSession>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -178,6 +180,7 @@ impl ViewModel {
             usage: Default::default(),
             voice: Default::default(),
             windows: Vec::new(),
+            audio: Vec::new(),
             calendar: Default::default(),
             calendar_feeds: 0,
             ai: crate::ai::AiView {
@@ -215,6 +218,7 @@ impl ViewModel {
             usage: Default::default(),
             voice: Default::default(),
             windows: Vec::new(),
+            audio: Vec::new(),
             calendar: Default::default(),
             calendar_feeds: 0,
             ai: Default::default(),

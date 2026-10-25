@@ -836,6 +836,7 @@ mod inner {
                 }
                 save = false;
             }
+            Action::MixerVol(_) => save = false,
             Action::TogglePage(p) => {
                 SETTINGS.with(|s| {
                     let mut st = s.borrow_mut();
@@ -2103,7 +2104,11 @@ mod inner {
     }
 
     fn slow_tick(hwnd: HWND) {
-        VIEW.with(|v| v.borrow_mut().windows = crate::winreg::enumerate(hwnd.0 as isize));
+        VIEW.with(|v| {
+            let mut vm = v.borrow_mut();
+            vm.windows = crate::winreg::enumerate(hwnd.0 as isize);
+            vm.audio = crate::mixer::sessions();
+        });
         let n = TICKS.get().wrapping_add(1);
         TICKS.set(n);
         if apply_fullscreen_hide(hwnd) {
@@ -2952,6 +2957,14 @@ mod inner {
                         // The bar only knows "clicked"; turn that into a position.
                         if p == Action::SeekBar {
                             perform(hwnd, Action::Seek(ui::pages::seek_permille(r.rect, x)));
+                        } else if let Action::MixerVol(i) = p {
+                            // Click position on the session's track -> volume.
+                            let frac = ((x - r.rect.x) / r.rect.w).clamp(0.0, 1.0);
+                            let pid = VIEW.with(|v| v.borrow().audio.get(i as usize).map(|s| s.pid));
+                            if let Some(pid) = pid {
+                                crate::mixer::set_volume(pid, frac);
+                                VIEW.with(|v| v.borrow_mut().audio = crate::mixer::sessions());
+                            }
                         } else {
                             perform(hwnd, p);
                         }
@@ -3196,7 +3209,11 @@ mod inner {
                 // Event-driven registry refresh: create/destroy/activate all
                 // change what the switcher page should show.
                 if matches!(code, 1 | 2 | 4 | 0x8004) {
-                    VIEW.with(|v| v.borrow_mut().windows = crate::winreg::enumerate(hwnd.0 as isize));
+                    VIEW.with(|v| {
+                        let mut vm = v.borrow_mut();
+                        vm.windows = crate::winreg::enumerate(hwnd.0 as isize);
+                        vm.audio = crate::mixer::sessions();
+                    });
                 }
                 let r = match code {
                     HSHELL_FLASH => Some(React::Perk),

@@ -40,6 +40,8 @@ mod volume;
 mod window;
 #[cfg(windows)]
 mod winreg;
+#[cfg(windows)]
+mod mixer;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
