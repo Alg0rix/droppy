@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Teardrop expanded — UI experiments</title>
+<style>
+  :root {
+    --bg: #0c0d12;
+    --card: #14151c;
+    --card2: #191b24;
+    --line: #26293276;
+    --text: #f2f3f7;
+    --text2: #a9adbd;
+    --text3: #6b7080;
+    --music: #34d17b;
+    --focus: #f5a03d;
+    --water: #4ea8f5;
+    --accent: #f5a03d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Segoe UI", system-ui, sans-serif; }
+  body { background: radial-gradient(1200px 700px at 50% -10%, #23263a, var(--bg)); min-height: 100vh; color: var(--text); padding: 36px 24px 80px; }
+  h1 { font-size: 15px; font-weight: 600; color: var(--text2); letter-spacing: .04em; margin-bottom: 6px; }
+  .sub { color: var(--text3); font-size: 12.5px; margin-bottom: 26px; }
+  .switch { display: flex; gap: 8px; margin-bottom: 30px; flex-wrap: wrap; }
+  .switch button { background: var(--card2); border: 1px solid var(--line); color: var(--text2); border-radius: 999px; padding: 7px 16px; font-size: 12.5px; cursor: pointer; }
+  .switch button.on { background: var(--accent); border-color: transparent; color: #1c1206; font-weight: 600; }
+  .wrap { display: flex; flex-direction: column; gap: 64px; align-items: flex-start; }
+  .variant { display: none; }
+  .variant.on { display: block; }
+  .vlabel { font-size: 12px; color: var(--text3); margin-bottom: 14px; letter-spacing: .06em; text-transform: uppercase; }
+
+  /* ============ collapsed pill (context) ============ */
+  .pill { height: 42px; border-radius: 21px; background: #101116; border: 1px solid var(--line); display: inline-flex; align-items: center; gap: 12px; padding: 0 18px; box-shadow: 0 10px 30px #00000066; margin-bottom: 22px; }
+  .pill .ring { width: 16px; height: 16px; border-radius: 50%; border: 3px solid #ffffff28; border-top-color: var(--focus); }
+  .eyes { display: flex; gap: 6px; }
+  .eye { width: 13px; height: 15px; border-radius: 6px; background: #fff; position: relative; }
+  .eye::after { content: ""; position: absolute; width: 5px; height: 5px; border-radius: 50%; background: #1a1c26; left: 4px; top: 6px; }
+  .pill .mmss { font-size: 14px; font-weight: 600; }
+
+  /* ============ VARIANT A — dock rail ============ */
+  .cardA { width: 740px; height: 430px; border-radius: 30px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 30px 80px #00000088, inset 0 1px 0 #ffffff10; display: flex; overflow: hidden; position: relative; }
+  .rail { width: 64px; background: #0f1014; border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; padding: 14px 0; gap: 4px; flex: none; }
+  .rail .logo { width: 34px; height: 34px; border-radius: 12px; background: linear-gradient(140deg, #35c0ff, #7c5cff); margin-bottom: 10px; position: relative; }
+  .rail .logo::after { content: ""; position: absolute; inset: 9px; border-radius: 50% 50% 60% 60%/55% 55% 65% 65%; background: #ffffff33; }
+  .ritem { width: 44px; height: 40px; border-radius: 12px; border: none; background: transparent; color: var(--text3); font-size: 17px; cursor: pointer; position: relative; transition: color .15s, background .15s; }
+  .ritem:hover { color: var(--text); background: #ffffff0d; }
+  .ritem.on { color: var(--accent, var(--focus)); background: color-mix(in srgb, var(--accent, var(--focus)) 16%, transparent); }
+  .ritem.on::before { content: ""; position: absolute; left: -10px; top: 50%; transform: translateY(-50%); width: 3px; height: 18px; border-radius: 2px; background: var(--accent, var(--focus)); }
+  .rail .sp { flex: 1; }
+  .rail .clock { writing-mode: vertical-rl; text-orientation: mixed; font-size: 10.5px; color: var(--text3); letter-spacing: .12em; padding: 6px 0; }
+  .body { flex: 1; padding: 22px 26px; display: flex; flex-direction: column; min-width: 0; }
+  .body .crumb { font-size: 11.5px; color: var(--text3); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 2px; }
+  .body h2 { font-size: 22px; font-weight: 700; }
+  .body .crumbsub { color: var(--text3); font-size: 12.5px; margin: 3px 0 18px; }
+
+  .mGrid { display: grid; grid-template-columns: 210px 1fr; gap: 26px; flex: 1; min-height: 0; }
+  .art { width: 210px; height: 210px; border-radius: 20px; background: linear-gradient(140deg, #37e58c, #0e7c45); position: relative; box-shadow: 0 18px 40px #0e7c4555; display: flex; align-items: center; justify-content: center; font-size: 64px; }
+  .mInfo h3 { font-size: 21px; font-weight: 700; }
+  .mInfo .artist { color: var(--text2); font-size: 13.5px; margin-top: 4px; }
+  .mInfo .src { color: var(--music); font-size: 12px; margin-top: 10px; }
+  .mInfo .src::before { content: "●"; margin-right: 6px; }
+  .prog { margin-top: 22px; }
+  .bar { height: 6px; border-radius: 3px; background: #ffffff1c; position: relative; }
+  .bar i { position: absolute; inset: 0 62% 0 0; background: var(--music); border-radius: 3px; }
+  .bar::after { content: ""; position: absolute; width: 13px; height: 13px; border-radius: 50%; background: #fff; left: 38%; top: -3.5px; box-shadow: 0 1px 6px #0009; }
+  .times { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text3); margin-top: 8px; }
+  .ctrls { display: flex; gap: 20px; align-items: center; margin-top: 18px; }
+  .ctrls button { border: none; background: transparent; color: var(--text); font-size: 20px; cursor: pointer; }
+  .ctrls .play { width: 56px; height: 56px; border-radius: 50%; background: #fff; color: #111; font-size: 19px; }
+  .lyr { margin-top: 18px; color: var(--text3); font-size: 13.5px; line-height: 1.9; }
+  .lyr .now { color: var(--text); font-weight: 600; font-size: 15.5px; }
+
+  .fGrid { display: grid; grid-template-columns: 240px 1fr; gap: 30px; flex: 1; align-items: center; }
+  .bigRing { width: 220px; height: 220px; border-radius: 50%; background: conic-gradient(var(--focus) 0 76%, #ffffff14 76% 100%); display: flex; align-items: center; justify-content: center; }
+  .bigRing .inner { width: 190px; height: 190px; border-radius: 50%; background: var(--card); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+  .bigRing .t { font-size: 40px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .bigRing .ph { font-size: 11px; letter-spacing: .18em; color: var(--focus); font-weight: 700; }
+  .fInfo .sess { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
+  .dots { display: flex; gap: 8px; margin-bottom: 24px; align-items: center; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #ffffff1c; }
+  .dot.done { background: var(--focus); }
+  .dots small { color: var(--text3); margin-left: 8px; }
+  .fBtns { display: flex; gap: 12px; }
+  .fBtns .main { flex: 1; height: 44px; border-radius: 22px; border: none; background: var(--focus); color: #20130a; font-weight: 700; font-size: 14px; cursor: pointer; }
+  .fBtns .icon { width: 44px; height: 44px; border-radius: 50%; border: none; background: #ffffff14; color: var(--text); font-size: 17px; cursor: pointer; }
+  .appChip { margin-top: 18px; display: inline-flex; align-items: center; gap: 8px; background: var(--card2); border: 1px solid var(--line); padding: 7px 14px; border-radius: 999px; font-size: 12px; color: var(--text2); }
+  .appChip b { color: var(--text); font-weight: 600; }
+
+  /* ============ VARIANT B — zen / hero ============ */
+  .cardB { width: 740px; height: 430px; border-radius: 34px; background: linear-gradient(180deg, #181a23, #101118); border: 1px solid var(--line); box-shadow: 0 30px 80px #00000088; position: relative; overflow: hidden; }
+  .cardB .glow { position: absolute; inset: -40% -10% auto; height: 70%; background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 26%, transparent), transparent 70%); filter: blur(30px); opacity: .5; pointer-events: none; transition: background .4s; }
+  .zTop { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; padding: 18px 26px; font-size: 12px; color: var(--text3); }
+  .zTop .zclock { font-variant-numeric: tabular-nums; }
+  .zTop .zutil { display: flex; gap: 14px; }
+  .zTop button { background: none; border: none; color: var(--text3); font-size: 15px; cursor: pointer; }
+  .zTop button:hover { color: var(--text); }
+  .zHero { position: absolute; inset: 0 0 86px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 60px; }
+  .zHero .kick { font-size: 11.5px; letter-spacing: .22em; color: var(--accent); text-transform: uppercase; font-weight: 700; margin-bottom: 14px; }
+  .zHero .big { font-size: 34px; font-weight: 800; line-height: 1.15; max-width: 560px; }
+  .zHero .mid { margin-top: 10px; color: var(--text2); font-size: 15px; }
+  .zHero .zprog { width: 380px; margin-top: 30px; }
+  .zNav { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; gap: 4px; background: #0d0e13dd; border: 1px solid var(--line); border-radius: 999px; padding: 6px; backdrop-filter: blur(8px); }
+  .zNav button { width: 40px; height: 36px; border-radius: 999px; border: none; background: transparent; color: var(--text3); font-size: 16px; cursor: pointer; transition: all .15s; }
+  .zNav button:hover { color: var(--text); background: #ffffff10; }
+  .zNav button.on { background: var(--accent); color: #1a1005; }
+  .zHero .tinyRow { margin-top: 22px; display: flex; gap: 12px; align-items: center; }
+  .zHero .ghost { border: 1px solid #ffffff2a; background: transparent; color: var(--text); border-radius: 999px; padding: 9px 22px; font-size: 13px; cursor: pointer; }
+  .zHero .solid { border: none; background: var(--focus); color: #20130a; border-radius: 999px; padding: 10px 26px; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+  .zRing { width: 150px; height: 150px; border-radius: 50%; background: conic-gradient(var(--focus) 0 76%, #ffffff12 76% 100%); display: flex; align-items: center; justify-content: center; margin-bottom: 20px; }
+  .zRing .inner { width: 128px; height: 128px; border-radius: 50%; background: #14151d; display: flex; align-items: center; justify-content: center; font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<h1>Teardrop — expanded island experiments</h1>
+<div class="sub">Two directions, click around. Page icons switch the mocked page. Not final styling — layout/structure only.</div>
+<div class="switch">
+  <button id="bA" class="on" onclick="pick('A')">A · dock rail</button>
+  <button id="bB" onclick="pick('B')">B · zen hero</button>
+</div>
+
+<div class="wrap">
+
+  <!-- ============ VARIANT A ============ -->
+  <div class="variant on" id="vA">
+    <div class="pill"><span class="ring"></span><span class="eyes"><span class="eye"></span><span class="eye"></span></span><span class="mmss">19:00</span></div>
+    <div class="vlabel">Variant A — left rail</div>
+    <div class="cardA" id="cardA">
+      <div class="rail" id="rail"></div>
+      <div class="body" id="bodyA"></div>
+    </div>
+  </div>
+
+  <!-- ============ VARIANT B ============ -->
+  <div class="variant" id="vB">
+    <div class="pill"><span class="ring"></span><span class="eyes"><span class="eye"></span><span class="eye"></span></span><span class="mmss">19:00</span></div>
+    <div class="vlabel">Variant B — zen hero + bottom pill nav</div>
+    <div class="cardB" id="cardB">
+      <div class="glow" id="glowB"></div>
+      <div class="zTop">
+        <span class="zclock" id="zclock">Sun 25 Oct · 08:21</span>
+        <span class="zutil"><button title="pin">&#128204;</button><button title="settings">&#9881;</button></span>
+      </div>
+      <div class="zHero" id="heroB"></div>
+      <div class="zNav" id="navB"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const PAGES = [
+  ["music","🎵","Music","var(--music)"], ["focus","⏱","Focus","var(--focus)"],
+  ["water","💧","Water","var(--water)"], ["shelf","⬇","Shelf","#8f95a8"],
+  ["tasks","≡","Tasks","#8f95a8"], ["notes","📄","Notes","#8f95a8"],
+  ["clip","📋","Clipboard","#8f95a8"], ["today","📅","Today","#8f95a8"],
+  ["speed","◠","Speed","#8f95a8"], ["usage","▥","Usage","#8f95a8"],
+  ["voice","🎙","Voice","#8f95a8"], ["ai","✦","AI","#8f95a8"],
+];
+let page = "focus";
+
+const rail = document.getElementById("rail");
+const navB = document.getElementById("navB");
+PAGES.forEach(([id, ic, name, col]) => {
+  const b = document.createElement("button");
+  b.className = "ritem"; b.title = name; b.textContent = ic;
+  b.onclick = () => go(id);
+  rail.appendChild(b);
+  const z = document.createElement("button");
+  z.title = name; z.textContent = ic; z.onclick = () => go(id);
+  navB.appendChild(z);
+});
+const logo = document.createElement("div"); logo.className = "logo"; rail.prepend(logo);
+const sp = document.createElement("div"); sp.className = "sp"; rail.appendChild(sp);
+const clk = document.createElement("div"); clk.className = "clock"; clk.textContent = "08:21"; rail.appendChild(clk);
+const gear = document.createElement("button"); gear.className = "ritem"; gear.textContent = "⚙"; gear.title = "Settings"; rail.appendChild(gear);
+
+function bodyMusic() {
+  return `<div class="crumb">Now playing</div><h2>Music</h2><div class="crumbsub">Spotify · Teardrop Ensemble</div>
+  <div class="mGrid">
+    <div class="art">♪</div>
+    <div class="mInfo">
+      <h3>Midnight Droplet</h3><div class="artist">Teardrop Ensemble — Surface Tension</div><div class="src">Spotify</div>
+      <div class="prog"><div class="bar"><i></i></div><div class="times"><span>1:03</span><span>-2:31</span></div></div>
+      <div class="ctrls"><button>⏮</button><button class="play">⏸</button><button>⏭</button></div>
+      <div class="lyr"><div>Ripples keep the shape of you</div><div class="now">Surface tension holding true</div><div>Fall into the blue</div></div>
+    </div>
+  </div>`;
+}
+function bodyFocus() {
+  return `<div class="crumb">Pomodoro</div><h2>Focus</h2><div class="crumbsub">Stay in the flow</div>
+  <div class="fGrid">
+    <div class="bigRing"><div class="inner"><div class="t">19:00</div><div class="ph">FOCUS</div></div></div>
+    <div class="fInfo">
+      <div class="sess">Session 3 of 4</div>
+      <div class="dots"><span class="dot done"></span><span class="dot done"></span><span class="dot"></span><span class="dot"></span><small>2 completed today</small></div>
+      <div class="fBtns"><button class="main">Pause</button><button class="icon">↺</button></div>
+      <div class="appChip">👀 eyes: <b>Coding · Code.exe</b></div>
+    </div>
+  </div>`;
+}
+function bodyOther(name) {
+  return `<div class="crumb">Page</div><h2>${name}</h2><div class="crumbsub">placeholder — layout comes after direction is picked</div>`;
+}
+function heroMusic() {
+  return `<div class="kick" style="--accent:var(--music)">Now playing</div>
+    <div class="big">Midnight Droplet</div><div class="mid">Teardrop Ensemble — Surface Tension</div>
+    <div class="zprog"><div class="bar" style="background:#ffffff18"><i style="inset:0 62% 0 0;background:var(--music)"></i></div>
+    <div class="times"><span>1:03</span><span>-2:31</span></div></div>
+    <div class="tinyRow"><button class="ghost">⏮</button><button class="solid" style="background:var(--music);color:#06130b">⏸ Pause</button><button class="ghost">⏭</button></div>`;
+}
+function heroFocus() {
+  return `<div class="kick">Focus · session 3 of 4</div>
+    <div class="zRing"><div class="inner">19:00</div></div>
+    <div class="mid">Stay in the flow — eyes are acting <b>Coding</b></div>
+    <div class="tinyRow"><button class="solid">Pause</button><button class="ghost">↺ Reset</button></div>`;
+}
+function heroOther(name) {
+  return `<div class="kick">${name}</div><div class="big">${name}</div><div class="mid">placeholder</div>`;
+}
+
+function go(id) {
+  page = id;
+  const meta = PAGES.find(p => p[0] === id);
+  document.querySelectorAll("#rail .ritem").forEach((b, i) => b.classList.toggle("on", PAGES[i][0] === id));
+  document.querySelectorAll("#navB button").forEach((b, i) => b.classList.toggle("on", PAGES[i][0] === id));
+  document.querySelectorAll(".ritem, #navB button").forEach(b => b.style.setProperty("--accent", meta[3]));
+  document.getElementById("glowB").style.setProperty("--accent", meta[3]);
+  const bodyA = document.getElementById("bodyA");
+  const heroB = document.getElementById("heroB");
+  if (id === "music") { bodyA.innerHTML = bodyMusic(); heroB.innerHTML = heroMusic(); }
+  else if (id === "focus") { bodyA.innerHTML = bodyFocus(); heroB.innerHTML = heroFocus(); }
+  else { bodyA.innerHTML = bodyOther(meta[2]); heroB.innerHTML = heroOther(meta[2]); }
+}
+function pick(v) {
+  document.getElementById("vA").classList.toggle("on", v === "A");
+  document.getElementById("vB").classList.toggle("on", v === "B");
+  document.getElementById("bA").classList.toggle("on", v === "A");
+  document.getElementById("bB").classList.toggle("on", v === "B");
+}
+go("focus");
+</script>
+</body>
+</html>

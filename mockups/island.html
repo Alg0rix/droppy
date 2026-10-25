@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Teardrop — Dynamic Island feel</title>
+<style>
+  :root {
+    --bg: #0b0c11;
+    --ink: #101218;
+    --ink2: #181b24;
+    --line: #ffffff14;
+    --text: #f3f4f8;
+    --text2: #a9adbd;
+    --text3: #696e80;
+    --music: #34d17b;
+    --focus: #f5a03d;
+    --acc: var(--focus);
+    --spring: cubic-bezier(.34,1.45,.4,1);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Segoe UI", system-ui, sans-serif; }
+  body { background: radial-gradient(900px 500px at 50% 0%, #1d2133, var(--bg)); min-height: 100vh; color: var(--text); display: flex; flex-direction: column; align-items: center; padding-top: 10px; }
+  .hint { color: var(--text3); font-size: 12.5px; margin: 26px 0 10px; }
+  .hint b { color: var(--text2); }
+  .tray { position: fixed; top: 0; left: 0; right: 0; height: 34px; background: #00000033; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--text3); letter-spacing: .08em; }
+
+  /* ---------- the island ---------- */
+  .island {
+    margin-top: 64px;
+    width: 200px; height: 42px;
+    border-radius: 22px;
+    background: linear-gradient(180deg, #15171f, #0f1016);
+    border: 1px solid var(--line);
+    box-shadow: 0 18px 50px #000000aa, inset 0 1px 0 #ffffff12;
+    overflow: hidden;
+    position: relative;
+    transition: width .55s var(--spring), height .55s var(--spring), border-radius .55s var(--spring);
+  }
+  .island.open { width: 396px; height: 560px; border-radius: 30px; }
+
+  /* collapsed content = the strip that persists at the top of the blob */
+  .strip { height: 42px; display: flex; align-items: center; gap: 10px; padding: 0 14px; flex: none; position: relative; z-index: 2; }
+  .island.open .strip { padding: 0 18px; }
+  .ring { width: 18px; height: 18px; border-radius: 50%; background: conic-gradient(var(--acc) 0 24%, #ffffff16 24% 100%); display: grid; place-items: center; flex: none; }
+  .ring i { width: 12px; height: 12px; border-radius: 50%; background: var(--ink); }
+  .eyes { display: flex; gap: 5px; flex: none; }
+  .eye { width: 14px; height: 16px; border-radius: 7px; background: #fff; position: relative; }
+  .eye::after { content: ""; position: absolute; width: 5px; height: 5px; border-radius: 50%; background: #191b24; left: 4px; top: 7px; }
+  .strip .mmss { margin-left: auto; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .strip .chev { color: var(--text3); font-size: 11px; margin-left: 4px; transition: transform .4s; }
+  .island.open .chev { transform: rotate(180deg); }
+
+  /* expanded content */
+  .more { padding: 4px 18px 16px; opacity: 0; transform: translateY(-14px); transition: opacity .3s .18s, transform .45s .18s var(--spring); height: calc(100% - 42px); display: flex; flex-direction: column; }
+  .island.open .more { opacity: 1; transform: none; }
+
+  /* live capsules */
+  .cap { background: var(--ink2); border: 1px solid var(--line); border-radius: 22px; padding: 14px 16px; margin-top: 12px; }
+  .cap .label { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--text3); font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 7px; }
+  .cap .label .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+
+  /* focus capsule */
+  .fRow { display: flex; align-items: center; gap: 16px; }
+  .fRing { width: 92px; height: 92px; border-radius: 50%; background: conic-gradient(var(--acc) 0 24%, #ffffff12 24% 100%); display: grid; place-items: center; flex: none; }
+  .fRing i { width: 76px; height: 76px; border-radius: 50%; background: var(--ink2); display: flex; flex-direction: column; align-items: center; justify-content: center; font-style: normal; }
+  .fRing .t { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .fRing .p { font-size: 9px; letter-spacing: .15em; color: var(--acc); font-weight: 700; }
+  .fInfo { flex: 1; min-width: 0; }
+  .fInfo .sess { font-size: 14px; font-weight: 600; }
+  .fInfo .sub { font-size: 11.5px; color: var(--text3); margin-top: 3px; }
+  .fBtns { display: flex; gap: 8px; margin-top: 12px; }
+  .fBtns .main { flex: 1; height: 34px; border-radius: 17px; border: none; background: var(--acc); color: #1f1305; font-weight: 700; font-size: 12.5px; cursor: pointer; }
+  .fBtns .ghost { width: 34px; height: 34px; border-radius: 50%; border: none; background: #ffffff12; color: var(--text); cursor: pointer; }
+  .appRow { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 11.5px; color: var(--text2); }
+  .appRow .chip { background: #ffffff0e; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 11px; }
+  .appRow .chip b { color: var(--text); }
+
+  /* music capsule */
+  .mRow { display: flex; gap: 13px; align-items: center; }
+  .mArt { width: 52px; height: 52px; border-radius: 14px; background: linear-gradient(140deg, #37e58c, #0e7c45); display: grid; place-items: center; font-size: 22px; flex: none; }
+  .mInfo { flex: 1; min-width: 0; }
+  .mInfo .tt { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mInfo .ar { font-size: 11.5px; color: var(--text3); margin-top: 2px; }
+  .viz { display: flex; gap: 3px; align-items: flex-end; height: 16px; flex: none; }
+  .viz i { width: 3px; background: var(--music); border-radius: 2px; animation: vb 1s ease-in-out infinite; }
+  .viz i:nth-child(1) { height: 8px; animation-delay: 0s; } .viz i:nth-child(2) { height: 14px; animation-delay: .15s; }
+  .viz i:nth-child(3) { height: 6px; animation-delay: .3s; } .viz i:nth-child(4) { height: 12px; animation-delay: .45s; }
+  .viz i:nth-child(5) { height: 9px; animation-delay: .6s; }
+  @keyframes vb { 50% { transform: scaleY(.4); } }
+  .mBar { height: 4px; border-radius: 2px; background: #ffffff16; margin-top: 12px; position: relative; }
+  .mBar i { position: absolute; inset: 0 62% 0 0; background: var(--music); border-radius: 2px; }
+  .mCtl { display: flex; justify-content: center; gap: 18px; margin-top: 10px; font-size: 15px; }
+  .mCtl span { cursor: pointer; color: var(--text2); }
+  .mCtl .pl { color: var(--text); }
+  .lyr { margin-top: 10px; font-size: 12.5px; color: var(--text3); line-height: 1.8; }
+  .lyr .now { color: var(--text); font-weight: 600; }
+
+  /* tasks capsule mini */
+  .tItem { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text2); padding: 4px 0; }
+  .tItem .box { width: 15px; height: 15px; border-radius: 5px; border: 1.5px solid #ffffff33; flex: none; }
+  .tItem .box.on { background: var(--acc); border-color: transparent; }
+
+  /* bottom nav: page dots + utilities */
+  .dockbar { margin-top: auto; padding-top: 10px; display: flex; align-items: center; gap: 12px; }
+  .dots { display: flex; gap: 5px; flex: 1; justify-content: center; }
+  .dots button { width: 7px; height: 7px; border-radius: 50%; border: none; background: #ffffff22; cursor: pointer; transition: all .2s; padding: 0; }
+  .dots button.on { width: 18px; border-radius: 4px; background: var(--acc); }
+  .util { display: flex; gap: 4px; }
+  .util button { width: 30px; height: 30px; border-radius: 10px; border: none; background: transparent; color: var(--text3); font-size: 14px; cursor: pointer; }
+  .util button:hover { background: #ffffff10; color: var(--text); }
+  .dockclock { font-size: 11px; color: var(--text3); font-variant-numeric: tabular-nums; }
+  .pagezone { display: none; flex-direction: column; flex: 1; min-height: 0; }
+  .pagezone.on { display: flex; }
+</style>
+</head>
+<body>
+<div class="tray">T E A R D R O P · island mock</div>
+
+<div class="island" id="island">
+  <div class="strip" id="strip" title="click to morph">
+    <span class="ring"><i></i></span>
+    <span class="eyes"><span class="eye"></span><span class="eye"></span></span>
+    <span class="mmss">19:00<span class="chev"> ▾</span></span>
+  </div>
+  <div class="more">
+    <div class="pagezone on" id="z-focus">
+      <div class="cap">
+        <div class="label"><span class="pulse"></span>FOCUS · SESSION 3 OF 4</div>
+        <div class="fRow">
+          <div class="fRing"><i><span class="t">19:00</span><span class="p">FOCUS</span></i></div>
+          <div class="fInfo">
+            <div class="sess">Stay in the flow</div>
+            <div class="sub">2 completed today</div>
+            <div class="fBtns"><button class="main">Pause</button><button class="ghost">↺</button></div>
+            <div class="appRow"><span class="chip">👀 <b>Coding</b> · Code.exe</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="cap">
+        <div class="label">UP NEXT</div>
+        <div class="tItem"><span class="box"></span>Break in 19:00 — 5 min</div>
+        <div class="tItem"><span class="box"></span>Long break after session 4</div>
+      </div>
+    </div>
+
+    <div class="pagezone" id="z-music">
+      <div class="cap" style="--acc:var(--music)">
+        <div class="label"><span class="pulse" style="background:var(--music)"></span>NOW PLAYING · SPOTIFY</div>
+        <div class="mRow">
+          <div class="mArt">♪</div>
+          <div class="mInfo"><div class="tt">Midnight Droplet</div><div class="ar">Teardrop Ensemble — Surface Tension</div></div>
+          <div class="viz"><i></i><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="mBar"><i></i></div>
+        <div class="lyr"><div>Ripples keep the shape of you</div><div class="now">Surface tension holding true</div><div>Fall into the blue</div></div>
+        <div class="mCtl"><span>⏮</span><span class="pl">⏸</span><span>⏭</span></div>
+      </div>
+    </div>
+
+    <div class="pagezone" id="z-tasks">
+      <div class="cap">
+        <div class="label">TASKS</div>
+        <div class="tItem"><span class="box on"></span>Ship the island redesign</div>
+        <div class="tItem"><span class="box"></span>Water the plants</div>
+        <div class="tItem"><span class="box"></span>Reply to Linear tickets</div>
+      </div>
+    </div>
+
+    <div class="dockbar">
+      <span class="dockclock" id="dc">Sun 25 · 08:21</span>
+      <div class="dots" id="dots"></div>
+      <div class="util"><button title="pin">&#128204;</button><button title="settings">&#9881;</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="hint">Click the <b>pill</b> to morph into the island. Use the <b>dot nav</b> to switch activities.<br>
+Collapsed content stays pinned at the top — the pill literally grows. Everything below is a live capsule.</div>
+
+<script>
+const PAGES = ["focus","music","tasks"];
+const island = document.getElementById("island");
+const dots = document.getElementById("dots");
+let cur = 0;
+PAGES.forEach((p, i) => {
+  const b = document.createElement("button");
+  b.onclick = () => go(i);
+  dots.appendChild(b);
+});
+function go(i) {
+  cur = i;
+  document.querySelectorAll(".pagezone").forEach(z => z.classList.remove("on"));
+  document.getElementById("z-" + PAGES[i]).classList.add("on");
+  document.querySelectorAll("#dots button").forEach((b, j) => b.classList.toggle("on", j === i));
+}
+document.getElementById("strip").onclick = () => island.classList.toggle("open");
+go(0);
+</script>
+</body>
+</html>
