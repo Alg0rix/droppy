@@ -22,7 +22,7 @@ pub enum Cmd {
     /// Encrypted private message (starts a Noise session when needed).
     Private(PeerId, String),
     /// Read receipt for a delivered private message.
-    Read { peer: PeerId, id: u64 },
+    Read { peer: PeerId, id: String },
     /// New display name (re-announces).
     Nick(String),
 }
@@ -347,7 +347,7 @@ mod imp {
                         ops.extend(o);
                         evs.extend(e);
                     }
-                    Cmd::Read { peer, id } => ops.extend(node.mark_read(peer, id, now())),
+                    Cmd::Read { peer, id } => ops.extend(node.mark_read(peer, &id, now())),
                     Cmd::Nick(n) => node.set_nick(n, now()),
                 },
                 None => {}

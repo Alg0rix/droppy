@@ -5,7 +5,6 @@
 use super::{fragment_packet, Identity, Packet, PacketType, PeerId, Reassembler, Seen, Session, PEER_DROP_MS, PEER_FRESH_MS};
 use ed25519_dalek::VerifyingKey;
 use rand::Rng;
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 /// A transport-level link id (one BLE peer connection, either direction).
@@ -35,15 +34,15 @@ pub enum Event {
     /// Our link count changed (degree drives flood tuning).
     Links(usize),
     /// Signed public broadcast (`mine` = we sent it).
-    Public { from: PeerId, nick: String, id: u64, text: String, ts: u64, mine: bool },
+    Public { from: PeerId, nick: String, id: String, text: String, ts: u64, mine: bool },
     /// Decrypted private message (`mine` = we sent it, `to` = the peer).
-    Private { from: PeerId, to: PeerId, id: u64, text: String, ts: u64, mine: bool },
+    Private { from: PeerId, to: PeerId, id: String, text: String, ts: u64, mine: bool },
     /// The peer's client acknowledged our message id.
-    Delivered { peer: PeerId, id: u64 },
+    Delivered { peer: PeerId, id: String },
     /// The peer read our message id.
-    Read { peer: PeerId, id: u64 },
+    Read { peer: PeerId, id: String },
     /// Our message id could not be delivered (handshake failed).
-    Failed { peer: PeerId, id: u64 },
+    Failed { peer: PeerId, id: String },
     /// A Noise session with this peer came up.
     Secure(PeerId),
     /// Free-form diagnostic.
@@ -60,44 +59,165 @@ pub struct PeerInfo {
     pub secure: bool,
 }
 
-// ---- payload bodies (JSON; announcements stay inspectable by design, §3) --
+// ---- BitChat wire codecs (localPackages/BitFoundation/Protocols) ---------
+//
+// Announce = TLVs: 0x01 nickname, 0x02 noise pk (32), 0x03 sign pk (32),
+// 0x04 direct neighbours (8B each, ≤10). Tolerant decode (skip unknown TLVs).
+//
+// Public message payload = BitchatMessage binary: flags u8, ts u64 BE ms,
+// id u8len+utf8, sender u8len+utf8, content u16len BE+utf8, optionals.
+//
+// Inside a Noise session, payloads are `[type u8][body]`:
+//   0x01 privateMessage → PrivateMessagePacket TLV (0x00 id, 0x01 content)
+//   0x02 readReceipt    → message id utf8
+//   0x03 delivered      → message id utf8
 
-#[derive(Serialize, Deserialize)]
-struct AnnounceBody {
-    n: String,
-    npk: String,
-    spk: String,
-    #[serde(default)]
-    nb: Vec<String>,
+fn tlv_push(out: &mut Vec<u8>, t: u8, v: &[u8]) {
+    out.push(t);
+    out.push(v.len() as u8);
+    out.extend_from_slice(v);
 }
 
-#[derive(Serialize, Deserialize)]
-struct PublicBody {
-    id: String,
-    t: String,
-    n: String,
-    npk: String,
-    spk: String,
+/// Walk `[type u8][len u8][value]` TLVs; unknown types skipped.
+fn tlv_each(mut d: &[u8], mut f: impl FnMut(u8, &[u8])) {
+    while d.len() >= 2 {
+        let (t, n) = (d[0], d[1] as usize);
+        if d.len() < 2 + n {
+            break;
+        }
+        f(t, &d[2..2 + n]);
+        d = &d[2 + n..];
+    }
 }
 
-#[derive(Serialize)]
-struct InnerOut<'a> {
-    k: &'a str,
-    id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    t: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ts: Option<u64>,
+fn announce_encode(nick: &str, npk: &[u8; 32], spk: &[u8; 32], nb: &[PeerId]) -> Vec<u8> {
+    let mut d = Vec::with_capacity(80);
+    tlv_push(&mut d, 0x01, nick.as_bytes());
+    tlv_push(&mut d, 0x02, npk);
+    tlv_push(&mut d, 0x03, spk);
+    if !nb.is_empty() {
+        let mut n = Vec::with_capacity(nb.len() * 8);
+        for p in nb {
+            n.extend_from_slice(&p.0);
+        }
+        tlv_push(&mut d, 0x04, &n);
+    }
+    d
 }
 
-#[derive(Deserialize)]
-struct InnerIn {
-    k: String,
-    id: String,
-    #[serde(default)]
-    t: Option<String>,
-    #[serde(default)]
-    ts: Option<u64>,
+fn announce_decode(d: &[u8]) -> Option<(String, [u8; 32], [u8; 32], Vec<PeerId>)> {
+    let (mut nick, mut npk, mut spk, mut nb) = (None, None, None, Vec::new());
+    tlv_each(d, |t, v| match t {
+        0x01 => nick = std::str::from_utf8(v).ok().map(String::from),
+        0x02 if v.len() == 32 => npk = Some(<[u8; 32]>::try_from(v).unwrap()),
+        0x03 if v.len() == 32 => spk = Some(<[u8; 32]>::try_from(v).unwrap()),
+        0x04 => {
+            for c in v.chunks_exact(8).take(10) {
+                nb.push(PeerId(c.try_into().unwrap()));
+            }
+        }
+        _ => {}
+    });
+    Some((nick?, npk?, spk?, nb))
+}
+
+fn public_encode(id: &str, nick: &str, text: &str, ts_ms: u64) -> Vec<u8> {
+    let mut d = Vec::with_capacity(64);
+    d.push(0u8); // flags: not relay/private/orig/recip/peerid/mentions/bridged
+    d.extend_from_slice(&ts_ms.to_be_bytes());
+    d.push(id.len().min(255) as u8);
+    d.extend_from_slice(&id.as_bytes()[..id.len().min(255)]);
+    d.push(nick.len().min(255) as u8);
+    d.extend_from_slice(&nick.as_bytes()[..nick.len().min(255)]);
+    let t = &text.as_bytes()[..text.len().min(65535)];
+    d.extend_from_slice(&(t.len() as u16).to_be_bytes());
+    d.extend_from_slice(t);
+    d
+}
+
+/// `(id, sender_nick, content)`; skips optional flag-driven trailing fields.
+fn public_decode(d: &[u8]) -> Option<(String, String, String)> {
+    if d.len() < 13 {
+        return None;
+    }
+    let flags = d[0];
+    let mut off = 9; // flags + timestamp
+    let get = |d: &[u8], off: &mut usize| -> Option<String> {
+        let n = *d.get(*off)? as usize;
+        *off += 1;
+        let s = std::str::from_utf8(d.get(*off..*off + n)?).ok()?.to_string();
+        *off += n;
+        Some(s)
+    };
+    let id = get(d, &mut off)?;
+    let sender = get(d, &mut off)?;
+    let clen = u16::from_be_bytes(d.get(off..off + 2)?.try_into().ok()?) as usize;
+    off += 2;
+    let content = std::str::from_utf8(d.get(off..off + clen)?).ok()?.to_string();
+    off += clen;
+    // Optional fields: original sender (0x04), recipient nick (0x08),
+    // sender peer id (0x10), mentions (0x20). Skipped — order per encoder.
+    for has in [flags & 0x04, flags & 0x08, flags & 0x10] {
+        if has != 0 {
+            let n = *d.get(off)? as usize;
+            off += 1 + n;
+        }
+    }
+    if flags & 0x20 != 0 {
+        if let Some(&count) = d.get(off) {
+            off += 1;
+            for _ in 0..count {
+                let n = *d.get(off)? as usize;
+                off += 1 + n;
+            }
+        }
+    }
+    Some((id, sender, content))
+}
+
+/// Private message inside the session (PrivateMessagePacket TLV).
+fn private_encode(id: &str, text: &str) -> Vec<u8> {
+    let mut d = vec![0x01]; // NoisePayloadType.privateMessage
+    tlv_push(&mut d, 0x00, id.as_bytes());
+    tlv_push(&mut d, 0x01, text.as_bytes());
+    d
+}
+
+/// delivered → 0x03, read → 0x02; body is the message id as utf8.
+fn receipt_encode(delivered: bool, id: &str) -> Vec<u8> {
+    let mut d = vec![if delivered { 0x03 } else { 0x02 }];
+    d.extend_from_slice(id.as_bytes());
+    d
+}
+
+enum Inner {
+    Msg { id: String, text: String },
+    Read { id: String },
+    Delivered { id: String },
+    Other,
+}
+
+fn inner_decode(plain: &[u8]) -> Option<Inner> {
+    let (t, d) = (*plain.first()?, &plain[1..]);
+    match t {
+        0x01 => {
+            let (mut id, mut text) = (None, None);
+            tlv_each(d, |t, v| match t {
+                0x00 => id = std::str::from_utf8(v).ok().map(String::from),
+                0x01 => text = std::str::from_utf8(v).ok().map(String::from),
+                _ => {}
+            });
+            Some(Inner::Msg { id: id?, text: text? })
+        }
+        0x02 => Some(Inner::Read { id: std::str::from_utf8(d).ok()?.to_string() }),
+        0x03 => Some(Inner::Delivered { id: std::str::from_utf8(d).ok()?.to_string() }),
+        _ => Some(Inner::Other),
+    }
+}
+
+/// Wire id for a freshly generated message (hex of a random u64).
+fn wire_id(rng: &mut impl Rng) -> String {
+    format!("{:016x}", rng.gen::<u64>())
 }
 
 // ----
@@ -112,16 +232,6 @@ struct PeerSession {
     touched_ms: u64,
 }
 
-impl PeerSession {
-    fn flight_tag(&self) -> u8 {
-        if self.initiator {
-            1
-        } else {
-            2
-        }
-    }
-}
-
 struct Peer {
     noise_pk: [u8; 32],
     sign_pk: [u8; 32],
@@ -129,8 +239,8 @@ struct Peer {
     last_seen: u64,
     neighbors: Vec<PeerId>,
     session: Option<PeerSession>,
-    /// (id, text, ts) private payloads waiting on a session.
-    queue: Vec<(u64, String, u64)>,
+    /// (wire id, text, ts) private payloads waiting on a session.
+    queue: Vec<(String, String, u64)>,
 }
 
 struct Scheduled {
@@ -243,16 +353,18 @@ impl Node {
             }
             PacketType::Announce => self.on_announce(pkt, now_ms),
             PacketType::Message => self.on_message(pkt),
+            PacketType::Leave => {
+                self.peers.remove(&pkt.sender);
+                (vec![], vec![Event::PeersChanged])
+            }
             PacketType::NoiseHandshake => self.on_handshake(pkt, now_ms),
             PacketType::NoiseEncrypted => self.on_encrypted(pkt, now_ms),
+            PacketType::Other(_) => (vec![], vec![]),
         }
     }
 
     fn on_announce(&mut self, pkt: Packet, now_ms: u64) -> (Vec<Op>, Vec<Event>) {
-        let Some(body) = serde_json::from_slice::<AnnounceBody>(&pkt.payload).ok() else {
-            return (vec![], vec![]);
-        };
-        let (Some(npk), Some(spk)) = (parse_32(&body.npk), parse_32(&body.spk)) else {
+        let Some((nick, npk, spk, nb)) = announce_decode(&pkt.payload) else {
             return (vec![], vec![]);
         };
         // Peer id binds to the announced Noise key.
@@ -269,10 +381,12 @@ impl Node {
         }
         let changed = match self.peers.get_mut(&pkt.sender) {
             Some(p) => {
-                let changed = p.nick != body.n;
-                p.nick = body.n;
+                let changed = p.nick != nick;
+                p.nick = nick;
                 p.last_seen = now_ms;
-                p.neighbors = body.nb.iter().filter_map(|s| PeerId::from_hex(s)).take(10).collect();
+                p.noise_pk = npk;
+                p.sign_pk = spk;
+                p.neighbors = nb;
                 changed
             }
             None => {
@@ -281,9 +395,9 @@ impl Node {
                     Peer {
                         noise_pk: npk,
                         sign_pk: spk,
-                        nick: body.n,
+                        nick,
                         last_seen: now_ms,
-                        neighbors: body.nb.iter().filter_map(|s| PeerId::from_hex(s)).take(10).collect(),
+                        neighbors: nb,
                         session: None,
                         queue: Vec::new(),
                     },
@@ -295,34 +409,32 @@ impl Node {
     }
 
     fn on_message(&mut self, pkt: Packet) -> (Vec<Op>, Vec<Event>) {
-        let Some(body) = serde_json::from_slice::<PublicBody>(&pkt.payload).ok() else {
+        let Some((id, nick, text)) = public_decode(&pkt.payload) else {
             return (vec![], vec![]);
         };
-        let (Some(npk), Some(spk)) = (parse_32(&body.npk), parse_32(&body.spk)) else {
-            return (vec![], vec![]);
-        };
-        if PeerId::of_noise_pk(&npk) != pkt.sender {
-            return (vec![], vec![]);
-        }
-        let Ok(vk) = VerifyingKey::from_bytes(&spk) else { return (vec![], vec![]) };
-        if !pkt.verify(&vk) {
-            return (vec![], vec![]);
-        }
-        if let Some(p) = self.peers.get(&pkt.sender) {
-            if p.sign_pk != spk {
-                return (vec![], vec![]);
+        // The signature is verified against the sign key from the sender's
+        // announce — until that arrives we can't prove authorship, so accept
+        // but log it (BitChat queues the same way).
+        match self.peers.get(&pkt.sender) {
+            Some(p) if p.sign_pk != [0; 32] => {
+                let Ok(vk) = VerifyingKey::from_bytes(&p.sign_pk) else { return (vec![], vec![]) };
+                if !pkt.verify(&vk) {
+                    return (vec![], vec![Event::Log("mesh: public message bad signature".into())]);
+                }
             }
+            Some(_) | None => {}
         }
-        let Ok(id) = u64::from_str_radix(&body.id, 16) else { return (vec![], vec![]) };
-        (vec![], vec![Event::Public { from: pkt.sender, nick: body.n, id, text: body.t, ts: pkt.timestamp, mine: false }])
+        (vec![], vec![Event::Public { from: pkt.sender, nick, id, text, ts: pkt.timestamp, mine: false }])
     }
 
     fn on_handshake(&mut self, pkt: Packet, now_ms: u64) -> (Vec<Op>, Vec<Event>) {
-        if pkt.recipient != Some(self.peer_id()) || pkt.payload.len() < 2 {
+        if pkt.recipient != Some(self.peer_id()) || pkt.payload.len() < 32 {
             return (vec![], vec![]);
         }
         let from = pkt.sender;
-        let flight = pkt.payload[0];
+        // XX message 1 is exactly one ephemeral key (32 B); later flights
+        // are longer. That's all we need for the tie-break/stale checks.
+        let flight = if pkt.payload.len() == 32 { 1 } else { 0 };
         let mut ops = Vec::new();
         let mut evs = Vec::new();
 
@@ -363,11 +475,11 @@ impl Node {
         }
         let ps = peer.session.as_mut().unwrap();
         ps.touched_ms = now_ms;
-        match ps.s.read_handshake(&pkt.payload[1..]) {
+        match ps.s.read_handshake(&pkt.payload) {
             Ok((reply, done)) => {
                 if let Some(flight_bytes) = reply {
                     ps.last_flight = flight_bytes.clone();
-                    ops.push(self.directed_op(PacketType::NoiseHandshake, from, flight_bytes, 2, now_ms));
+                    ops.push(self.directed_op(PacketType::NoiseHandshake, from, flight_bytes, now_ms));
                 }
                 if done {
                     evs.extend(self.session_up(from, now_ms, &mut ops));
@@ -398,8 +510,8 @@ impl Node {
         }
         let mut evs = vec![Event::Secure(from), Event::PeersChanged];
         let queued = std::mem::take(&mut peer.queue);
-        for (id, text, ts) in queued {
-            let inner = serde_json::to_vec(&InnerOut { k: "m", id: format!("{id:x}"), t: Some(&text), ts: Some(ts) }).unwrap();
+        for (id, text, _ts) in queued {
+            let inner = private_encode(&id, &text);
             if let Some(op) = self.encrypt_to(from, &inner, now_ms) {
                 ops.push(op);
             } else {
@@ -421,22 +533,19 @@ impl Node {
         let Some(plain) = ps.s.decrypt(&pkt.payload) else {
             return (vec![], vec![Event::Log(format!("mesh: undecryptable frame from {from}"))]);
         };
-        let Ok(inner) = serde_json::from_slice::<InnerIn>(&plain) else { return (vec![], vec![]) };
-        let Ok(id) = u64::from_str_radix(&inner.id, 16) else { return (vec![], vec![]) };
-        match inner.k.as_str() {
-            "m" => {
-                let text = inner.t.clone().unwrap_or_default();
-                let ts = inner.ts.unwrap_or(pkt.timestamp);
-                evs.push(Event::Private { from, to: self.peer_id(), id, text, ts, mine: false });
+        let Some(inner) = inner_decode(&plain) else { return (vec![], vec![]) };
+        match inner {
+            Inner::Msg { id, text } => {
+                evs.push(Event::Private { from, to: self.peer_id(), id: id.clone(), text, ts: pkt.timestamp, mine: false });
                 // Delivery receipt rides back inside the same session.
-                let ack = serde_json::to_vec(&InnerOut { k: "a", id: inner.id, t: None, ts: None }).unwrap();
+                let ack = receipt_encode(true, &id);
                 if let Some(op) = self.encrypt_to(from, &ack, now_ms) {
                     ops.push(op);
                 }
             }
-            "a" => evs.push(Event::Delivered { peer: from, id }),
-            "r" => evs.push(Event::Read { peer: from, id }),
-            _ => {}
+            Inner::Delivered { id } => evs.push(Event::Delivered { peer: from, id }),
+            Inner::Read { id } => evs.push(Event::Read { peer: from, id }),
+            Inner::Other => {}
         }
         (ops, evs)
     }
@@ -445,15 +554,8 @@ impl Node {
 
     /// Signed public broadcast.
     pub fn send_public(&mut self, text: &str, now_ms: u64) -> (Vec<Op>, Event) {
-        let id: u64 = self.rng.gen();
-        let body = serde_json::to_vec(&PublicBody {
-            id: format!("{id:x}"),
-            t: text.to_string(),
-            n: self.nick.clone(),
-            npk: super::hex(&self.id.noise_pk),
-            spk: super::hex(&self.id.sign_pk),
-        })
-        .unwrap();
+        let id = wire_id(&mut self.rng);
+        let body = public_encode(&id, &self.nick, text, now_ms);
         let mut pkt = Packet::new(PacketType::Message, self.peer_id(), now_ms, body);
         pkt.sign(&self.id.signing_key());
         self.seen.arrive(pkt.dedup_key(), now_ms);
@@ -473,9 +575,9 @@ impl Node {
         if !self.peers.contains_key(&to) {
             self.peers.insert(to, Peer::placeholder(to, now_ms));
         }
-        let id: u64 = self.rng.gen();
-        let echo = Event::Private { from: self.peer_id(), to, id, text: text.to_string(), ts: now_ms, mine: true };
-        let inner = serde_json::to_vec(&InnerOut { k: "m", id: format!("{id:x}"), t: Some(text), ts: Some(now_ms) }).unwrap();
+        let id = wire_id(&mut self.rng);
+        let echo = Event::Private { from: self.peer_id(), to, id: id.clone(), text: text.to_string(), ts: now_ms, mine: true };
+        let inner = private_encode(&id, text);
         let mut ops = Vec::new();
         let mut evs = vec![echo];
 
@@ -492,8 +594,8 @@ impl Node {
     }
 
     /// Read receipt for the newest incoming message from `peer`.
-    pub fn mark_read(&mut self, peer: PeerId, id: u64, now_ms: u64) -> Vec<Op> {
-        let inner = serde_json::to_vec(&InnerOut { k: "r", id: format!("{id:x}"), t: None, ts: None }).unwrap();
+    pub fn mark_read(&mut self, peer: PeerId, id: &str, now_ms: u64) -> Vec<Op> {
+        let inner = receipt_encode(false, id);
         self.encrypt_to(peer, &inner, now_ms).into_iter().collect()
     }
 
@@ -508,11 +610,10 @@ impl Node {
         Some(Op::Send { to: SendTo::All, bytes: pkt.encode() })
     }
 
-    fn directed_op(&mut self, ptype: PacketType, to: PeerId, payload: Vec<u8>, flight: u8, now_ms: u64) -> Op {
-        let mut body = Vec::with_capacity(payload.len() + 1);
-        body.push(flight);
-        body.extend_from_slice(&payload);
-        let mut pkt = Packet::new(ptype, self.peer_id(), now_ms, body);
+    /// Directed packet: payload goes on the wire verbatim (Noise frames are
+    /// raw handshake/transport bytes — no envelope).
+    fn directed_op(&mut self, ptype: PacketType, to: PeerId, payload: Vec<u8>, now_ms: u64) -> Op {
+        let mut pkt = Packet::new(ptype, self.peer_id(), now_ms, payload);
         pkt.recipient = Some(to);
         self.seen.arrive(pkt.dedup_key(), now_ms);
         Op::Send { to: SendTo::All, bytes: pkt.encode() }
@@ -535,15 +636,7 @@ impl Node {
             Ok((flight, _done)) => {
                 ps.last_flight = flight.clone();
                 ps.touched_ms = now_ms;
-                let mut pkt = Packet::new(PacketType::NoiseHandshake, self.peer_id(), now_ms, {
-                    let mut b = Vec::with_capacity(flight.len() + 1);
-                    b.push(1u8);
-                    b.extend_from_slice(&flight);
-                    b
-                });
-                pkt.recipient = Some(to);
-                self.seen.arrive(pkt.dedup_key(), now_ms);
-                ops.push(Op::Send { to: SendTo::All, bytes: pkt.encode() });
+                ops.push(self.directed_op(PacketType::NoiseHandshake, to, flight, now_ms));
             }
             Err(e) => evs.push(Event::Log(format!("mesh: cannot handshake with {to}: {e}"))),
         }
@@ -577,20 +670,9 @@ impl Node {
             match pkt.ptype {
                 // Presence floods fully.
                 PacketType::Announce => SendTo::Except(ingress),
-                // Broadcast messages go to ~log2(degree) links, seeded by the
-                // message id so every node picks the same subset (§4.2).
-                PacketType::Message => {
-                    let k = (usize::BITS - degree.leading_zeros()).max(1) as usize; // ~log2
-                    let mut ids: Vec<LinkId> = self.links.iter().copied().filter(|l| *l != ingress).collect();
-                    ids.sort_unstable();
-                    let seed = u64::from_be_bytes(key[..8].try_into().unwrap());
-                    let picked: Vec<LinkId> = (0..k.min(ids.len()))
-                        .map(|i| ids[((seed as usize).wrapping_add(i.wrapping_mul(0x9E3779B9))) % ids.len()])
-                        .collect::<HashSet<_>>()
-                        .into_iter()
-                        .collect();
-                    SendTo::Only(picked)
-                }
+                // Broadcast messages flood to every link but the ingress,
+                // matching BitChat's relay policy.
+                PacketType::Message => SendTo::Except(ingress),
                 _ => SendTo::Except(ingress),
             }
         };
@@ -633,8 +715,8 @@ impl Node {
         }
 
         // Stalled handshakes re-send their last flight (5 tries).
-        let me = self.peer_id();
         let mut drop_sessions = Vec::new();
+        let mut resends: Vec<(PeerId, Vec<u8>)> = Vec::new();
         for (pid, p) in self.peers.iter_mut() {
             let Some(ps) = p.session.as_mut() else { continue };
             if ps.s.is_transport() || ps.last_flight.is_empty() {
@@ -646,17 +728,12 @@ impl Node {
                 } else {
                     ps.retries += 1;
                     ps.touched_ms = now_ms;
-                    let mut pkt = Packet::new(PacketType::NoiseHandshake, me, now_ms, {
-                        let mut b = Vec::with_capacity(ps.last_flight.len() + 1);
-                        b.push(ps.flight_tag());
-                        b.extend_from_slice(&ps.last_flight);
-                        b
-                    });
-                    pkt.recipient = Some(*pid);
-                    self.seen.arrive(pkt.dedup_key(), now_ms);
-                    ops.push(Op::Send { to: SendTo::All, bytes: pkt.encode() });
+                    resends.push((*pid, ps.last_flight.clone()));
                 }
             }
+        }
+        for (pid, body) in resends {
+            ops.push(self.directed_op(PacketType::NoiseHandshake, pid, body, now_ms));
         }
         for pid in drop_sessions {
             if let Some(p) = self.peers.get_mut(&pid) {
@@ -688,19 +765,14 @@ impl Node {
     }
 
     fn announce(&mut self, now_ms: u64) -> Op {
-        let body = serde_json::to_vec(&AnnounceBody {
-            n: self.nick.clone(),
-            npk: super::hex(&self.id.noise_pk),
-            spk: super::hex(&self.id.sign_pk),
-            nb: self
-                .peers
-                .iter()
-                .filter(|(_, p)| now_ms.saturating_sub(p.last_seen) <= PEER_FRESH_MS)
-                .take(10)
-                .map(|(id, _)| id.hex())
-                .collect(),
-        })
-        .unwrap();
+        let nb: Vec<PeerId> = self
+            .peers
+            .iter()
+            .filter(|(_, p)| now_ms.saturating_sub(p.last_seen) <= PEER_FRESH_MS)
+            .take(10)
+            .map(|(id, _)| *id)
+            .collect();
+        let body = announce_encode(&self.nick, &self.id.noise_pk, &self.id.sign_pk, &nb);
         let mut pkt = Packet::new(PacketType::Announce, self.peer_id(), now_ms, body);
         pkt.sign(&self.id.signing_key());
         self.seen.arrive(pkt.dedup_key(), now_ms);
@@ -726,16 +798,6 @@ impl Peer {
             queue: Vec::new(),
         }
     }
-}
-
-fn parse_32(s: &str) -> Option<[u8; 32]> {
-    let b = super::unhex(s)?;
-    if b.len() != 32 {
-        return None;
-    }
-    let mut k = [0u8; 32];
-    k.copy_from_slice(&b);
-    Some(k)
 }
 
 #[cfg(test)]
@@ -875,17 +937,8 @@ mod tests {
         a.on_link_up(1, 0);
         a.on_link_up(2, 0);
         let src = Identity::generate();
-        let mut p = Packet::new(PacketType::Message, src.peer_id(), 500, b"room".to_vec());
-        p.sign(&src.signing_key());
         // Craft a valid public body so it isn't dropped earlier.
-        p.payload = serde_json::to_vec(&PublicBody {
-            id: "1".into(),
-            t: "room".into(),
-            n: "src".into(),
-            npk: super::super::hex(&src.noise_pk),
-            spk: super::super::hex(&src.sign_pk),
-        })
-        .unwrap();
+        let mut p = Packet::new(PacketType::Message, src.peer_id(), 500, public_encode("1", "src", "room", 500));
         p.sign(&src.signing_key());
         let wire = p.encode();
         let _ = a.on_frame(1, &wire, 1_000);

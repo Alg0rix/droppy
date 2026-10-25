@@ -15,3 +15,5 @@ snow = { version = "0.10", default-features = false, features = ["default-resolv
 ed25519-dalek = "3"
 sha2 = "0.10"
 rand = "0.8"
+# zlib inflate for BitChat's isCompressed packet flag (pure-Rust backend).
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }

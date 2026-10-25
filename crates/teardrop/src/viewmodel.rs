@@ -207,9 +207,9 @@ impl ViewModel {
                 sel: None,
                 sel_nick: "#room".into(),
                 msgs: vec![
-                    crate::chat::Msg { id: 1, who: "bob".into(), text: "anyone on this mesh?".into(), ts: now.timestamp_millis() - 120_000, mine: false, ..Default::default() },
-                    crate::chat::Msg { id: 2, who: "me".into(), text: "yep — droppy mesh is up".into(), ts: now.timestamp_millis() - 90_000, mine: true, delivered: Some(true), ..Default::default() },
-                    crate::chat::Msg { id: 3, who: "carol".into(), text: "no internet needed, nice".into(), ts: now.timestamp_millis() - 30_000, mine: false, ..Default::default() },
+                    crate::chat::Msg { id: "a".into(), who: "bob".into(), text: "anyone on this mesh?".into(), ts: now.timestamp_millis() - 120_000, mine: false, ..Default::default() },
+                    crate::chat::Msg { id: "b".into(), who: "me".into(), text: "yep — droppy mesh is up".into(), ts: now.timestamp_millis() - 90_000, mine: true, delivered: Some(true), ..Default::default() },
+                    crate::chat::Msg { id: "c".into(), who: "carol".into(), text: "no internet needed, nice".into(), ts: now.timestamp_millis() - 30_000, mine: false, ..Default::default() },
                 ],
                 unread_room: 0,
                 unread_total: 2,

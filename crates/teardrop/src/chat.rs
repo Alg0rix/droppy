@@ -18,7 +18,8 @@ const ROOM: &str = "@room";
 
 #[derive(Debug, Clone, Default)]
 pub struct Msg {
-    pub id: u64,
+    /// Wire message id (BitChat uses UUID strings).
+    pub id: String,
     pub who: String,
     pub text: String,
     pub ts: i64,
@@ -203,7 +204,7 @@ pub fn pump() {
                 }
                 Event::Private { from, to, id, text, ts, mine } => {
                     let conv = if mine { to.hex() } else { from.hex() };
-                    push_msg(r, &conv.clone(), Msg { id, who: if mine { "me".into() } else { peer_nick(r, &from) }, text, ts: ts as i64, mine, ..Default::default() });
+                    push_msg(r, &conv.clone(), Msg { id: id.clone(), who: if mine { "me".into() } else { peer_nick(r, &from) }, text, ts: ts as i64, mine, ..Default::default() });
                     if !mine {
                         if r.sel.as_deref() == Some(conv.as_str()) {
                             crate::mesh_ble::cmd(crate::mesh_ble::Cmd::Read { peer: from, id });
@@ -243,7 +244,7 @@ fn push_msg(r: &mut Rt, conv: &str, m: Msg) {
     }
 }
 
-fn mark(r: &mut Rt, conv: &str, id: u64, f: impl Fn(&mut Msg)) {
+fn mark(r: &mut Rt, conv: &str, id: String, f: impl Fn(&mut Msg)) {
     if let Some(v) = r.convs.get_mut(conv) {
         for m in v.iter_mut().rev() {
             if m.id == id {
@@ -307,7 +308,7 @@ pub fn select(sel: Option<String>) {
             if let Some(v) = r.convs.get(id) {
                 if let Some(m) = v.iter().rev().find(|m| !m.mine) {
                     if let Some(pid) = PeerId::from_hex(id) {
-                        crate::mesh_ble::cmd(crate::mesh_ble::Cmd::Read { peer: pid, id: m.id });
+                        crate::mesh_ble::cmd(crate::mesh_ble::Cmd::Read { peer: pid, id: m.id.clone() });
                     }
                 }
             }

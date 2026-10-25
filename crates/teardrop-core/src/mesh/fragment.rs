@@ -4,14 +4,15 @@
 //! packets — hop-local: each receiver reassembles, then relays the whole
 //! packet onward (re-fragmenting if the next link is narrower).
 //!
-//! Fragment payload: `[8B frag_id][2B index][2B total][chunk]`.
+//! Fragment payload: `[8B frag_id][2B index][2B total][1B orig_type][chunk]`
+//! — matching BitChat's fragment header (`BLEOutboundFragmentPlanner`).
 
 use super::{Packet, PacketType, PeerId};
 use std::collections::HashMap;
 
 /// §4.4 target chunk size; links with a smaller MTU shrink it further.
 pub const FRAG_CHUNK_MAX: usize = 469;
-const META: usize = 12;
+const META: usize = 13;
 /// Wire cost of a fragment packet around its chunk (22-byte header + meta).
 const WRAP: usize = 22 + META;
 const MAX_ASSEMBLIES: usize = 128;
@@ -27,12 +28,16 @@ pub fn fragment_packet(frame: &[u8], sender: PeerId, link_payload: usize, now_ms
     let chunk = FRAG_CHUNK_MAX.min(link_payload - WRAP);
     let total = frame.len().div_ceil(chunk);
     let frag_id: u64 = rand::random();
+    // The original packet's type byte (frame[1]) — receivers check it after
+    // reassembly, matching BitChat's fragment header.
+    let orig_type = frame.get(1).copied().unwrap_or(0);
     (0..total)
         .map(|i| {
             let mut payload = Vec::with_capacity(META + chunk.min(frame.len() - i * chunk));
             payload.extend_from_slice(&frag_id.to_be_bytes());
             payload.extend_from_slice(&(i as u16).to_be_bytes());
             payload.extend_from_slice(&(total as u16).to_be_bytes());
+            payload.push(orig_type);
             payload.extend_from_slice(&frame[i * chunk..(i * chunk + chunk).min(frame.len())]);
             Packet::new(PacketType::Fragment, sender, now_ms, payload).encode()
         })
