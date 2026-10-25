@@ -489,7 +489,12 @@ mod imp {
         w.Received(&TypedEventHandler::new(move |_w: &Option<BluetoothLEAdvertisementWatcher>, args: &Option<BluetoothLEAdvertisementReceivedEventArgs>| {
             if let Some(a) = args {
                 if let Ok(addr) = a.BluetoothAddress() {
-                    let atype = a.BluetoothAddressType().unwrap_or(BluetoothAddressType::Public);
+                    // Unspecified → guess Random (phones); the dial retries
+                    // Public anyway on a bad-command error.
+                    let atype = match a.BluetoothAddressType() {
+                        Ok(BluetoothAddressType::Public) => BluetoothAddressType::Public,
+                        _ => BluetoothAddressType::Random,
+                    };
                     let _ = tx.send(Msg::Seen(addr, atype));
                 }
             }
@@ -498,20 +503,35 @@ mod imp {
         Ok(w)
     }
 
+    /// Wrap an HRESULT with the dial step it came from, so droppy.log shows
+    /// exactly where connects die.
+    fn step(s: &'static str, e: windows::core::Error) -> windows::core::Error {
+        windows::core::Error::new(e.code(), format!("{s}: {}", e.message()))
+    }
+
     /// Dial one advertiser: connect, subscribe to its mesh characteristic.
     /// Reports `Msg::Up` on success. Runs on a short-lived thread.
     fn dial_out(addr: u64, atype: BluetoothAddressType, tx: Sender<Msg>) -> windows::core::Result<()> {
         unsafe {
             let _ = RoInitialize(RO_INIT_MULTITHREADED);
         }
-        // Phones advertise with random private addresses — the untyped
-        // overload assumes public and fails 0x80070016.
-        let dev = BluetoothLEDevice::FromBluetoothAddressWithBluetoothAddressTypeAsync(addr, atype)?.get()?;
+        let dev = BluetoothLEDevice::FromBluetoothAddressWithBluetoothAddressTypeAsync(addr, atype)
+            .map_err(|e| step("connect", e))?
+            .get()
+            .map_err(|e| step("connect-await", e))?;
         // Uncached: without it, unpaired devices return empty service lists.
-        let services = dev.GetGattServicesForUuidWithCacheModeAsync(SERVICE, BluetoothCacheMode::Uncached)?.get()?;
-        let svc = services.Services()?.GetAt(0)?;
-        let chars = svc.GetCharacteristicsForUuidWithCacheModeAsync(MESH_CHAR, BluetoothCacheMode::Uncached)?.get()?;
-        let ch = chars.Characteristics()?.GetAt(0)?;
+        let services = dev
+            .GetGattServicesForUuidWithCacheModeAsync(SERVICE, BluetoothCacheMode::Uncached)
+            .map_err(|e| step("services", e))?
+            .get()
+            .map_err(|e| step("services-await", e))?;
+        let svc = services.Services().map_err(|e| step("svc-list", e))?.GetAt(0).map_err(|e| step("svc-none", e))?;
+        let chars = svc
+            .GetCharacteristicsForUuidWithCacheModeAsync(MESH_CHAR, BluetoothCacheMode::Uncached)
+            .map_err(|e| step("chars", e))?
+            .get()
+            .map_err(|e| step("chars-await", e))?;
+        let ch = chars.Characteristics().map_err(|e| step("char-list", e))?.GetAt(0).map_err(|e| step("char-none", e))?;
 
         // Notifications → frames into the loop.
         {
