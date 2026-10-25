@@ -223,6 +223,8 @@ mod inner {
                 let ui = u.borrow();
                 st.geom.pill_w = ui.compact_w;
                 st.geom.pill_h = ui.compact_h;
+                st.geom.card_w = ui.card_w;
+                st.geom.card_h = ui.card_h;
             });
             let view = IslandView { geom: st.geom, open: st.open.value, wobble_px: st.wobble_px };
             VIEW.with(|v| {

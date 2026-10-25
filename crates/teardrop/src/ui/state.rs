@@ -263,6 +263,10 @@ pub struct UiState {
     pub page_dir: f32,
     pub compact_w: f32,
     pub compact_h: f32,
+    /// Open-card size, eased toward the current page's target so the island
+    /// resizes itself per activity instead of snapping to one fixed card.
+    pub card_w: f32,
+    pub card_h: f32,
     pub peek_until_ms: u64,
     pub peek_amt: f32,
     track_key: String,
@@ -326,6 +330,8 @@ impl UiState {
             page_dir: 1.0,
             compact_w: 120.0,
             compact_h: 42.0,
+            card_w: 680.0,
+            card_h: 318.0,
             peek_until_ms: 0,
             peek_amt: 0.0,
             track_key: String::new(),
@@ -490,6 +496,12 @@ impl UiState {
         }
     }
 
+    /// Open-card size the island wants for `page` (w, h).
+    fn card_target(page: Page) -> (f32, f32) {
+        let _ = page;
+        (680.0, 318.0)
+    }
+
     /// The collapsed body rect in window-local px (matches `layout::build`).
     pub fn compact_body(&self) -> Rect {
         Rect::new(PAD, 0.0, self.compact_w, self.compact_h)
@@ -574,6 +586,12 @@ impl UiState {
         let (tw, th) = self.compact_target(vm, s, now_ms);
         moving |= approach(&mut self.compact_w, tw, 14.0, dt);
         moving |= approach(&mut self.compact_h, th, 14.0, dt);
+
+        // Open-card size follows the page (all pages share 680x318 today;
+        // redesigned pages can claim their own blob size).
+        let (cw, ch) = Self::card_target(vm.page);
+        moving |= approach(&mut self.card_w, cw, 14.0, dt);
+        moving |= approach(&mut self.card_h, ch, 14.0, dt);
 
         // Track-change peek.
         let key = format!("{}\0{}", vm.track.title, vm.track.artist);
