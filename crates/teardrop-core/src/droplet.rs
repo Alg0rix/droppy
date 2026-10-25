@@ -110,9 +110,11 @@ impl DropletGeom {
         let h = self.height(open, wobble_px).max(2.0);
         let neck = self.neck(open);
         let round = self.tip_round(open);
-        let o = open.clamp(0.0, 1.0);
-        let r_pill = (self.pill_h / 2.0).min(h / 2.0).min(w / 2.0);
-        let rb = (r_pill + (self.card_radius - r_pill) * smootherstep(o)).min(h / 2.0).min(w / 2.0).max(1.0);
+        // Every state shares the card's bottom-corner radius, so the pill and
+        // glance read as the same shape as the open island. Only the bottom
+        // corners curve (the top is pinned flat to the screen edge), so the
+        // radius may use the full height, not just half of it.
+        let rb = self.card_radius.min(h).min(w / 2.0).max(1.0);
         
         let (l, r, b) = (cx - w / 2.0, cx + w / 2.0, top + h);
         let mut poly: Vec<(f32, f32)> = Vec::with_capacity(160);
@@ -146,7 +148,9 @@ impl DropletGeom {
         for p in poly.iter_mut() {
             let u = ((p.1 - top) / h).clamp(0.0, 1.0);
             let attach = 1.0 - smootherstep(u / 0.6);
-            let swell = smootherstep((u - 0.55) / 0.45) * round;
+            // Only swell mid-morph (while the neck is pinched); at the pill and
+            // glance rest states the sides stay straight and the corners circular.
+            let swell = smootherstep((u - 0.55) / 0.45) * round * (pinch / 0.38).min(1.0);
             let k = 1.0 - pinch * attach + swell * 0.045;
             p.0 = cx + (p.0 - cx) * k;
         }
