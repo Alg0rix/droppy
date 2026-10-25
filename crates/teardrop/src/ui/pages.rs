@@ -2350,8 +2350,6 @@ fn settings(c: &mut Ctx, a: Rect) {
         SettingKey::StartWithWindows,
         SettingKey::ClipboardHistory,
         SettingKey::WaterReminders,
-        SettingKey::MeshChat,
-        SettingKey::MeshHud,
     ];
     let row_h = 26.0;
     let ty = a.y + 30.0;
@@ -2426,6 +2424,14 @@ fn settings(c: &mut Ctx, a: Rect) {
             13.0,
             if on { accent(*pg) } else { TEXT_3.fade(0.45) },
         );
+    }
+
+    // Mesh toggles: BLE radio + HUD text privacy, as two pills.
+    let my = py + 36.0;
+    let pw = (col_w - 6.0) / 2.0;
+    for (i, (k, lbl)) in [(SettingKey::MeshChat, "Mesh chat (BLE)"), (SettingKey::MeshHud, "HUD msg text")].iter().enumerate() {
+        let on = k.get(c.set);
+        c.pill(Rect::new(rx + i as f32 * (pw + 6.0), my, pw, 24.0), Action::Toggle(*k), lbl, on.then_some(acc_on()), 10.5);
     }
 
     // Keyboard hint at bottom

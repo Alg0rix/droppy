@@ -431,14 +431,25 @@ impl Node {
 
     fn on_handshake(&mut self, pkt: Packet, now_ms: u64) -> (Vec<Op>, Vec<Event>) {
         if pkt.recipient != Some(self.peer_id()) || pkt.payload.len() < 32 {
+            if pkt.recipient == Some(self.peer_id()) {
+                return (vec![], vec![Event::Log(format!("mesh: handshake from {} too short ({}B)", pkt.sender, pkt.payload.len()))]);
+            }
             return (vec![], vec![]);
         }
         let from = pkt.sender;
+        let state = match self.peers.get(&from).and_then(|p| p.session.as_ref()) {
+            None => "none",
+            Some(ps) if ps.s.is_transport() => "transport",
+            Some(ps) if ps.initiator => "initiator",
+            Some(_) => "responder",
+        };
+        let mut evs0 = vec![Event::Log(format!("mesh: handshake rx {}B from {from} (ours: {state})", pkt.payload.len()))];
         // XX message 1 is exactly one ephemeral key (32 B); later flights
         // are longer. That's all we need for the tie-break/stale checks.
         let flight = if pkt.payload.len() == 32 { 1 } else { 0 };
         let mut ops = Vec::new();
         let mut evs = Vec::new();
+        evs.append(&mut evs0);
 
         if !self.peers.contains_key(&from) {
             self.peers.insert(from, Peer::placeholder(from, now_ms));
@@ -448,12 +459,12 @@ impl Node {
             if let Some(ps) = &peer.session {
                 if ps.s.is_transport() && flight != 1 {
                     // Stale flight for a session we already finished.
-                    return (vec![], vec![]);
+                    return (vec![], vec![Event::Log("mesh: handshake ignored (stale flight)".into())]);
                 }
                 if !ps.s.is_transport() && ps.initiator && !ps.last_flight.is_empty() && flight == 1 && self.peer_id() < from {
                     // Simultaneous open: the lower peer id keeps its initiator
                     // role, the other side becomes responder (deterministic).
-                    return (vec![], vec![]);
+                    return (vec![], vec![Event::Log("mesh: handshake ignored (we win simultaneous open)".into())]);
                 }
             }
         }
@@ -479,6 +490,7 @@ impl Node {
         ps.touched_ms = now_ms;
         match ps.s.read_handshake(&pkt.payload) {
             Ok((reply, done)) => {
+                evs.push(Event::Log(format!("mesh: handshake ok, reply={} done={done}", reply.as_ref().map(|r| r.len()).unwrap_or(0))));
                 if let Some(flight_bytes) = reply {
                     ps.last_flight = flight_bytes.clone();
                     ops.push(self.directed_op(PacketType::NoiseHandshake, from, flight_bytes, now_ms));
@@ -650,6 +662,7 @@ impl Node {
         }
         match ps.s.write_handshake() {
             Ok((flight, _done)) => {
+                evs.push(Event::Log(format!("mesh: handshake tx msg1 {}B to {to}", flight.len())));
                 ps.last_flight = flight.clone();
                 ps.touched_ms = now_ms;
                 ops.push(self.directed_op(PacketType::NoiseHandshake, to, flight, now_ms));
@@ -827,6 +840,7 @@ impl Node {
             }
             if now_ms.saturating_sub(ps.touched_ms) >= 4_000 {
                 if ps.retries >= 5 {
+                    evs.push(Event::Log(format!("mesh: handshake with {pid} timed out (no reply after 5 resends)")));
                     drop_sessions.push(*pid);
                 } else {
                     ps.retries += 1;
