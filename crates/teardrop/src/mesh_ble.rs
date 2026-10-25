@@ -124,7 +124,7 @@ mod imp {
     use windows::core::{GUID, HSTRING, Interface};
     use windows::Devices::Bluetooth::Advertisement::*;
     use windows::Devices::Bluetooth::GenericAttributeProfile::*;
-    use windows::Devices::Bluetooth::{BluetoothCacheMode, BluetoothConnectionStatus, BluetoothLEDevice};
+    use windows::Devices::Bluetooth::{BluetoothAddressType, BluetoothCacheMode, BluetoothConnectionStatus, BluetoothLEDevice};
     use windows::Foundation::TypedEventHandler;
     use windows::Storage::Streams::{DataReader, DataWriter, IBuffer};
     use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
@@ -142,7 +142,7 @@ mod imp {
     /// Wire-side happenings, funnelled into the single driver loop.
     enum Msg {
         /// Watcher saw the service advertised.
-        Seen(u64),
+        Seen(u64, BluetoothAddressType),
         /// Central-side connect finished: write-capable characteristic + mtu.
         Up { addr: u64, ch: GattCharacteristic, dev: BluetoothLEDevice, mtu: usize },
         /// Central-side link dropped (or dial failed).
@@ -261,7 +261,7 @@ mod imp {
             let mut evs = Vec::new();
             let mut ops = Vec::new();
             match msg {
-                Some(Msg::Seen(addr)) => {
+                Some(Msg::Seen(addr, atype)) => {
                     if links.get(&addr).map(|l| l.ch.is_some()).unwrap_or(false) {
                         continue; // already dialed
                     }
@@ -272,7 +272,7 @@ mod imp {
                     dial.insert(addr, now());
                     let tx = tx.clone();
                     std::thread::spawn(move || {
-                        if let Err(e) = dial_out(addr, tx.clone()) {
+                        if let Err(e) = dial_out(addr, atype, tx.clone()) {
                             let _ = tx.send(Msg::Down(addr));
                             push_events([Event::Log(format!("mesh: connect {addr:012x} failed ({e})"))]);
                         }
@@ -489,7 +489,8 @@ mod imp {
         w.Received(&TypedEventHandler::new(move |_w: &Option<BluetoothLEAdvertisementWatcher>, args: &Option<BluetoothLEAdvertisementReceivedEventArgs>| {
             if let Some(a) = args {
                 if let Ok(addr) = a.BluetoothAddress() {
-                    let _ = tx.send(Msg::Seen(addr));
+                    let atype = a.BluetoothAddressType().unwrap_or(BluetoothAddressType::Public);
+                    let _ = tx.send(Msg::Seen(addr, atype));
                 }
             }
             Ok(())
@@ -499,11 +500,13 @@ mod imp {
 
     /// Dial one advertiser: connect, subscribe to its mesh characteristic.
     /// Reports `Msg::Up` on success. Runs on a short-lived thread.
-    fn dial_out(addr: u64, tx: Sender<Msg>) -> windows::core::Result<()> {
+    fn dial_out(addr: u64, atype: BluetoothAddressType, tx: Sender<Msg>) -> windows::core::Result<()> {
         unsafe {
             let _ = RoInitialize(RO_INIT_MULTITHREADED);
         }
-        let dev = BluetoothLEDevice::FromBluetoothAddressAsync(addr)?.get()?;
+        // Phones advertise with random private addresses — the untyped
+        // overload assumes public and fails 0x80070016.
+        let dev = BluetoothLEDevice::FromBluetoothAddressWithBluetoothAddressTypeAsync(addr, atype)?.get()?;
         // Uncached: without it, unpaired devices return empty service lists.
         let services = dev.GetGattServicesForUuidWithCacheModeAsync(SERVICE, BluetoothCacheMode::Uncached)?.get()?;
         let svc = services.Services()?.GetAt(0)?;
