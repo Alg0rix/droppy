@@ -22,6 +22,8 @@ pub enum Icon {
     Chart,
     Mic,
     Sparkle,
+    /// 2x2 squares — the Windows page.
+    Grid,
     Send,
     Phone,
     Gear,
@@ -116,6 +118,12 @@ pub fn draw(s: &mut Scene, icon: Icon, cx: f32, cy: f32, size: f32, c: Color) {
             s.stroke(rect(5.6, 1.4, 4.8, 7.4), 2.4 * u, sw, c);
             s.ring(cx, cy + 0.4 * u, 5.0 * u, sw, 0.30, 0.70, c);
             s.line(p(8.0, 12.6).0, p(8.0, 12.6).1, p(8.0, 14.8).0, p(8.0, 14.8).1, sw, c);
+        }
+        Icon::Grid => {
+            s.rect(rect(2.2, 2.2, 4.6, 4.6), 1.2 * u, c);
+            s.rect(rect(9.2, 2.2, 4.6, 4.6), 1.2 * u, c);
+            s.rect(rect(2.2, 9.2, 4.6, 4.6), 1.2 * u, c);
+            s.rect(rect(9.2, 9.2, 4.6, 4.6), 1.2 * u, c);
         }
         Icon::Sparkle => {
             // 4-point star + small companion star (AI Chat icon).

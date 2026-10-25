@@ -2363,7 +2363,7 @@ fn settings(c: &mut Ctx, a: Rect) {
     let py = gy + 36.0;
     c.text("On island", Rect::new(rx, py + 2.0, 75.0, 24.0), 12.0, Weight::Regular, TEXT_2, Align::Left);
     let vis = super::layout::visible_pages(c.set);
-    let pitch = ((col_w - 84.0) / 12.0).min(28.0);
+    let pitch = ((col_w - 84.0) / Page::all().len() as f32).min(28.0);
     for (i, pg) in Page::all().iter().enumerate() {
         let on = vis.contains(pg);
         c.icon_btn(

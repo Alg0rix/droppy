@@ -185,7 +185,7 @@ pub fn tab_icon(p: Page) -> Icon {
         Page::Usage => Icon::Chart,
         Page::Voice => Icon::Mic,
         Page::Ai => Icon::Sparkle,
-        Page::Windows => Icon::Tray,
+        Page::Windows => Icon::Grid,
         Page::Settings => Icon::Gear,
     }
 }
