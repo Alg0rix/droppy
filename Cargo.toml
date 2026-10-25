@@ -4,7 +4,7 @@ members = ["crates/teardrop-core", "crates/teardrop"]
 default-members = ["crates/teardrop-core", "crates/teardrop"]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 authors = ["Teardrop"]
 license = "MIT"
