@@ -131,9 +131,20 @@ fn extract(lnk: &str) -> Option<Image> {
         WICBitmapUsePremultipliedAlpha, WICRect, GUID_WICPixelFormat32bppPBGRA,
     };
     use windows::Win32::System::Com::{CoCreateInstance, IBindCtx, CLSCTX_INPROC_SERVER};
-    use windows::Win32::UI::Shell::{IShellItem, IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK};
+    use windows::Win32::UI::Shell::{IShellItem, IShellItemImageFactory, SHCreateItemFromIDList, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK};
     unsafe {
-        let item: IShellItem = SHCreateItemFromParsingName(&HSTRING::from(icon_source(lnk)), None::<&IBindCtx>).ok()?;
+        // Control Panel task paths can't be re-parsed — the catalog kept
+        // their absolute PIDLs, so fall back to item-from-PIDL for them.
+        let item: IShellItem = match SHCreateItemFromParsingName(&HSTRING::from(icon_source(lnk)), None::<&IBindCtx>) {
+            Ok(i) => i,
+            Err(_) => {
+                let pidl = crate::shellcatalog::task_pidl(lnk);
+                if pidl.is_null() {
+                    return None;
+                }
+                SHCreateItemFromIDList(pidl).ok()?
+            }
+        };
         // No ICONONLY flag: files that have real thumbnails (images, docs)
         // get them, everything else falls back to its icon.
         let hbmp = item

@@ -3045,6 +3045,7 @@ mod inner {
                     crate::launcher::set_notify(move || unsafe {
                         let _ = PostMessageW(HWND(raw as *mut _), WM_APP_SEARCH, WPARAM(0), LPARAM(0));
                     });
+                    crate::launcher::warm();
                     crate::sysmon::set_notify(move || unsafe {
                         let _ = PostMessageW(HWND(raw as *mut _), WM_APP_SEARCH, WPARAM(0), LPARAM(0));
                     });

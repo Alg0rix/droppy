@@ -45,6 +45,8 @@ mod mixer;
 #[cfg(windows)]
 mod launcher;
 #[cfg(windows)]
+mod shellcatalog;
+#[cfg(windows)]
 mod appicons;
 #[cfg(windows)]
 mod winsearch;

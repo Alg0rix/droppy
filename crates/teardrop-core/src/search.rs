@@ -226,6 +226,29 @@ pub fn rank(query: &str, title: &str, subtitle: &str, boost: f64) -> u32 {
     t as u32 * TIER_STRIDE + within
 }
 
+/// [`rank`] plus a keyword-phrase fallback: when the title alone can't do
+/// better than Fuzzy, a `;`-separated keyword phrase matching the query
+/// (exact, prefix, or word/acronym) lifts the hit into WordOrAcronym tier —
+/// never higher, so a real title prefix/exact always wins.
+pub fn rank_with_keywords(query: &str, title: &str, subtitle: &str, keywords: &str, boost: f64) -> u32 {
+    let base = rank(query, title, subtitle, boost);
+    let q = query.trim();
+    if q.is_empty() || tier_of(base) >= Tier::WordOrAcronym {
+        return base;
+    }
+    let mut best = 0u32;
+    for phrase in keywords.split(';').map(str::trim).filter(|p| !p.is_empty()) {
+        if ci_eq(phrase, q) || ci_starts_with(phrase, q) || word_or_acronym(phrase, q) {
+            best = best.max(fuzzy(q, phrase));
+        }
+    }
+    if best == 0 {
+        return base;
+    }
+    let within = (best as f64 * 5.0 + boost).round().clamp(0.0, (TIER_STRIDE - 1) as f64) as u32;
+    base.max(Tier::WordOrAcronym as u32 * TIER_STRIDE + within)
+}
+
 /// Recover the tier a [`rank`] score was built with.
 pub fn tier_of(score: u32) -> Tier {
     match score / TIER_STRIDE {
@@ -347,6 +370,24 @@ mod tests {
         assert_eq!(tier_of(plain), Tier::WordOrAcronym);
         assert_eq!(tier_of(boosted), Tier::WordOrAcronym);
         assert!(boosted > plain);
+    }
+
+    #[test]
+    fn rank_with_keywords_lifts_to_word_tier_only() {
+        // "terminal" isn't in the title at all — a keyword phrase carries it.
+        let kw = rank_with_keywords("terminal", "Command Prompt", "", "cmd;terminal;console;shell", 0.0);
+        assert_eq!(tier_of(kw), Tier::WordOrAcronym);
+        // A real title match still outranks the keyword-lifted hit.
+        let title = rank_with_keywords("terminal", "Terminal", "", "", 0.0);
+        assert!(title > kw);
+        // No keywords: the non-match stays out.
+        let none = rank_with_keywords("terminal", "Command Prompt", "", "", 0.0);
+        assert!(tier_of(none) < Tier::WordOrAcronym);
+        // A title prefix keeps its own (better) tier — keywords can't lift.
+        assert_eq!(tier_of(rank_with_keywords("terminal", "Terminal settings", "", "x", 0.0)), Tier::Prefix);
+        // Multi-word phrases match on a word boundary inside them.
+        let phrase = rank_with_keywords("terminal", "Command Prompt", "", "default terminal", 0.0);
+        assert_eq!(tier_of(phrase), Tier::WordOrAcronym);
     }
 
     #[test]

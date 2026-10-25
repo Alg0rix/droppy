@@ -1,8 +1,9 @@
 //! Installed-app launcher index for the Windows page search field.
 //!
-//! App hits come from the Start Menu scan (every .lnk under both roots).
-//! On top of those, `winsearch` layers real Windows Search index hits —
-//! files, folders, shell items — the same catalog Start Menu queries. That
+//! App hits come from `shellcatalog`: every packaged app in shell:AppsFolder
+//! plus every .lnk under both Start Menu roots, with Settings pages and
+//! Control Panel tasks merged in. On top of those, `winsearch` layers real
+//! Windows Search index hits — the same catalog Start Menu queries. That
 //! query runs on a worker thread after a short typing pause, so the UI
 //! thread only ever does cheap in-memory work.
 //!
@@ -16,47 +17,23 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use teardrop_core::search::{self, Tier};
 
-/// (display name, .lnk path) — Start Menu order, stable across searches.
-static APPS: OnceLock<Vec<(String, String)>> = OnceLock::new();
-
-fn scan_dir(dir: &std::path::Path, out: &mut Vec<(String, String)>) {
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
-    for e in rd.flatten() {
-        let p = e.path();
-        if p.is_dir() {
-            scan_dir(&p, out);
-        } else if p.extension().map(|x| x == "lnk").unwrap_or(false) {
-            let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_string();
-            if !name.is_empty() {
-                out.push((name, p.to_string_lossy().into_owned()));
-            }
-        }
-    }
-}
-
+/// (display name, launch path) for every installed app: packaged apps from
+/// shell:AppsFolder plus Start Menu .lnks. Builds inside `shellcatalog`'s
+/// OnceLock on the worker thread — never call this before that lands.
 pub fn installed_apps() -> &'static [(String, String)] {
-    APPS.get_or_init(|| {
-        let mut out = Vec::new();
-        for dir in [
-            std::env::var("APPDATA").map(|a| format!("{a}\\Microsoft\\Windows\\Start Menu\\Programs")),
-            std::env::var("PROGRAMDATA").map(|a| format!("{a}\\Microsoft\\Windows\\Start Menu\\Programs")),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            scan_dir(std::path::Path::new(&dir), &mut out);
-        }
-        out.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
-        out
-    })
+    crate::shellcatalog::apps()
 }
 
-/// One launcher hit: display name, a path to open (lnk, file, or shell
-/// parsing path), and the right-side tag ("app" or the file's type text).
+/// Icon source for Settings-page hits: the Settings app's AppsFolder item.
+pub const SETTINGS_ICON: &str = r"shell:AppsFolder\windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel";
+
+/// One launcher hit: display name, a path to open (lnk, file, uri, or shell
+/// parsing path), what to draw the icon from, and the right-side tag.
 #[derive(Clone)]
 pub struct Hit {
     pub name: String,
     pub path: String,
+    pub icon: String,
     pub tag: String,
 }
 
@@ -112,6 +89,21 @@ fn worker() {
     unsafe {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
     }
+    // Warm each shell catalog, waking the UI as each lands so hits widen as
+    // more sources come online. Settings/tasks are slow (seconds, cold) and
+    // get their own STA thread so index queries never wait behind them.
+    std::thread::Builder::new()
+        .name("shell-catalog".into())
+        .spawn(|| {
+            unsafe {
+                let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            }
+            let _ = crate::shellcatalog::tasks();
+            notify();
+            let _ = crate::shellcatalog::settings();
+            notify();
+        })
+        .ok();
     let _ = installed_apps();
     notify();
     let (lock, cv) = SHARED.get().expect("shared() runs before the worker");
@@ -158,13 +150,25 @@ fn now_secs() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
+/// Catalog-readiness bits folded into the `hits()` cache key: a catalog
+/// landing mid-query must recompute, not serve stale hits.
+const READY_APPS: u8 = 1;
+const READY_SETTINGS: u8 = 2;
+const READY_TASKS: u8 = 4;
+
+fn ready() -> u8 {
+    (crate::shellcatalog::loaded_apps().is_some() as u8) * READY_APPS
+        + (crate::shellcatalog::loaded_settings().is_some() as u8) * READY_SETTINGS
+        + (crate::shellcatalog::loaded_tasks().is_some() as u8) * READY_TASKS
+}
+
 /// `hits()` runs every layout frame, so results are cached against the
-/// inputs that could change them: query, finished-search seq, apps loaded,
-/// history generation.
+/// inputs that could change them: query, finished-search seq, which shell
+/// catalogs have landed, history generation.
 struct LastHits {
     q: String,
     seq: u64,
-    apps: bool,
+    ready: u8,
     gen: u64,
     hits: Vec<Hit>,
 }
@@ -193,25 +197,27 @@ pub fn hits(query: &str) -> Vec<Hit> {
         }
         (g.seq, if g.done_q == q { Some(g.rows.clone()) } else { None })
     };
-    let apps_ready = APPS.get().is_some();
+    let r = ready();
     let gen = HIST_GEN.load(Ordering::SeqCst);
-    let last = LAST.get_or_init(|| Mutex::new(LastHits { q: String::new(), seq: 0, apps: false, gen: 0, hits: Vec::new() }));
+    let last = LAST.get_or_init(|| Mutex::new(LastHits { q: String::new(), seq: 0, ready: 0, gen: 0, hits: Vec::new() }));
     let mut c = last.lock().unwrap();
-    if c.q == q && c.seq == seq && c.apps == apps_ready && c.gen == gen {
+    if c.q == q && c.seq == seq && c.ready == r && c.gen == gen {
         return c.hits.clone();
     }
-    let out = compute(&q, apps_ready, rows.as_deref().unwrap_or(&[]));
-    *c = LastHits { q, seq, apps: apps_ready, gen, hits: out.clone() };
+    let out = compute(&q, r, rows.as_deref().unwrap_or(&[]));
+    *c = LastHits { q, seq, ready: r, gen, hits: out.clone() };
     out
 }
 
-fn compute(q: &str, apps_ready: bool, rows: &[crate::winsearch::Row]) -> Vec<Hit> {
+fn compute(q: &str, ready: u8, rows: &[crate::winsearch::Row]) -> Vec<Hit> {
     let mut out: Vec<Hit> = Vec::new();
     let now = now_secs();
     let hist = history().lock().unwrap();
-    // Until the worker's warm-up scan lands there is nothing to filter (never
-    // block the UI thread on the Start Menu walk).
-    let apps: &[(String, String)] = if apps_ready { installed_apps() } else { &[] };
+    // Until a catalog lands there is nothing to filter (never block the UI
+    // thread on shell enumeration or the settings XML walk).
+    let apps: &[(String, String)] = if ready & READY_APPS != 0 { crate::shellcatalog::loaded_apps().unwrap_or(&[]) } else { &[] };
+    let settings = if ready & READY_SETTINGS != 0 { crate::shellcatalog::loaded_settings().unwrap_or(&[]) } else { &[] };
+    let tasks = if ready & READY_TASKS != 0 { crate::shellcatalog::loaded_tasks().unwrap_or(&[]) } else { &[] };
     // CmdPal drops fuzzy-only hits for very short queries — too noisy.
     let short = q.chars().count() <= 2;
     let mut seen = std::collections::HashSet::new();
@@ -220,7 +226,7 @@ fn compute(q: &str, apps_ready: bool, rows: &[crate::winsearch::Row]) -> Vec<Hit
         if !seen.insert(n.to_lowercase()) {
             continue;
         }
-        let score = search::rank(q, n, &app_subtitle(p), hist.weight(p, now));
+        let score = search::rank_with_keywords(q, n, &app_subtitle(p), app_keywords(n), hist.weight(p, now));
         if score == 0 || (short && search::tier_of(score) < Tier::WordOrAcronym) {
             continue;
         }
@@ -228,8 +234,43 @@ fn compute(q: &str, apps_ready: bool, rows: &[crate::winsearch::Row]) -> Vec<Hit
     }
     scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.to_lowercase().cmp(&b.1.to_lowercase())));
     for (_, n, p) in scored.into_iter().take(6) {
-        out.push(Hit { name: n, path: p, tag: "app".to_string() });
+        out.push(Hit { name: n, icon: p.clone(), path: p, tag: "app".to_string() });
     }
+    // Settings pages and Control Panel tasks are noisy catalogs — they only
+    // show up on word-boundary-or-better matches — then merge by score.
+    let dup = |cand: &Hit, list: &[Hit]| list.iter().any(|h| h.path.eq_ignore_ascii_case(&cand.path) || h.name.eq_ignore_ascii_case(&cand.name));
+    let mut mid: Vec<(u32, Hit)> = Vec::new();
+    for e in settings {
+        let score = search::rank_with_keywords(q, &e.name, "", &e.keywords, hist.weight(&e.uri, now));
+        if search::tier_of(score) < Tier::WordOrAcronym {
+            continue;
+        }
+        let h = Hit { name: e.name.clone(), path: e.uri.clone(), icon: SETTINGS_ICON.to_string(), tag: "settings".to_string() };
+        if !dup(&h, &out) {
+            mid.push((score, h));
+        }
+    }
+    for (n, p) in tasks {
+        let score = search::rank(q, n, "", hist.weight(p, now));
+        if search::tier_of(score) < Tier::WordOrAcronym {
+            continue;
+        }
+        let h = Hit { name: n.clone(), icon: p.clone(), path: p.clone(), tag: "control panel".to_string() };
+        if !dup(&h, &out) {
+            mid.push((score, h));
+        }
+    }
+    mid.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.name.to_lowercase().cmp(&b.1.name.to_lowercase())));
+    let mut taken: Vec<Hit> = Vec::new();
+    for (_, h) in mid {
+        if taken.len() == 4 {
+            break;
+        }
+        if !dup(&h, &taken) {
+            taken.push(h);
+        }
+    }
+    out.extend(taken);
     // Index rows keep their own skip/dedupe/tag rules. A zero score stays —
     // the index matched it with its own tokenizer — but sorts last; the
     // stable sort keeps index order as the tiebreak.
@@ -250,7 +291,7 @@ fn compute(q: &str, apps_ready: bool, rows: &[crate::winsearch::Row]) -> Vec<Hit
             r.kind.to_lowercase()
         };
         let score = search::rank(q, &r.name, "", hist.weight(&r.path, now));
-        scored_rows.push((score, Hit { name: r.name.clone(), path: r.path.clone(), tag }));
+        scored_rows.push((score, Hit { name: r.name.clone(), icon: r.path.clone(), path: r.path.clone(), tag }));
     }
     scored_rows.sort_by_key(|(s, _)| std::cmp::Reverse(*s));
     for (_, h) in scored_rows {
@@ -274,11 +315,81 @@ fn app_subtitle(path: &str) -> String {
         .to_string()
 }
 
-/// Open a .lnk shortcut via the shell (no window focus needed on us) and
-/// record the launch for frecency ranking.
+/// Extra match phrases for well-known apps — what Start Menu finds them by
+/// that their display name doesn't say ("cmd" -> Command Prompt).
+fn app_keywords(name: &str) -> &'static str {
+    for (n, kw) in [
+        ("Command Prompt", "cmd;terminal;console;shell;command line"),
+        ("Windows PowerShell", "terminal;console;shell;ps;pwsh"),
+        ("PowerShell", "terminal;console;shell;ps;pwsh"),
+        ("Terminal", "cmd;console;shell;powershell;wt;command line"),
+        ("File Explorer", "files;folders;explorer"),
+        ("Task Manager", "processes;performance;taskmgr"),
+        ("Settings", "preferences;options;control panel"),
+        ("Control Panel", "settings;control"),
+        ("Calculator", "calc;math"),
+        ("Notepad", "text editor;txt"),
+        ("Snipping Tool", "screenshot;screen capture;snip;print screen"),
+        ("Paint", "draw;mspaint"),
+        ("Registry Editor", "regedit"),
+        ("Microsoft Edge", "browser;web;internet"),
+        ("Photos", "images;pictures;viewer"),
+        ("Media Player", "music;video;player"),
+        ("Clock", "alarm;timer;stopwatch"),
+        ("Camera", "webcam"),
+        ("Remote Desktop Connection", "rdp;mstsc;remote"),
+    ] {
+        if n.eq_ignore_ascii_case(name) {
+            return kw;
+        }
+    }
+    ""
+}
+
+/// Open a hit via the shell (no window focus needed on us) and record the
+/// launch for frecency ranking. `::`/`shell:::` parsing paths (Control Panel
+/// tasks) go through a PIDL — ShellExecuteW can't resolve them — everything
+/// else (shell:AppsFolder\…, ms-settings:, windowsdefender:, files, .lnk)
+/// stays on ShellExecuteW.
 pub fn launch(path: &str) {
     unsafe {
-        let _ = windows::Win32::UI::Shell::ShellExecuteW(windows::Win32::Foundation::HWND(std::ptr::null_mut()), windows::core::w!("open"), &windows::core::HSTRING::from(path), windows::core::PCWSTR::null(), windows::core::PCWSTR::null(), windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL);
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::System::Com::{CoTaskMemFree, IBindCtx};
+        use windows::Win32::UI::Shell::{Common::ITEMIDLIST, ShellExecuteExW, ShellExecuteW, SHParseDisplayName, SEE_MASK_IDLIST, SHELLEXECUTEINFOW};
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        use windows::core::{w, HSTRING, PCWSTR};
+        if path.starts_with("::") || path.starts_with("shell:::") {
+            // Control Panel task paths can't be re-parsed — the catalog kept
+            // their absolute PIDLs; those stay table-owned, a parsed one is freed.
+            let mut parsed: *mut ITEMIDLIST = std::ptr::null_mut();
+            let pidl = {
+                let p = crate::shellcatalog::task_pidl(path);
+                if !p.is_null() {
+                    p
+                } else if SHParseDisplayName(&HSTRING::from(path), None::<&IBindCtx>, &mut parsed, 0, None).is_ok() {
+                    parsed
+                } else {
+                    std::ptr::null_mut()
+                }
+            };
+            if !pidl.is_null() {
+                let verb = w!("open");
+                let mut info = SHELLEXECUTEINFOW {
+                    cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+                    fMask: SEE_MASK_IDLIST,
+                    lpVerb: verb,
+                    lpIDList: pidl as *mut _,
+                    nShow: SW_SHOWNORMAL.0,
+                    ..Default::default()
+                };
+                let _ = ShellExecuteExW(&mut info);
+                if !parsed.is_null() {
+                    CoTaskMemFree(Some(parsed as *const _));
+                }
+            }
+        } else {
+            let _ = ShellExecuteW(HWND(std::ptr::null_mut()), w!("open"), &HSTRING::from(path), PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL);
+        }
     }
     let mut h = history().lock().unwrap();
     h.record(path, now_secs());
@@ -292,10 +403,15 @@ pub fn launch(path: &str) {
 mod tests {
     use super::*;
 
+    /// The worker holds ONE debounce slot — concurrent tests would overwrite
+    /// each other's pending query, so launcher tests run serialized.
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
     /// Typing fast must never block the caller, and only the final text may
     /// reach the index (earlier prefixes are superseded inside the debounce).
     #[test]
     fn hits_never_block_and_debounce_to_the_final_query() {
+        let _guard = TEST_LOCK.lock().unwrap();
         let started = Instant::now();
         for q in ["w", "wi", "win", "wind", "windo", "window"] {
             let t = Instant::now();
@@ -321,5 +437,42 @@ mod tests {
         }
         // Finished rows now merge into the hits for that exact query.
         assert!(hits("window").len() <= 12);
+    }
+
+    /// Live end-to-end: once the worker's shell catalogs and the debounced
+    /// index query have landed, `hits("terminal")` should look like Start —
+    /// the Terminal app, Settings pages, Command Prompt via keyword alias.
+    #[test]
+    fn hits_terminal_end_to_end() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        // Worker warms apps -> settings -> tasks on first use.
+        let _ = hits("warm");
+        let t0 = Instant::now();
+        loop {
+            if crate::shellcatalog::loaded_apps().is_some()
+                && crate::shellcatalog::loaded_settings().is_some()
+                && crate::shellcatalog::loaded_tasks().is_some()
+            {
+                break;
+            }
+            assert!(t0.elapsed() < Duration::from_secs(60), "shell catalogs never landed");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let (lock, _) = shared();
+        let t1 = Instant::now();
+        loop {
+            let _ = hits("terminal");
+            if lock.lock().unwrap().done_q == "terminal" {
+                break;
+            }
+            assert!(t1.elapsed() < Duration::from_secs(15), "index query never finished");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let list = hits("terminal");
+        eprintln!("hits(\"terminal\"): {} hits", list.len());
+        for h in &list {
+            eprintln!("  [{}] {} -> {}", h.tag, h.name, h.path);
+        }
+        assert!(list.iter().any(|h| h.tag == "app"), "no app hits for \"terminal\"");
     }
 }

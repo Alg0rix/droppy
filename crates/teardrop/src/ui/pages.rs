@@ -73,7 +73,7 @@ fn windows_page(c: &mut Ctx, a: Rect) {
                 c.s.rect(row, 9.0, SURFACE_HOVER);
             }
             let tile = Rect::new(row.x + 4.0, row.y + 3.0, 18.0, 18.0);
-            match crate::appicons::icon_for(&h.path) {
+            match crate::appicons::icon_for(&h.icon) {
                 Some(img) => c.s.image(tile, &img),
                 // Letter tile fallback when the shell yields no image.
                 None => {

@@ -30,8 +30,10 @@ unsafe fn inner(q: &str, max: i32) -> windows::core::Result<Vec<Row>> {
     use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_INPROC_SERVER, CLSCTX_LOCAL_SERVER};
     use windows::Win32::System::Search::*;
     unsafe {
-        // SQL for the query text: CONTAINS over name/url + ranking, scoped
-        // to files AND the shell namespace (UWP apps, Control Panel).
+        // SQL for the query text: CONTAINS over name/url + ranking. The
+        // default scope='file:' keeps this to files and Start Menu .lnks —
+        // packaged apps, Settings pages and Control Panel items are NOT in
+        // this catalog; `shellcatalog` covers those.
         // CSearchManager is host-activated (out-of-proc) — no in-proc server.
         let mgr: ISearchManager = CoCreateInstance(&CSearchManager, None, CLSCTX_LOCAL_SERVER)?;
         let qh = mgr.GetCatalog(w!("SystemIndex"))?.GetQueryHelper()?;
