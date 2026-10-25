@@ -1,6 +1,6 @@
-# Teardrop Brand & 2D Mascot Kit
+# Droppy Brand & 2D Mascot Kit
 
-Teardrop's brand files, app icon, logo, and 2D mascot: **Droppy**.
+Droppy's brand files, app icon, logo, and 2D mascot: **Droppy**.
 
 | File | What |
 |---|---|
@@ -13,7 +13,7 @@ Teardrop's brand files, app icon, logo, and 2D mascot: **Droppy**.
 ### Drawing Droppy (The Mascot)
 
 - **Shape**: A smooth, plump liquid teardrop with a soft curved apex and bouncy rounded base.
-- **Face**: Two clean vertical capsule / pill eyes that look around and blink, matching Teardrop's idle feature. No mouth, nose, or unnecessary noise.
+- **Face**: Two clean vertical capsule / pill eyes that look around and blink, matching Droppy's idle feature. No mouth, nose, or unnecessary noise.
 - **Colors**: Vibrant ocean azure (`#0284C7`) with light cyan accent (`#38BDF8`), or pure white when sitting inside the logo tile.
 
 ### Rebuilding Brand Assets

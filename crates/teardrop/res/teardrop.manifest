@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity type="win32" name="Teardrop.App" version="0.1.0.0" processorArchitecture="*"/>
-  <description>Teardrop - a living notch for Windows</description>
+  <assemblyIdentity type="win32" name="Droppy.App" version="0.1.0.0" processorArchitecture="*"/>
+  <description>Droppy - a living notch for Windows</description>
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
       <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>

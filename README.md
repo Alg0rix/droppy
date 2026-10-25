@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/img/teardrop-mascot-512.png" alt="Droppy, the Teardrop mascot" width="150">
+  <img src="docs/img/teardrop-mascot-512.png" alt="Droppy, the mascot" width="150">
 </p>
 
-<h1 align="center">Teardrop</h1>
+<h1 align="center">Droppy</h1>
 
 <p align="center">
   <b>A living notch for Windows 10 and 11.</b><br>
@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Teardrop demo: the island opens, switches pages, closes and shows HUDs" width="720">
+  <img src="docs/demo.gif" alt="Droppy demo: the island opens, switches pages, closes and shows HUDs" width="720">
 </p>
 
 <p align="center">
@@ -24,10 +24,10 @@
 
 ## Meet Droppy
 
-Droppy is Teardrop's mascot: a plump little droplet with two capsule eyes that look around and blink. It's the face of the app icon and logo, and the same eyes live in the island itself when you pick the **Eyes** idle look.
+Droppy is also the name of the app's mascot: a plump little droplet with two capsule eyes that look around and blink. It's the face of the app icon and logo, and the same eyes live in the island itself when you pick the **Eyes** idle look.
 
 <p align="center">
-  <img src="docs/img/teardrop-logo-512.png" alt="Teardrop logo" width="150">
+  <img src="docs/img/teardrop-logo-512.png" alt="Droppy logo" width="150">
   &nbsp;&nbsp;&nbsp;
   <img src="docs/img/teardrop-mascot-512.png" alt="Droppy" width="150">
 </p>
@@ -66,7 +66,7 @@ The card splits into two drop zones and the one under your pointer lights up:
   <img src="docs/img/23-drag-chooser.png" alt="Dragging files over the island: Shelf on the left, Phone Link on the right" width="520">
 </p>
 
-- **Shelf** keeps the file handy inside Teardrop.
+- **Shelf** keeps the file handy inside Droppy.
 - **Phone Link** opens the Windows share window with your files already loaded; pick Phone Link there to send them to your phone. Phone Link shows its own transfer progress. Folders are skipped.
 
 ## Pages
@@ -105,7 +105,7 @@ Scroll the mouse wheel over the header, or use `←` `→`, to switch. Everythin
 
 ### Calendar
 
-Teardrop reads your calendar through an **iCal link**, so there's no sign-in and no account:
+Droppy reads your calendar through an **iCal link**, so there's no sign-in and no account:
 
 1. Copy your calendar's iCal link.
    - **Google Calendar:** Settings → your calendar → *Integrate calendar* → *Secret address in iCal format*.
@@ -115,7 +115,7 @@ Teardrop reads your calendar through an **iCal link**, so there's no sign-in and
 
 You can add several calendars. Recurring events, exceptions, moved instances and time zones (IANA and Windows names) are handled. Feeds refresh every 15 minutes and the last result is cached, so your agenda still shows offline. Join buttons only appear for known meeting sites (Google Meet, Zoom, Teams, Webex, Whereby, GoTo) over https.
 
-Limits: work or school Microsoft 365 calendars often have publishing turned off by the admin, so there's no link to copy. A feed can't tell Teardrop about your RSVP, so declined meetings still appear. The link is a secret: it's stored only in your settings file, never shown or logged, and Teardrop removes it from clipboard history after you paste it.
+Limits: work or school Microsoft 365 calendars often have publishing turned off by the admin, so there's no link to copy. A feed can't tell Droppy about your RSVP, so declined meetings still appear. The link is a secret: it's stored only in your settings file, never shown or logged, and Droppy removes it from clipboard history after you paste it.
 
 ### AI tool usage
 
@@ -129,11 +129,11 @@ The **Usage** page reads data that's already on your PC and only starts when you
 
 Bring your own account or key. Supported: **ChatGPT** (sign in with your subscription), **OpenCode Go**, any **OpenAI-compatible** server (OpenAI, OpenRouter, Groq, LM Studio, vLLM, llama.cpp), **Gemini**, **Claude**, and local **Ollama**. Open the **AI** page and press **Setup**.
 
-- API keys and sign-in tokens are encrypted with Windows DPAPI in `%APPDATA%\Teardrop\ai-secrets.json`, so they only decrypt for your Windows user. They're never shown or logged.
-- **ChatGPT** signs in with the Codex device-code flow, and reuses the tokens already in `~/.codex/auth.json` when it has none or they're newer, so a Codex CLI login counts as a Teardrop login. Tokens refresh in the background before they expire.
-- **Sync models** asks the provider for its live catalog (`/models`) and remembers it in `%APPDATA%\Teardrop\ai-models.json`; the page also syncs on launch, so the picker shows the current model list (today that's `gpt-6.1-sol` first) instead of a bundled fallback. If a sync fails, the footer says why and the last known catalog stays in place.
+- API keys and sign-in tokens are encrypted with Windows DPAPI in `%APPDATA%\Droppy\ai-secrets.json`, so they only decrypt for your Windows user. They're never shown or logged.
+- **ChatGPT** signs in with the Codex device-code flow, and reuses the tokens already in `~/.codex/auth.json` when it has none or they're newer, so a Codex CLI login counts as a Droppy login. Tokens refresh in the background before they expire.
+- **Sync models** asks the provider for its live catalog (`/models`) and remembers it in `%APPDATA%\Droppy\ai-models.json`; the page also syncs on launch, so the picker shows the current model list (today that's `gpt-6.1-sol` first) instead of a bundled fallback. If a sync fails, the footer says why and the last known catalog stays in place.
 - When *Share my day* is on (it's on by default), each message also carries a short summary of your day: upcoming calendar titles and times, open task titles, your latest note titles (never the note bodies), water and focus status, what's playing and basic PC stats. Turn it off to send only what you type. Nothing is sent until you press send.
-- Actions the assistant takes inside Teardrop (add a task, log water, start focus) show up under its reply with an **Undo** button.
+- Actions the assistant takes inside Droppy (add a task, log water, start focus) show up under its reply with an **Undo** button.
 
 ### App eyes
 
@@ -152,7 +152,7 @@ Keys are an executable name or `title:` plus words from a window title; values a
 
 ### Voice recorder
 
-Recording only starts when you press the button. It captures your default microphone, saves a 16-bit WAV to `Music\Teardrop Recordings` and adds it to the Shelf so you can drag it into a chat or a folder. Nothing is uploaded. If Windows denies microphone access, the page says so. Recordings stop on their own after two hours.
+Recording only starts when you press the button. It captures your default microphone, saves a 16-bit WAV to `Music\Droppy Recordings` and adds it to the Shelf so you can drag it into a chat or a folder. Nothing is uploaded. If Windows denies microphone access, the page says so. Recordings stop on their own after two hours.
 
 ### Keyboard
 
@@ -178,7 +178,7 @@ While the island is open and focused:
 
 ## Privacy
 
-Teardrop makes no accounts and sends no telemetry. It only talks to the network for features you use:
+Droppy makes no accounts and sends no telemetry. It only talks to the network for features you use:
 
 | When | What it contacts |
 |---|---|
@@ -192,11 +192,11 @@ Teardrop makes no accounts and sends no telemetry. It only talks to the network 
 
 Clipboard history lives in memory only and skips items that password managers mark as private. The microphone is only used while you're recording. Files you send to Phone Link go through the standard Windows share window.
 
-Your data is in `%APPDATA%\Teardrop\`; cache and log are in `%LOCALAPPDATA%\Teardrop\`. The cache and log are safe to delete any time.
+Your data is in `%APPDATA%\Droppy\`; cache and log are in `%LOCALAPPDATA%\Droppy\`. The cache and log are safe to delete any time.
 
 ## Install
 
-Download **`teardrop-setup-<version>.exe`** from the [Releases](https://github.com/Alg0rix/teardrop/releases) page and double-click it. It installs in a second, per-user (no admin rights, no wizard pages): it puts Teardrop in `%LOCALAPPDATA%\Programs\Teardrop`, adds Start menu and desktop shortcuts, sets it to start with Windows, and launches it. If Teardrop is already running, the installer closes it and updates it in place.
+Download **`droppy-setup-<version>.exe`** from the [Releases](https://github.com/Alg0rix/droppy/releases) page and double-click it. It installs in a second, per-user (no admin rights, no wizard pages): it puts Droppy in `%LOCALAPPDATA%\Programs\Droppy`, adds Start menu and desktop shortcuts, sets it to start with Windows, and launches it. If Droppy is already running, the installer closes it and updates it in place.
 
 There's also a portable `.exe` and zip if you'd rather not install. Builds are unsigned, so Windows SmartScreen warns on first run: choose **More info → Run anyway**.
 
@@ -204,7 +204,7 @@ There's also a portable `.exe` and zip if you'd rather not install. Builds are u
 
 Uninstall from *Settings → Apps*. It removes the app and the cache and log, and keeps your data.
 
-Prefer to build it yourself? See below, or run `tools\package.ps1` for `dist\teardrop.exe`, a portable zip and the installer (it uses [Inno Setup](https://jrsoftware.org/isinfo.php) if installed, otherwise [NSIS](https://nsis.sourceforge.io)).
+Prefer to build it yourself? See below, or run `tools\package.ps1` for `dist\droppy.exe`, a portable zip and the installer (it uses [Inno Setup](https://jrsoftware.org/isinfo.php) if installed, otherwise [NSIS](https://nsis.sourceforge.io)).
 
 ## Build
 
@@ -214,14 +214,14 @@ On Windows with Rust stable and the MSVC toolchain:
 
 ```
 cargo test --workspace
-cargo build -p teardrop --release        # target\release\teardrop.exe
+cargo build -p teardrop --release        # target\release\droppy.exe
 ```
 
 ### Testing without clicking around
 
 ```
-teardrop.exe --selftest dist\selftest    # a PNG of every state + report.json
-teardrop.exe --demo docs                 # re-render demo.gif / demo.mp4 (needs ffmpeg)
+droppy.exe --selftest dist\selftest    # a PNG of every state + report.json
+droppy.exe --demo docs                 # re-render demo.gif / demo.mp4 (needs ffmpeg)
 ```
 
 `--selftest` runs the real renderer headless and exits non-zero if a layout or logic check fails. The screenshots in this README come from it. Environment variables:
@@ -229,7 +229,7 @@ teardrop.exe --demo docs                 # re-render demo.gif / demo.mp4 (needs 
 | Var | Effect |
 |---|---|
 | `TEARDROP_SELFTEST_DPI=144` | Render screenshots at 150% (default 192 = 2x) |
-| `TEARDROP_PERF=1` | Log fps and render time to `teardrop.log` |
+| `TEARDROP_PERF=1` | Log fps and render time to `droppy.log` |
 | `TEARDROP_CPU=1` | Force the CPU renderer |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for threads, the rendering model, page contracts and data files.

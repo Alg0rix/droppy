@@ -6,7 +6,7 @@ license.workspace = true
 build = "build.rs"
 
 [[bin]]
-name = "teardrop"
+name = "droppy"
 path = "src/main.rs"
 
 [dependencies]

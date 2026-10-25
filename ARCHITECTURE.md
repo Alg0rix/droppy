@@ -1,6 +1,6 @@
-# ARCHITECTURE — Teardrop
+# ARCHITECTURE — Droppy
 
-Teardrop is a living notch for Windows 10/11: a small black droplet hangs
+Droppy is a living notch for Windows 10/11: a small black droplet hangs
 from the top of the screen, shows live activities while collapsed, and
 stretches open like a teardrop into quick pages.
 
@@ -64,7 +64,7 @@ Each page is `core` state + a thin Windows sampler:
 
 - Music: SMTC snapshot → `media::Track`; click the seek bar to post a
   `TryChangePlaybackPositionAsync` seek to the media worker; lyrics via LRCLIB
-  cache in `%LOCALAPPDATA%\Teardrop\lyrics\`, `lyrics::line_at` + `line_progress`.
+  cache in `%LOCALAPPDATA%\Droppy\lyrics\`, `lyrics::line_at` + `line_progress`.
 - Focus: `pomodoro::Pomodoro` state machine; island shows countdown.
 - Water: `water::WaterLog` (+250 ml action, week history, `reminder_due`).
 - Shelf: `shelf::Shelf` (drop files → pin, click/drag out).
@@ -141,15 +141,15 @@ headset battery, water reminder with one-click action.
 
 ## Data files
 
-- `%APPDATA%\Teardrop\`: `settings.json`, `water.json`, `tasks.json`,
+- `%APPDATA%\Droppy\`: `settings.json`, `water.json`, `tasks.json`,
   `notes.json`, `shelf.json` — kept on uninstall. AI Chat adds `chats.json`,
   `ai-secrets.json` (DPAPI ciphertext only) and `ai-models.json` (last synced
   model catalog per provider; safe to delete, it re-syncs on launch).
-- `%LOCALAPPDATA%\Teardrop\`: `teardrop.log`, `lyrics\` cache — safe to delete.
+- `%LOCALAPPDATA%\Droppy\`: `droppy.log`, `lyrics\` cache — safe to delete.
 
 ## Testing without clicking around
 
-`teardrop.exe --selftest <dir>` renders ~26 states (collapsed activities, HUDs,
+`droppy.exe --selftest <dir>` renders ~26 states (collapsed activities, HUDs,
 morph frames, every page, hover/empty/toast variants) to PNG through the real
 painter, runs layout + logic checks and writes `report.json`. Non-zero exit on
 failure. (Write to a fresh dir if an image viewer still holds old PNGs open.)
@@ -157,5 +157,5 @@ failure. (Write to a fresh dir if an image viewer still holds old PNGs open.)
 | Var | Effect |
 |---|---|
 | `TEARDROP_SELFTEST_DPI=144` | Render at 150% (default 192 = 2x) |
-| `TEARDROP_PERF=1` | Log fps + render ms to `teardrop.log` |
+| `TEARDROP_PERF=1` | Log fps + render ms to `droppy.log` |
 | `TEARDROP_CPU=1` | Force the CPU renderer |

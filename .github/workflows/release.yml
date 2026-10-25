@@ -27,12 +27,12 @@ jobs:
           $tag = "${{ github.event.release.tag_name }}"
           $ver = $tag.TrimStart('v')
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item target/release/teardrop.exe dist/teardrop.exe
+          Copy-Item target/release/droppy.exe dist/droppy.exe
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$ver" installer/teardrop.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
-          Compress-Archive -Path dist/teardrop.exe, README.md, LICENSE -DestinationPath "dist/teardrop-$tag-portable.zip" -Force
-          Copy-Item dist/teardrop.exe "dist/teardrop-$tag.exe"
-          Get-FileHash "dist/teardrop-setup-$ver.exe", "dist/teardrop-$tag.exe", "dist/teardrop-$tag-portable.zip" -Algorithm SHA256 |
+          Compress-Archive -Path dist/droppy.exe, README.md, LICENSE -DestinationPath "dist/droppy-$tag-portable.zip" -Force
+          Copy-Item dist/droppy.exe "dist/droppy-$tag.exe"
+          Get-FileHash "dist/droppy-setup-$ver.exe", "dist/droppy-$tag.exe", "dist/droppy-$tag-portable.zip" -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Set-Content dist/SHA256SUMS.txt
       - name: Attach to the release
         shell: pwsh
@@ -41,4 +41,4 @@ jobs:
         run: |
           $tag = "${{ github.event.release.tag_name }}"
           $ver = $tag.TrimStart('v')
-          gh release upload $tag "dist/teardrop-setup-$ver.exe" "dist/teardrop-$tag.exe" "dist/teardrop-$tag-portable.zip" dist/SHA256SUMS.txt --clobber
+          gh release upload $tag "dist/droppy-setup-$ver.exe" "dist/droppy-$tag.exe" "dist/droppy-$tag-portable.zip" dist/SHA256SUMS.txt --clobber

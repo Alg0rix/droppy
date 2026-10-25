@@ -190,7 +190,7 @@ pub mod net {
     pub fn https_get(url: &str) -> Option<String> {
         unsafe {
             use windows::Win32::Networking::WinInet::*;
-            let agent: Vec<u16> = "Teardrop/0.1\0".encode_utf16().collect();
+            let agent: Vec<u16> = "Droppy/0.1\0".encode_utf16().collect();
             let hinet = InternetOpenW(
                 PCWSTR::from_raw(agent.as_ptr()),
                 0, // PRECONFIG

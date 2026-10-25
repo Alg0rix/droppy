@@ -1720,7 +1720,7 @@ mod inner {
             nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
             nid.uCallbackMessage = TRAY_MSG;
             nid.hIcon = hicon;
-            let tip = wide("Teardrop");
+            let tip = wide("Droppy");
             nid.szTip[..tip.len().min(127)].copy_from_slice(&tip[..tip.len().min(127)]);
             let _ = Shell_NotifyIconW(NIM_ADD, &nid);
         }
@@ -1737,7 +1737,7 @@ mod inner {
         unsafe {
             let Ok(menu) = CreatePopupMenu() else { return };
             let items: [(usize, &str); 3] =
-                [(ID_TOGGLE, if is_open() { "Collapse island" } else { "Open island" }), (ID_SETTINGS, "Settings"), (ID_QUIT, "Quit Teardrop")];
+                [(ID_TOGGLE, if is_open() { "Collapse island" } else { "Open island" }), (ID_SETTINGS, "Settings"), (ID_QUIT, "Quit Droppy")];
             for (id, label) in items {
                 let l = wide(label);
                 let _ = AppendMenuW(menu, MF_STRING, id, PCWSTR::from_raw(l.as_ptr()));
@@ -2202,7 +2202,7 @@ mod inner {
         VIEW.with(|v| v.borrow_mut().env.app = Some(app));
     }
 
-    /// Note a focus-eyes state change in `teardrop.log`, for "why don't I see it".
+    /// Note a focus-eyes state change in `droppy.log`, for "why don't I see it".
     fn log_focus(state: String) {
         if FOCUS_LOG.with(|l| *l.borrow() == state) {
             return;
@@ -3443,7 +3443,7 @@ mod inner {
             let hwnd = match CreateWindowExW(
                 WINDOW_EX_STYLE(WS_EX_TOPMOST.0 | WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0 | WS_EX_LAYERED.0),
                 cls,
-                w!("Teardrop"),
+                w!("Droppy"),
                 WS_POPUP,
                 0,
                 0,
@@ -3495,6 +3495,6 @@ pub use inner::run;
 
 #[cfg(not(windows))]
 pub fn run() -> i32 {
-    eprintln!("teardrop: the island window runs on Windows 10/11. Try `--selftest <dir>` here.");
+    eprintln!("droppy: the island window runs on Windows 10/11. Try `--selftest <dir>` here.");
     3
 }

@@ -13,6 +13,7 @@ pub mod media;
 pub mod notes;
 pub mod pages;
 pub mod pomodoro;
+pub mod search;
 pub mod settings;
 pub mod shelf;
 pub mod spring;

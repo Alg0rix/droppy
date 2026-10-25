@@ -57,7 +57,11 @@ pub fn take_finished() -> Option<PathBuf> {
 
 pub fn recordings_dir() -> PathBuf {
     let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-    home.join("Music").join("Teardrop Recordings")
+    let music = home.join("Music");
+    let dir = music.join("Droppy Recordings");
+    // Recordings made before the rename live in "Teardrop Recordings".
+    crate::paths::migrate_dir(&music.join("Teardrop Recordings"), &dir);
+    dir
 }
 
 pub fn toggle() {

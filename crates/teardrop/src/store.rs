@@ -23,7 +23,7 @@ pub fn save<T: Serialize>(data_dir: &std::path::Path, name: &str, value: &T) {
 /// Append one line to the log file in the cache dir.
 pub fn log_line(cache_dir: &std::path::Path, msg: &str) {
     use std::io::Write;
-    let p = cache_dir.join("teardrop.log");
+    let p = cache_dir.join("droppy.log");
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
         let _ = writeln!(f, "{}", msg);
     }

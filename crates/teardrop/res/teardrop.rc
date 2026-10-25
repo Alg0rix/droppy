@@ -11,13 +11,13 @@ BEGIN
   BEGIN
     BLOCK "040904B0"
     BEGIN
-      VALUE "CompanyName", "Teardrop\0"
-      VALUE "FileDescription", "Teardrop - a living notch for Windows\0"
+      VALUE "CompanyName", "Droppy\0"
+      VALUE "FileDescription", "Droppy - a living notch for Windows\0"
       VALUE "FileVersion", "0.1.0\0"
-      VALUE "InternalName", "teardrop\0"
-      VALUE "LegalCopyright", "Copyright (C) 2026 Teardrop\0"
-      VALUE "OriginalFilename", "teardrop.exe\0"
-      VALUE "ProductName", "Teardrop\0"
+      VALUE "InternalName", "droppy\0"
+      VALUE "LegalCopyright", "Copyright (C) 2026 Droppy\0"
+      VALUE "OriginalFilename", "droppy.exe\0"
+      VALUE "ProductName", "Droppy\0"
       VALUE "ProductVersion", "0.1.0\0"
     END
   END

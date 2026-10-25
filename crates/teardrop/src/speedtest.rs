@@ -108,7 +108,7 @@ mod net {
 
     fn session() -> Option<Handle> {
         unsafe {
-            let agent = wide("Teardrop/0.1");
+            let agent = wide("Droppy/0.1");
             let h = Handle::new(InternetOpenW(PCWSTR::from_raw(agent.as_ptr()), 0, None, None, 0))?;
             let timeout: u32 = 8000;
             for opt in [2u32, 6, 5] {

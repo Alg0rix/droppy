@@ -150,7 +150,7 @@ impl ViewModel {
             page: Page::Music,
             track: Track {
                 title: "Midnight Droplet".into(),
-                artist: "Teardrop Ensemble".into(),
+                artist: "Droppy Ensemble".into(),
                 album: "Surface Tension".into(),
                 duration_ms: 214_000,
                 position_ms: 63_000,

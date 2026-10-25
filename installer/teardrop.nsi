@@ -1,35 +1,35 @@
-; Teardrop installer (NSIS 3). Per-user install, no admin rights needed.
+; Droppy installer (NSIS 3). Per-user install, no admin rights needed.
 ;
 ; Build:
-;   makensis -DEXE=/abs/path/teardrop.exe -DOUTDIR=/abs/path/dist installer/teardrop.nsi
+;   makensis -DEXE=/abs/path/droppy.exe -DOUTDIR=/abs/path/dist installer/teardrop.nsi
 
 Target amd64-unicode
 SetCompressor /SOLID lzma
 
-!define APPNAME "Teardrop"
+!define APPNAME "Droppy"
 !define VERSION "0.1.0"
-!define PUBLISHER "Teardrop"
-!define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Teardrop"
+!define PUBLISHER "Droppy"
+!define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Droppy"
 !define RUN_KEY "Software\Microsoft\Windows\CurrentVersion\Run"
 
 !ifndef EXE
-  !define EXE "..\target\release\teardrop.exe"
+  !define EXE "..\target\release\droppy.exe"
 !endif
 !ifndef OUTDIR
   !define OUTDIR "..\dist"
 !endif
 
 Name "${APPNAME}"
-OutFile "${OUTDIR}\teardrop-setup-${VERSION}.exe"
+OutFile "${OUTDIR}\droppy-setup-${VERSION}.exe"
 RequestExecutionLevel user
-InstallDir "$LOCALAPPDATA\Programs\Teardrop"
-InstallDirRegKey HKCU "Software\Teardrop" "InstallDir"
+InstallDir "$LOCALAPPDATA\Programs\Droppy"
+InstallDirRegKey HKCU "Software\Droppy" "InstallDir"
 BrandingText "${APPNAME} ${VERSION}"
 
 VIProductVersion "0.1.0.0"
 VIAddVersionKey "ProductName" "${APPNAME}"
 VIAddVersionKey "CompanyName" "${PUBLISHER}"
-VIAddVersionKey "FileDescription" "Teardrop installer"
+VIAddVersionKey "FileDescription" "Droppy installer"
 VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "ProductVersion" "${VERSION}"
 VIAddVersionKey "LegalCopyright" "Copyright (C) 2026 ${PUBLISHER}"
@@ -38,7 +38,7 @@ VIAddVersionKey "LegalCopyright" "Copyright (C) 2026 ${PUBLISHER}"
 !include "LogicLib.nsh"
 !include "WinMessages.nsh"
 
-!macro StopTeardrop
+!macro StopDroppy
   FindWindow $0 "TeardropIsland"
   ${If} $0 <> 0
     SendMessage $0 ${WM_CLOSE} 0 0 /TIMEOUT=2000
@@ -52,7 +52,7 @@ VIAddVersionKey "LegalCopyright" "Copyright (C) 2026 ${PUBLISHER}"
       IntOp $1 $1 + 1
     ${Loop}
   ${EndIf}
-  nsExec::Exec '"$SYSDIR\taskkill.exe" /IM teardrop.exe /F'
+  nsExec::Exec '"$SYSDIR\taskkill.exe" /IM droppy.exe /F'
   Sleep 200
 !macroend
 
@@ -64,10 +64,10 @@ VIAddVersionKey "LegalCopyright" "Copyright (C) 2026 ${PUBLISHER}"
 !define MUI_HEADERIMAGE_BITMAP "art\nsis-header.bmp"
 !define MUI_ABORTWARNING
 !define MUI_COMPONENTSPAGE_SMALLDESC
-!define MUI_FINISHPAGE_RUN "$INSTDIR\teardrop.exe"
-!define MUI_FINISHPAGE_RUN_TEXT "Launch Teardrop now"
-!define MUI_WELCOMEPAGE_TITLE "Welcome to Teardrop"
-!define MUI_WELCOMEPAGE_TEXT "Teardrop puts a living notch at the top of your screen: music with synced lyrics, a focus timer, a file shelf, tasks, clipboard history and more.$\r$\n$\r$\nIt installs just for you and doesn't need administrator rights."
+!define MUI_FINISHPAGE_RUN "$INSTDIR\droppy.exe"
+!define MUI_FINISHPAGE_RUN_TEXT "Launch Droppy now"
+!define MUI_WELCOMEPAGE_TITLE "Welcome to Droppy"
+!define MUI_WELCOMEPAGE_TEXT "Droppy puts a living notch at the top of your screen: music with synced lyrics, a focus timer, a file shelf, tasks, clipboard history and more.$\r$\n$\r$\nIt installs just for you and doesn't need administrator rights."
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_COMPONENTS
@@ -77,19 +77,19 @@ VIAddVersionKey "LegalCopyright" "Copyright (C) 2026 ${PUBLISHER}"
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
 
-Section "Teardrop" SecMain
+Section "Droppy" SecMain
   SectionIn RO
-  !insertmacro StopTeardrop
+  !insertmacro StopDroppy
   SetOutPath "$INSTDIR"
-  File "/oname=teardrop.exe" "${EXE}"
+  File "/oname=droppy.exe" "${EXE}"
   File "..\LICENSE"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
-  CreateShortcut "$SMPROGRAMS\${APPNAME}.lnk" "$INSTDIR\teardrop.exe" "" "$INSTDIR\teardrop.exe" 0
-  WriteRegStr HKCU "Software\Teardrop" "InstallDir" "$INSTDIR"
+  CreateShortcut "$SMPROGRAMS\${APPNAME}.lnk" "$INSTDIR\droppy.exe" "" "$INSTDIR\droppy.exe" 0
+  WriteRegStr HKCU "Software\Droppy" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayName" "${APPNAME}"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKCU "${UNINST_KEY}" "Publisher" "${PUBLISHER}"
-  WriteRegStr HKCU "${UNINST_KEY}" "DisplayIcon" "$INSTDIR\teardrop.exe"
+  WriteRegStr HKCU "${UNINST_KEY}" "DisplayIcon" "$INSTDIR\droppy.exe"
   WriteRegStr HKCU "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "${UNINST_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
   WriteRegStr HKCU "${UNINST_KEY}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
@@ -98,24 +98,24 @@ Section "Teardrop" SecMain
   WriteRegDWORD HKCU "${UNINST_KEY}" "EstimatedSize" 2048
 SectionEnd
 
-Section "Start Teardrop with Windows" SecAutostart
-  WriteRegStr HKCU "${RUN_KEY}" "Teardrop" '"$INSTDIR\teardrop.exe"'
+Section "Start Droppy with Windows" SecAutostart
+  WriteRegStr HKCU "${RUN_KEY}" "Droppy" '"$INSTDIR\droppy.exe"'
 SectionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecMain} "The Teardrop app and a Start Menu shortcut."
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecAutostart} "Open Teardrop automatically when you sign in. You can change this later from its menu."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecMain} "The Droppy app and a Start Menu shortcut."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecAutostart} "Open Droppy automatically when you sign in. You can change this later from its menu."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 Section "Uninstall"
-  !insertmacro StopTeardrop
-  Delete "$INSTDIR\teardrop.exe"
+  !insertmacro StopDroppy
+  Delete "$INSTDIR\droppy.exe"
   Delete "$INSTDIR\LICENSE"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
   Delete "$SMPROGRAMS\${APPNAME}.lnk"
-  DeleteRegValue HKCU "${RUN_KEY}" "Teardrop"
+  DeleteRegValue HKCU "${RUN_KEY}" "Droppy"
   DeleteRegKey HKCU "${UNINST_KEY}"
-  DeleteRegKey HKCU "Software\Teardrop"
-  RMDir /r "$LOCALAPPDATA\Teardrop"
+  DeleteRegKey HKCU "Software\Droppy"
+  RMDir /r "$LOCALAPPDATA\Droppy"
 SectionEnd

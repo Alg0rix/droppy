@@ -12,8 +12,8 @@ python tools/make_brand.py
 
 cargo build -p teardrop --release
 New-Item -ItemType Directory -Force dist | Out-Null
-Copy-Item "target/release/teardrop.exe" "dist/teardrop.exe" -Force
-Compress-Archive -Path "dist/teardrop.exe", "README.md", "LICENSE" -DestinationPath "dist/teardrop-portable.zip" -Force
+Copy-Item "target/release/droppy.exe" "dist/droppy.exe" -Force
+Compress-Archive -Path "dist/droppy.exe", "README.md", "LICENSE" -DestinationPath "dist/droppy-portable.zip" -Force
 
 $version = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
 
@@ -37,7 +37,7 @@ if (-not $iscc) {
 if ($iscc) {
     $exe = if ($iscc -is [string]) { $iscc } else { $iscc.Source }
     & $exe "/DAppVersion=$version" installer/teardrop.iss
-    Write-Host "[OK] dist/teardrop-setup-$version.exe ready (built with Inno Setup)"
+    Write-Host "[OK] dist/droppy-setup-$version.exe ready (built with Inno Setup)"
 } else {
     $nsis = Get-Command makensis -ErrorAction SilentlyContinue
     if (-not $nsis) {
@@ -55,9 +55,9 @@ if ($iscc) {
     if ($nsis) {
         $exe = if ($nsis -is [string]) { $nsis } else { $nsis.Source }
         & $exe "/DVERSION=$version" installer/teardrop.nsi
-        Write-Host "[OK] dist/teardrop-setup-$version.exe ready (built with NSIS)"
+        Write-Host "[OK] dist/droppy-setup-$version.exe ready (built with NSIS)"
     } else {
-        Write-Host "dist/teardrop.exe + dist/teardrop-portable.zip ready (install Inno Setup or NSIS to build the installer)"
+        Write-Host "dist/droppy.exe + dist/droppy-portable.zip ready (install Inno Setup or NSIS to build the installer)"
     }
 }
 

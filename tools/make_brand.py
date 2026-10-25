@@ -1,9 +1,9 @@
-"""Draw Teardrop's brand files: 2D mascot, app icon, logo, and pose art.
+"""Draw Droppy's brand files: 2D mascot, app icon, logo, and pose art.
 
-Branding system tailored for Teardrop:
+Branding system tailored for Droppy:
 - Mascot: "Droppy", a friendly 2D minimalist liquid teardrop character with expressive eyes.
 - Logo: A vibrant azure/cyan squircle tile with the black island hanging from the top
-  edge (playing music with album art and equalizer bars) and the white 2D Teardrop mascot below.
+  edge (playing music with album art and equalizer bars) and the white 2D Droppy mascot below.
 - Poses: 2D mascot with each page's theme (music, focus, water, shelf, tasks, today).
 
 Run: python tools/make_brand.py (needs Pillow)
@@ -154,7 +154,7 @@ def logo_svg(size=1024.0) -> str:
 
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {s:g} {s:g}">\n'
-        f'<title>Teardrop</title>\n'
+        f'<title>Droppy</title>\n'
         f'<defs>\n'
         f'  <clipPath id="tile">\n'
         f'    <rect x="{inset:.1f}" y="{inset:.1f}" width="{tile_size:.1f}" height="{tile_size:.1f}" rx="{tile_r:.1f}"/>\n'
@@ -383,7 +383,7 @@ def generate_poses():
 
 
 def main():
-    print("Generating 2D brand files for Teardrop...")
+    print("Generating 2D brand files for Droppy...")
     BRAND.mkdir(parents=True, exist_ok=True)
     POSES.mkdir(parents=True, exist_ok=True)
     RES.mkdir(parents=True, exist_ok=True)

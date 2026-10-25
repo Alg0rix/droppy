@@ -49,7 +49,7 @@ pub fn get(url: &str, headers: &[(&str, &str)], limit: usize) -> Result<Vec<u8>,
         return Err(0);
     };
     unsafe {
-        let agent: Vec<u16> = concat!("teardrop/", env!("CARGO_PKG_VERSION"), "\0").encode_utf16().collect();
+        let agent: Vec<u16> = concat!("droppy/", env!("CARGO_PKG_VERSION"), "\0").encode_utf16().collect();
         let hinet = InternetOpenW(PCWSTR::from_raw(agent.as_ptr()), 0, None, None, 0);
         if hinet.is_null() {
             return Err(0);
@@ -166,7 +166,7 @@ pub fn post(url: &str, headers: &[(&str, &str)], body: &[u8], limit: usize) -> R
         return Err((0, "Invalid URL".into()));
     };
     unsafe {
-        let agent: Vec<u16> = concat!("teardrop/", env!("CARGO_PKG_VERSION"), "\0").encode_utf16().collect();
+        let agent: Vec<u16> = concat!("droppy/", env!("CARGO_PKG_VERSION"), "\0").encode_utf16().collect();
         let hinet = InternetOpenW(PCWSTR::from_raw(agent.as_ptr()), 0, None, None, 0);
         if hinet.is_null() {
             return Err((0, "WinINet init failed".into()));

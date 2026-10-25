@@ -334,10 +334,7 @@ pub fn decrypt_secret(stored: &str) -> String {
 }
 
 fn appdata_dir() -> PathBuf {
-    let base = std::env::var_os("APPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    let dir = base.join("Teardrop");
+    let dir = crate::paths::data_dir();
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
@@ -857,9 +854,9 @@ pub fn extract_directives(raw: &str) -> (String, Vec<ParsedDirective>) {
 
 pub fn build_system_prompt(day_context: Option<&str>, memories: &[String]) -> String {
     let mut prompt = String::from(
-        "You are Teardrop AI, a concise, friendly desktop companion living inside the Teardrop island at the top of the user's Windows screen.\n\
+        "You are Droppy AI, a concise, friendly desktop companion living inside the Droppy island at the top of the user's Windows screen.\n\
          Keep replies clear, warm, and compact (2-5 sentences or short bullet points) so they fit comfortably in a compact notch card.\n\n\
-         When the user asks you to perform an action in Teardrop, include one or more action tags at the very end of your response:\n\
+         When the user asks you to perform an action in Droppy, include one or more action tags at the very end of your response:\n\
          - Add a task: [ACTION:ADD_TASK:Task title]\n\
          - Complete a task: [ACTION:DONE_TASK:Task title]\n\
          - Delete a task: [ACTION:DEL_TASK:Task title]\n\

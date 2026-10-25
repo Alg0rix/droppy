@@ -1389,7 +1389,7 @@ fn agenda(c: &mut Ctx, r: Rect, items: &[&crate::calendar::Event], acc: Color) {
     let now = vm.now.timestamp();
     if vm.calendar_feeds == 0 {
         c.text("Never miss a meeting", Rect::new(r.x, r.y + 2.0, r.w, 20.0), 13.5, Weight::Semibold, TEXT, Align::Left);
-        for (i, l) in ["Paste an iCal link from Google", "Calendar or Outlook and Teardrop", "alerts you before each meeting."].iter().enumerate() {
+        for (i, l) in ["Paste an iCal link from Google", "Calendar or Outlook and Droppy", "alerts you before each meeting."].iter().enumerate() {
             c.text(*l, Rect::new(r.x, r.y + 26.0 + i as f32 * 15.0, r.w, 15.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
         }
         c.pill(Rect::new(r.x, r.y + 82.0, 150.0, 26.0), Action::CalendarPaste, "Paste calendar link", Some(acc), 11.0);

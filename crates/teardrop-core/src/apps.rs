@@ -349,7 +349,7 @@ const HOSTS: &[&str] = &["applicationframehost", "javaw", "java", "electron", "p
 
 /// Shell and system windows: no theme even if the title has a keyword.
 const NEUTRAL: &[&str] =
-    &["explorer", "searchhost", "searchapp", "startmenuexperiencehost", "shellexperiencehost", "taskmgr", "systemsettings", "lockapp", "teardrop", "control", "mmc", "regedit"];
+    &["explorer", "searchhost", "searchapp", "startmenuexperiencehost", "shellexperiencehost", "taskmgr", "systemsettings", "lockapp", "droppy", "teardrop", "control", "mmc", "regedit"];
 
 /// Category -> executable names. Lowercase, no `.exe`; trailing `64`/`32`
 /// are stripped before a second lookup, so `idea64` finds `idea`.

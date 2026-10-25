@@ -3,7 +3,7 @@
 //! `check()` asks the GitHub API for the latest published release and compares
 //! its tag with this build. `install()` downloads the one-click installer from
 //! that release, verifies it against the release's `SHA256SUMS.txt`, runs it,
-//! then closes Teardrop itself so the installer never has to kill a running
+//! then closes Droppy itself so the installer never has to kill a running
 //! copy before replacing the exe.
 //!
 //! Nothing is downloaded or run without the user clicking "Update", and a
@@ -12,7 +12,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
-pub const REPO: &str = "Alg0rix/teardrop";
+pub const REPO: &str = "Alg0rix/droppy";
 pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -103,7 +103,7 @@ pub fn parse_release(body: &str) -> Option<Release> {
             pred(name).then(|| (name.to_string(), url.to_string()))
         })
     };
-    let (setup_name, setup_url) = find(&|n| n.starts_with("teardrop-setup-") && n.ends_with(".exe"))?;
+    let (setup_name, setup_url) = find(&|n| n.starts_with("droppy-setup-") && n.ends_with(".exe"))?;
     let (_, sums_url) = find(&|n| n.eq_ignore_ascii_case("SHA256SUMS.txt"))?;
     // Only ever fetch from the project's own GitHub release downloads.
     let ok = |u: &str| u.starts_with(&format!("https://github.com/{REPO}/releases/download/"));
@@ -201,7 +201,7 @@ pub fn install() {
             if sha256_hex(&bytes) != want {
                 return None;
             }
-            let dir = std::env::temp_dir().join("teardrop-update");
+            let dir = std::env::temp_dir().join("droppy-update");
             std::fs::create_dir_all(&dir).ok()?;
             let path = dir.join(&release.setup_name);
             std::fs::write(&path, &bytes).ok()?;
@@ -272,13 +272,13 @@ mod tests {
         let base = format!("https://github.com/{REPO}/releases/download/v0.2.0");
         let body = format!(
             r#"{{"tag_name":"v0.2.0","assets":[
-              {{"name":"teardrop-v0.2.0.exe","browser_download_url":"{base}/teardrop-v0.2.0.exe"}},
-              {{"name":"teardrop-setup-0.2.0.exe","browser_download_url":"{base}/teardrop-setup-0.2.0.exe"}},
+              {{"name":"droppy-v0.2.0.exe","browser_download_url":"{base}/droppy-v0.2.0.exe"}},
+              {{"name":"droppy-setup-0.2.0.exe","browser_download_url":"{base}/droppy-setup-0.2.0.exe"}},
               {{"name":"SHA256SUMS.txt","browser_download_url":"{base}/SHA256SUMS.txt"}}]}}"#
         );
         let r = parse_release(&body).unwrap();
         assert_eq!(r.version, "0.2.0");
-        assert_eq!(r.setup_name, "teardrop-setup-0.2.0.exe");
+        assert_eq!(r.setup_name, "droppy-setup-0.2.0.exe");
         // An asset hosted anywhere else is rejected.
         let evil = body.replace("github.com/Alg0rix", "evil.example/Alg0rix");
         assert!(parse_release(&evil).is_none());
@@ -288,8 +288,8 @@ mod tests {
     #[test]
     fn checksum_lookup() {
         let h = "a".repeat(64);
-        let sums = format!("{h}  teardrop-setup-0.2.0.exe\n{}  other.zip\n", "b".repeat(64));
-        assert_eq!(find_sum(&sums, "teardrop-setup-0.2.0.exe"), Some(h));
+        let sums = format!("{h}  droppy-setup-0.2.0.exe\n{}  other.zip\n", "b".repeat(64));
+        assert_eq!(find_sum(&sums, "droppy-setup-0.2.0.exe"), Some(h));
         assert_eq!(find_sum(&sums, "missing.exe"), None);
     }
 }

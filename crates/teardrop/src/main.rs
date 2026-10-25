@@ -1,4 +1,4 @@
-//! Teardrop — a living notch for Windows 10/11.
+//! Droppy — a living notch for Windows 10/11.
 //!
 //! Native Rust, no web view. One black droplet hangs from the top of the
 //! screen: collapsed it shows live activities (music, timer, HUDs); click
@@ -69,7 +69,7 @@ fn main() {
         std::process::exit(demo::run(&args[2]));
     }
     if args.len() >= 2 && (args[1] == "--help" || args[1] == "-h") {
-        println!("teardrop [--selftest <dir>] [--demo <dir>]");
+        println!("droppy [--selftest <dir>] [--demo <dir>]");
         println!("  no args      run the island (Windows 10/11)");
         println!("  --selftest   screenshots of every state + report.json into <dir>");
         println!("  --demo       render demo.gif / demo.mp4 into <dir> (needs ffmpeg)");
@@ -80,11 +80,13 @@ fn main() {
         return;
     }
     let (_data, _cache) = paths::ensure_dirs();
+    // Pre-rename installs started with Windows under the name "Teardrop".
+    startup::migrate_legacy();
     std::process::exit(window::run());
 }
 
 /// One island per session: a named mutex tells a second launch that
-/// Teardrop is already running. The handle is leaked on purpose — the
+/// Droppy is already running. The handle is leaked on purpose — the
 /// mutex must live as long as the process does.
 #[cfg(windows)]
 fn single_instance_guard() -> bool {

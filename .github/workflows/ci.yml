@@ -50,9 +50,9 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=0.0.0" installer/teardrop.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
-          Get-Item dist/teardrop-setup-0.0.0.exe | Select-Object Name, Length
+          Get-Item dist/droppy-setup-0.0.0.exe | Select-Object Name, Length
       - name: Selftest (renders every state headless)
-        run: ./target/release/teardrop.exe --selftest dist/selftest
+        run: ./target/release/droppy.exe --selftest dist/selftest
         continue-on-error: true
       - uses: actions/upload-artifact@v4
         with:
