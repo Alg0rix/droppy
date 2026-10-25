@@ -43,6 +43,7 @@ mod inner {
     use windows::Win32::System::RemoteDesktop::{WTSRegisterSessionNotification, WTSUnRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION};
     use windows::Win32::System::Power::{RegisterPowerSettingNotification, POWERBROADCAST_SETTING};
     use windows::Win32::System::SystemServices::{GUID_VIDEO_CURRENT_MONITOR_BRIGHTNESS, MK_LBUTTON};
+    use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
     use windows::Win32::UI::HiDpi::{GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         keybd_event, RegisterHotKey, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, UnregisterHotKey, KEYBD_EVENT_FLAGS,
@@ -422,6 +423,16 @@ mod inner {
         set_interactive(hwnd, true);
         unsafe {
             let _ = SetForegroundWindow(hwnd);
+            if GetForegroundWindow() != hwnd {
+                let fg_thread = GetWindowThreadProcessId(GetForegroundWindow(), None);
+                let me = GetCurrentThreadId();
+                if fg_thread != 0 && fg_thread != me && AttachThreadInput(me, fg_thread, true).as_bool() {
+                    let _ = BringWindowToTop(hwnd);
+                    let _ = SetForegroundWindow(hwnd);
+                    let _ = SetFocus(hwnd);
+                    let _ = AttachThreadInput(me, fg_thread, false);
+                }
+            }
             let _ = SetFocus(hwnd);
         }
     }
@@ -470,7 +481,10 @@ mod inner {
     /// Open the island on `page` and run `focus` to put the cursor in its
     /// field. Pressing the hotkey again while that field is live closes it.
     fn hotkey_jump(hwnd: HWND, page: Page, focus: impl FnOnce(HWND)) {
-        let live = is_open() && VIEW.with(|v| v.borrow().page) == page && UI.with(|u| u.borrow().input.is_some());
+        let live = is_open()
+            && unsafe { GetForegroundWindow() } == hwnd
+            && VIEW.with(|v| v.borrow().page) == page
+            && UI.with(|u| u.borrow().input.is_some());
         if live {
             close_island(hwnd);
             return;
