@@ -69,9 +69,26 @@ fn music(c: &mut Ctx, a: Rect) {
 
     let left_w = (a.w * 0.48).min(320.0);
 
+    // App badge (colored dot + source app name)
+    let app_name = if has && !t.app.is_empty() {
+        t.app.clone()
+    } else {
+        "Windows Media".to_string()
+    };
+
+    // Top strip: source on the left, position/duration on the right.
+    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, if app_name.to_lowercase().contains("spotify") { Color::rgb(30, 215, 96) } else if has { acc } else { TEXT_3 });
+    let top = if has { format!("NOW PLAYING \u{00b7} {}", app_name.to_uppercase()) } else { "MUSIC".to_string() };
+    c.text(top, Rect::new(a.x + 12.0, a.y, a.w - 130.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    if has {
+        let pos_str = fmt_ms(t.position_ms);
+        let dur_str = fmt_ms(t.duration_ms);
+        c.text(format!("{pos_str} / {dur_str}"), Rect::new(a.right() - 118.0, a.y, 118.0, 15.0), 10.5, Weight::Medium, TEXT_3, Align::Right);
+    }
+
     // Album art
-    let art_size = 92.0;
-    let art = Rect::new(a.x, a.y + 4.0, art_size, art_size);
+    let art_size = 84.0;
+    let art = Rect::new(a.x, a.y + 22.0, art_size, art_size);
     if has {
         let (c1, c2) = art_colors(&t.title);
         c.s.rect(art, 20.0, Fill::DGrad(c1, c2));
@@ -94,7 +111,7 @@ fn music(c: &mut Ctx, a: Rect) {
     let tx = art.right() + 14.0;
     let tw = (a.x + left_w - tx).max(0.0);
     let title = if has { t.title.clone() } else { "Play something".to_string() };
-    c.text(title, Rect::new(tx, a.y + 10.0, tw, 26.0), 18.0, Weight::Semibold, if has { TEXT } else { TEXT_2 }, Align::Left);
+    c.text(title, Rect::new(tx, a.y + 28.0, tw, 24.0), 17.0, Weight::Semibold, if has { TEXT } else { TEXT_2 }, Align::Left);
     let sub = if !has {
         "Nothing playing".to_string()
     } else if t.album.is_empty() {
@@ -102,26 +119,11 @@ fn music(c: &mut Ctx, a: Rect) {
     } else {
         format!("{} \u{00b7} {}", t.display_artist(), t.album)
     };
-    c.text(sub, Rect::new(tx, a.y + 38.0, tw, 20.0), 13.0, Weight::Regular, TEXT_2, Align::Left);
-
-    // App badge (colored dot + source app name)
-    let app_name = if has && !t.app.is_empty() {
-        t.app.clone()
-    } else {
-        "Windows Media".to_string()
-    };
-    let dot_col = if app_name.to_lowercase().contains("spotify") {
-        Color::rgb(30, 215, 96)
-    } else if has {
-        acc
-    } else {
-        TEXT_3
-    };
-    c.s.circle(tx + 4.0, a.y + 68.0, 3.5, dot_col);
-    c.text(app_name, Rect::new(tx + 14.0, a.y + 60.0, tw - 14.0, 16.0), 11.5, Weight::Semibold, TEXT_3, Align::Left);
+    c.text(sub, Rect::new(tx, a.y + 54.0, tw, 18.0), 12.0, Weight::Regular, TEXT_2, Align::Left);
+    c.text(app_name, Rect::new(tx, a.y + 78.0, tw, 16.0), 11.0, Weight::Semibold, TEXT_3, Align::Left);
 
     // Seek bar
-    let sy = a.y + 128.0;
+    let sy = a.y + 126.0;
     let pos_str = fmt_ms(t.position_ms);
     let rem_ms = t.duration_ms.saturating_sub(t.position_ms);
     let rem_str = if has && t.duration_ms > 0 { format!("-{}", fmt_ms(rem_ms)) } else { fmt_ms(t.duration_ms) };
@@ -150,7 +152,7 @@ fn music(c: &mut Ctx, a: Rect) {
 
     // Transport buttons centered in the left column
     let cx = a.x + left_w * 0.5;
-    let cy = a.y + 178.0;
+    let cy = a.y + 172.0;
     c.ghost_icon(Rect::new(cx - 76.0, cy - 20.0, 40.0, 40.0), Action::MediaPrev, Icon::Prev, 19.0, TEXT);
     c.ghost_icon(Rect::new(cx + 36.0, cy - 20.0, 40.0, 40.0), Action::MediaNext, Icon::Next, 19.0, TEXT);
     let pa = Action::MediaPlayPause;
@@ -611,10 +613,11 @@ fn shelf_list(c: &mut Ctx, a: Rect) {
     let vm = c.vm;
     let n = vm.shelf.items.len();
     let sub = if n == 0 { String::new() } else { format!("{n} file{}", if n == 1 { "" } else { "s" }) };
-    c.text("Shelf", Rect::new(a.x, a.y, 120.0, 26.0), 17.0, Weight::Semibold, TEXT, Align::Left);
-    c.text(sub, Rect::new(a.right() - 120.0, a.y, 120.0, 26.0), 12.0, Weight::Regular, TEXT_3, Align::Right);
+    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
+    c.text("SHELF \u{00b7} DRAG FILES HERE", Rect::new(a.x + 12.0, a.y, a.w - 140.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    c.text(sub, Rect::new(a.right() - 120.0, a.y, 120.0, 15.0), 11.0, Weight::Regular, TEXT_3, Align::Right);
 
-    let body = Rect::new(a.x, a.y + 36.0, a.w, a.h - 36.0);
+    let body = Rect::new(a.x, a.y + 22.0, a.w, a.h - 22.0);
     if n == 0 {
         c.s.dashed(body.inset(2.0), 16.0, 1.5, Color::rgba(255, 255, 255, 0.16));
         c.empty_state(body, Icon::Tray, acc, "Drop files on the island", "They stay here until you remove them");
@@ -685,8 +688,12 @@ fn tasks(c: &mut Ctx, a: Rect) {
     let acc = accent(Page::Tasks);
     let vm = c.vm;
 
+    let n = vm.tasks.tasks.len();
+    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
+    c.text(format!("TASKS \u{00b7} {} OPEN", vm.tasks.open_count()), Rect::new(a.x + 12.0, a.y, a.w - 20.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+
     // Add field.
-    let field = Rect::new(a.x, a.y, a.w, 40.0);
+    let field = Rect::new(a.x, a.y + 20.0, a.w, 40.0);
     let typing = c.ui.input.is_some();
     c.s.rect(field, 14.0, if typing { SURFACE_HOVER } else { c.surface_fill(Action::TaskInput) });
     if typing {
@@ -709,10 +716,9 @@ fn tasks(c: &mut Ctx, a: Rect) {
     }
     c.hit_text(field, Action::TaskInput);
 
-    let n = vm.tasks.tasks.len();
-    let list_y = a.y + 50.0;
+    let list_y = a.y + 70.0;
     if n == 0 {
-        c.empty_state(Rect::new(a.x, list_y, a.w, a.h - 50.0), Icon::Check, acc, "All clear", "Add something above, or press A");
+        c.empty_state(Rect::new(a.x, list_y, a.w, a.h - 70.0), Icon::Check, acc, "All clear", "Add something above, or press A");
         return;
     }
     let scroll = c.ui.scroll_of(Page::Tasks).min(tasks_max_scroll(n));
@@ -830,10 +836,13 @@ pub fn note_age(updated: chrono::DateTime<chrono::Utc>, now: chrono::DateTime<ch
 
 fn notes(c: &mut Ctx, a: Rect) {
     let acc = accent(Page::Notes);
+    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
+    c.text(format!("NOTES \u{00b7} {}", c.vm.notes.notes.len()), Rect::new(a.x + 12.0, a.y, 200.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    let b = Rect::new(a.x, a.y + 20.0, a.w, a.h - 20.0);
     if c.ui.input.is_some() {
-        note_editor(c, a, acc);
+        note_editor(c, b, acc);
     } else {
-        note_list(c, a, acc);
+        note_list(c, b, acc);
     }
 }
 
@@ -1096,11 +1105,12 @@ fn clipboard(c: &mut Ctx, a: Rect) {
     let acc = accent(Page::Clipboard);
     let vm = c.vm;
     let items = vm.clipboard.items();
-    c.text("Clipboard", Rect::new(a.x, a.y, 140.0, 26.0), 17.0, Weight::Semibold, TEXT, Align::Left);
+    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
+    c.text("CLIPBOARD", Rect::new(a.x + 12.0, a.y, 200.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
     if !items.is_empty() {
-        c.pill(Rect::new(a.right() - 64.0, a.y + 1.0, 64.0, 24.0), Action::ClipClear, "Clear", None, 11.5);
+        c.pill(Rect::new(a.right() - 60.0, a.y - 4.0, 60.0, 22.0), Action::ClipClear, "Clear", None, 10.5);
     }
-    let body = Rect::new(a.x, a.y + 36.0, a.w, a.h - 36.0);
+    let body = Rect::new(a.x, a.y + 22.0, a.w, a.h - 22.0);
     if !c.set.clipboard_history {
         c.empty_state(body, Icon::Clipboard, acc, "Clipboard history is off", "Turn it on in Settings");
         return;
@@ -1113,7 +1123,7 @@ fn clipboard(c: &mut Ctx, a: Rect) {
     for slot in 0..CLIP_ROWS {
         let idx = scroll + slot;
         let Some(s) = items.get(idx) else { break };
-        let r = Rect::new(a.x, body.y + slot as f32 * 40.0, a.w, 34.0);
+        let r = Rect::new(a.x, body.y + slot as f32 * 36.0, a.w, 32.0);
         let act = Action::ClipCopy(idx as u16);
         let hv = c.hov(act);
         c.s.rect(r, 11.0, if c.pressed(act) { SURFACE_PRESS } else { SURFACE.mix(SURFACE_HOVER, hv) });
@@ -1165,10 +1175,13 @@ fn today(c: &mut Ctx, a: Rect) {
     let now = local_naive(vm.now);
     let date = now.date();
 
+    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
+    c.text(format!("TODAY \u{00b7} {}", date.format("%a %d %b").to_string().to_uppercase()), Rect::new(a.x + 12.0, a.y, 220.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+
     // Month grid (Monday first), shifted by the browsing offset.
     let off_m = c.ui.cal_offset;
     let (shown_y, shown_m) = shown_year_month(date, off_m);
-    let cal = Rect::new(a.x, a.y, 214.0, a.h);
+    let cal = Rect::new(a.x, a.y + 20.0, 214.0, a.h - 20.0);
     let has_filter = off_m != 0 || c.ui.cal_selected_day.is_some() || c.ui.cal_selected_event.is_some();
     let title = NaiveDate::from_ymd_opt(shown_y, shown_m, 1).unwrap().format("%B %Y").to_string();
     let title_r = Rect::new(cal.x, cal.y, cal.w - 56.0, 24.0);
@@ -1413,8 +1426,11 @@ fn speed(c: &mut Ctx, a: Rect) {
     };
     let shown = c.ui.speed_val;
 
+    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, accent(Page::Speed));
+    c.text("SPEEDTEST", Rect::new(a.x + 12.0, a.y, a.w - 40.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+
     // Dial: 270 degrees open at the bottom, log scale with Ookla-style ticks.
-    let (cx, cy, r) = (a.x + 112.0, a.y + 104.0, 84.0);
+    let (cx, cy, r) = (a.x + 104.0, a.y + 112.0, 80.0);
     let (f0, span) = (0.625_f32, 0.75_f32);
     c.s.ring(cx, cy, r, 9.0, f0, f0 + span, Color::rgba(255, 255, 255, 0.08));
     let frac = gauge_frac(shown);
@@ -1478,27 +1494,27 @@ fn speed(c: &mut Ctx, a: Rect) {
         ("UPLOAD", "\u{2191}", UP, SpeedPhase::Up, Some(mbit(sp.up)), "Mbps"),
     ];
     for (i, (label, glyph, col, phase, value, unit)) in rows.iter().enumerate() {
-        let ry = a.y + 2.0 + i as f32 * 52.0;
-        let card = Rect::new(x, ry, w, 46.0);
+        let ry = a.y + 20.0 + i as f32 * 50.0;
+        let card = Rect::new(x, ry, w, 44.0);
         c.s.rect(card, 12.0, SURFACE);
         if live(*phase) {
             c.s.stroke(card, 12.0, 1.5, col.fade(0.7));
         }
         let on = reached(*phase);
-        c.s.circle(card.x + 22.0, card.cy(), 12.0, col.fade(if on { 0.20 } else { 0.08 }));
-        c.text(*glyph, Rect::new(card.x + 10.0, card.cy() - 10.0, 24.0, 20.0), 13.0, Weight::Bold, if on { *col } else { TEXT_3 }, Align::Center);
-        c.text(*label, Rect::new(card.x + 42.0, card.y + 5.0, w - 50.0, 14.0), 9.5, Weight::Semibold, TEXT_3, Align::Left);
+        c.s.circle(card.x + 20.0, card.cy(), 11.0, col.fade(if on { 0.20 } else { 0.08 }));
+        c.text(*glyph, Rect::new(card.x + 9.0, card.cy() - 10.0, 22.0, 20.0), 12.0, Weight::Bold, if on { *col } else { TEXT_3 }, Align::Center);
+        c.text(*label, Rect::new(card.x + 38.0, card.y + 4.0, w - 46.0, 13.0), 9.0, Weight::Semibold, TEXT_3, Align::Left);
         match (on, value) {
             (true, Some(v)) => {
-                c.text(v.clone(), Rect::new(card.x + 42.0, card.y + 19.0, w - 50.0, 24.0), 18.0, Weight::Semibold, TEXT, Align::Left);
-                c.text(*unit, Rect::new(card.x + 46.0 + est_w(v, 18.0) * 1.08, card.y + 25.0, 50.0, 16.0), 11.0, Weight::Regular, TEXT_2, Align::Left);
+                c.text(v.clone(), Rect::new(card.x + 38.0, card.y + 17.0, w - 46.0, 22.0), 16.0, Weight::Semibold, TEXT, Align::Left);
+                c.text(*unit, Rect::new(card.x + 42.0 + est_w(v, 16.0) * 1.08, card.y + 22.0, 50.0, 15.0), 10.0, Weight::Regular, TEXT_2, Align::Left);
             }
-            _ => c.text("\u{2014}", Rect::new(card.x + 42.0, card.y + 19.0, w - 50.0, 24.0), 18.0, Weight::Semibold, TEXT_3, Align::Left),
+            _ => c.text("\u{2014}", Rect::new(card.x + 38.0, card.y + 17.0, w - 46.0, 22.0), 16.0, Weight::Semibold, TEXT_3, Align::Left),
         }
     }
 
     // Start / again.
-    let pr = Rect::new(x, a.bottom() - 34.0, w, 32.0);
+    let pr = Rect::new(x, a.bottom() - 30.0, w, 28.0);
     match sp.phase {
         SpeedPhase::Idle => c.text("Press GO to start", pr, 12.0, Weight::Medium, TEXT_3, Align::Center),
         p if p.running() => c.pill(pr, Action::Island, "Testing\u{2026}", None, 12.5),
@@ -1549,18 +1565,19 @@ fn usage(c: &mut Ctx, a: Rect) {
     let acc = accent(Page::Usage);
     let u = &c.vm.usage;
     let now = chrono::Utc::now().timestamp();
-    c.text("Usage", Rect::new(a.x, a.y, 120.0, 26.0), 17.0, Weight::Semibold, TEXT, Align::Left);
+    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
+    c.text("AI USAGE", Rect::new(a.x + 12.0, a.y, 200.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
     if u.refreshing {
-        c.pill(Rect::new(a.right() - 96.0, a.y + 1.0, 96.0, 24.0), Action::Island, "Updating\u{2026}", None, 11.5);
+        c.pill(Rect::new(a.right() - 88.0, a.y - 4.0, 88.0, 22.0), Action::Island, "Updating\u{2026}", None, 10.5);
     } else {
-        c.pill(Rect::new(a.right() - 96.0, a.y + 1.0, 96.0, 24.0), Action::UsageRefresh, "Refresh", None, 11.5);
+        c.pill(Rect::new(a.right() - 88.0, a.y - 4.0, 88.0, 22.0), Action::UsageRefresh, "Refresh", None, 10.5);
     }
     let w = a.w;
-    limits_card(c, Rect::new(a.x, a.y + 34.0, w, 62.0), "Claude Code", &u.claude, u.loaded, acc, now);
-    limits_card(c, Rect::new(a.x, a.y + 102.0, w, 62.0), "Codex", &u.codex, u.loaded, acc, now);
+    limits_card(c, Rect::new(a.x, a.y + 24.0, w, 58.0), "Claude Code", &u.claude, u.loaded, acc, now);
+    limits_card(c, Rect::new(a.x, a.y + 88.0, w, 58.0), "Codex", &u.codex, u.loaded, acc, now);
 
     // OpenCode: spend from its local database (no plan limits to read).
-    let r = Rect::new(a.x, a.y + 170.0, w, a.h - 170.0);
+    let r = Rect::new(a.x, a.y + 152.0, w, a.h - 152.0);
     c.s.rect(r, 12.0, SURFACE);
     let o = &u.opencode;
     c.text("OpenCode", Rect::new(r.x + 12.0, r.y + 7.0, 120.0, 18.0), 13.0, Weight::Semibold, TEXT, Align::Left);
@@ -1589,13 +1606,16 @@ fn voice(c: &mut Ctx, a: Rect) {
     let rec = v.phase == VoicePhase::Recording;
     let cx = a.cx();
 
-    c.text(crate::voice::clock(v.elapsed_ms), Rect::new(a.x, a.y, a.w, 34.0), 28.0, Weight::Semibold, if rec { TEXT } else { TEXT_3 }, Align::Center);
+    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, if rec { acc } else { TEXT_3 });
+    c.text(if rec { "RECORDING" } else { "VOICE RECORDER" }, Rect::new(a.x + 12.0, a.y, 200.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+
+    c.text(crate::voice::clock(v.elapsed_ms), Rect::new(a.x, a.y + 20.0, a.w, 34.0), 28.0, Weight::Semibold, if rec { TEXT } else { TEXT_3 }, Align::Center);
 
     // Waveform of the last few seconds, mirrored around the middle.
     let n = c.ui.voice_bars.len();
     let (bw, gap) = (5.0, 3.0);
     let x0 = cx - (n as f32 * (bw + gap) - gap) / 2.0;
-    let mid = a.y + 66.0;
+    let mid = a.y + 78.0;
     for (i, b) in c.ui.voice_bars.iter().enumerate() {
         let h = 3.0 + b * 40.0;
         let fade = 0.35 + 0.65 * (i as f32 / n as f32);
@@ -1603,7 +1623,7 @@ fn voice(c: &mut Ctx, a: Rect) {
     }
 
     // Record / stop button.
-    let (by, br) = (a.y + 134.0, 34.0);
+    let (by, br) = (a.y + 132.0, 32.0);
     let act = Action::VoiceToggle;
     let hv = c.hov(act);
     if rec {
@@ -1627,8 +1647,8 @@ fn voice(c: &mut Ctx, a: Rect) {
             None => ("Tap to record from your microphone".to_string(), TEXT_3),
         },
     };
-    c.text(msg, Rect::new(a.x, a.y + 184.0, a.w, 18.0), 12.0, Weight::Medium, col, Align::Center);
-    c.pill(Rect::new(a.right() - 112.0, a.bottom() - 26.0, 112.0, 24.0), Action::VoiceFolder, "Open folder", None, 11.0);
+    c.text(msg, Rect::new(a.x, a.y + 176.0, a.w, 18.0), 12.0, Weight::Medium, col, Align::Center);
+    c.pill(Rect::new(a.right() - 100.0, a.bottom() - 30.0, 100.0, 22.0), Action::VoiceFolder, "Open folder", None, 10.5);
 }
 
 // ----------------------------------------------------------------------- ai
@@ -1673,6 +1693,9 @@ pub fn ai_hist_max_scroll(n: usize) -> usize {
 
 fn ai(c: &mut Ctx, a: Rect) {
     let acc = accent(Page::Ai);
+    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
+    c.text("AI CHAT", Rect::new(a.x + 12.0, a.y, 200.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    let a = Rect::new(a.x, a.y + 20.0, a.w, a.h - 20.0);
     let ai = &c.vm.ai;
     let prov = c.set.ai_provider;
     let model = c.set.active_ai_model();
