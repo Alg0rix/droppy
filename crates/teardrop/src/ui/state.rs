@@ -415,6 +415,17 @@ impl UiState {
             return (236.0, 36.0);
         }
         if vm.focus_visible() {
+            // The ring and countdown share the pill with the music capsule:
+            // ring + art + title/lyric + visualizer + face + mm:ss.
+            if vm.music_active() {
+                if let Some((_, w, h)) = crate::ui::layout::compact_lyric(vm, s) {
+                    return ((w + 100.0).min(720.0), h.max(36.0));
+                }
+                let line = format!("{} \u{2014} {}", vm.track.title, vm.track.display_artist());
+                let tail = if s.idle_look == IdleLook::Eyes { 44.0 + 42.0 } else { 44.0 };
+                let w = 46.0 + crate::ui::layout::est_w(&line, 12.0) * 1.15 + 12.0 + tail + 100.0;
+                return (w.clamp(300.0, 640.0), 36.0);
+            }
             return (176.0, 36.0);
         }
         if vm.music_active() {
@@ -471,7 +482,7 @@ impl UiState {
         } else if vm.voice.phase == crate::voice::VoicePhase::Recording {
             Some(Spot::Rec)
         } else if vm.focus_visible() {
-            Some(Spot::Focus)
+            if vm.music_active() { Some(Spot::FocusMusic) } else { Some(Spot::Focus) }
         } else if vm.music_active() {
             Some(Spot::Music)
         } else {
@@ -503,7 +514,7 @@ impl UiState {
             set: s,
             area: eyes::area(spot.unwrap_or(Spot::Idle), body),
             thinking: vm.ai.busy,
-            focus_left: (spot == Some(Spot::Focus) && vm.focus_running()).then(|| vm.focus_remaining_ms() as f32 / 1000.0),
+            focus_left: (matches!(spot, Some(Spot::Focus | Spot::FocusMusic)) && vm.focus_running()).then(|| vm.focus_remaining_ms() as f32 / 1000.0),
             app: vm.focus_app(s).and_then(|a| a.theme),
             recording: (vm.voice.phase == crate::voice::VoicePhase::Recording).then_some(vm.voice.level.clamp(0.0, 1.0)),
         };
@@ -710,6 +721,21 @@ mod tests {
         assert_eq!(ui.face_spot(&vm, &s, now_ms), None);
         let without = ui.compact_target(&vm, &s, now_ms).0;
         assert!(with > without, "eyes {with} should be wider than plain {without}");
+    }
+
+    #[test]
+    fn focus_plus_music_shares_the_pill() {
+        let now = Utc::now();
+        let mut vm = ViewModel::demo(now); // demo has a track playing
+        let mut s = Settings::default();
+        let ui = UiState::new(Page::Music);
+        let now_ms = now.timestamp_millis() as u64;
+        s.idle_look = IdleLook::Eyes;
+        vm.pomo.start_focus(now);
+        assert_eq!(ui.face_spot(&vm, &s, now_ms), Some(Spot::FocusMusic));
+        assert!(ui.compact_target(&vm, &s, now_ms).0 > 176.0, "wider than the focus-only pill");
+        vm.track.playback = teardrop_core::Playback::Stopped;
+        assert_eq!(ui.face_spot(&vm, &s, now_ms), Some(Spot::Focus));
     }
 
     #[test]

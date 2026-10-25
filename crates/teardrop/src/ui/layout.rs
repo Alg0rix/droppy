@@ -325,6 +325,51 @@ fn collapsed(c: &mut Ctx, r: Rect, a: f32) {
         let left = ev.start - vm.now.timestamp();
         let col = if left <= 120 { AMBER } else { TEXT_2 };
         c.text(crate::calendar::countdown(ev, vm.now.timestamp()), Rect::new(r.right() - 74.0, cy - 10.0, 62.0, 20.0), 12.5, Weight::Semibold, col, Align::Right);
+    } else if vm.focus_visible() && vm.music_active() {
+        // Focus + music share the pill: ring, artwork, title/lyric,
+        // visualizer, face and the countdown.
+        let acc = accent(Page::Focus);
+        let ring = (r.x + 24.0, cy);
+        c.s.ring(ring.0, ring.1, 9.0, 2.6, 0.0, 1.0, Color::rgba(255, 255, 255, 0.16));
+        c.s.ring(ring.0, ring.1, 9.0, 2.6, 0.0, vm.focus_progress().max(0.02), acc);
+        let (c1, c2) = art_colors(&vm.track.title);
+        let art = Rect::new(r.x + 44.0, cy - 11.0, 22.0, 22.0);
+        c.s.rect(art, 6.5, Fill::DGrad(c1, c2));
+        let acc_m = c1.mix(Color::rgb(255, 255, 255), 0.25);
+        let t = mmss(vm.focus_remaining_ms());
+        let col = if vm.focus_running() { TEXT } else { TEXT_2 };
+        c.text(t, Rect::new(r.right() - 74.0, cy - 10.0, 60.0, 20.0), 14.0, Weight::Semibold, col, Align::Right);
+        let eyes = c.set.idle_look == IdleLook::Eyes;
+        let n = 5;
+        let right = if eyes { eyes::place(Spot::FocusMusic, r).0 - 26.0 } else { r.right() - 82.0 };
+        let x0 = right - n as f32 * 5.0;
+        for (i, b) in c.ui.viz.sample(n).iter().enumerate() {
+            let h = 3.0 + b * 15.0;
+            c.s.rect(Rect::new(x0 + i as f32 * 5.0, cy - h / 2.0, 3.0, h), 1.5, acc_m);
+        }
+        if eyes {
+            face(c, r, Spot::FocusMusic, Some(acc_m));
+        }
+        if let Some((sublines, _, _)) = compact_lyric(vm, c.set) {
+            // Same karaoke sweep as the music-only capsule, shifted right to
+            // make room for the focus ring.
+            let frac = teardrop_core::line_progress(&vm.lyric_lines, vm.lyric_idx.unwrap_or(0), vm.track.position_ms);
+            let sweeps = pages::karaoke_subline_progress(&sublines, frac);
+            let block_h = sublines.len() as f32 * LYRIC_LH;
+            let tx = art.right() + 8.0;
+            let tw = ((x0 - 8.0) - tx).max(0.0);
+            let mut ly = cy - block_h / 2.0;
+            c.s.clip(r);
+            for (subline, sub_frac) in sweeps {
+                c.s.text_karaoke(subline.to_string(), Rect::new(tx, ly, tw, LYRIC_LH), LYRIC_SIZE, Weight::Semibold, TEXT_2, TEXT, sub_frac);
+                ly += LYRIC_LH;
+            }
+            c.s.pop_clip();
+        } else {
+            let tr = Rect::new(art.right() + 8.0, cy - 10.0, (x0 - 8.0) - (art.right() + 8.0), 20.0);
+            let line = format!("{} \u{2014} {}", vm.track.title, vm.track.display_artist());
+            marquee(c, tr, &line, 12.0, Weight::Medium, TEXT, c.now_ms);
+        }
     } else if vm.focus_visible() {
         let p = Page::Focus;
         let acc = accent(p);

@@ -44,6 +44,9 @@ pub enum Spot {
     Music,
     /// Replaces the phase label next to the focus ring.
     Focus,
+    /// Focus ring shares the pill with the music capsule: the face sits
+    /// between the visualizer and the countdown.
+    FocusMusic,
     /// Rides at the right end of a level HUD (volume, brightness) and
     /// reacts to the level live.
     Hud,
@@ -57,6 +60,7 @@ pub fn place(spot: Spot, body: Rect) -> (f32, f32, f32) {
         Spot::Idle => (body.cx(), body.cy() + 1.0, 1.0),
         Spot::Music => (body.right() - 31.0, body.cy(), 0.78),
         Spot::Focus => (body.x + 66.0, body.cy(), 0.72),
+        Spot::FocusMusic => (body.right() - 95.0, body.cy(), 0.72),
         Spot::Hud => (body.right() - 26.0, body.cy(), 0.62),
         Spot::Rec => (body.x + 104.0, body.cy(), 0.66),
     }
