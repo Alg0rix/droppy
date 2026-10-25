@@ -271,8 +271,16 @@ mod inner {
         let ok = PRESENTER.with(|p| {
             let mut p = p.borrow_mut();
             if p.is_none() {
-                let cap_w = ((720.0 + 2.0 * ui::theme::PAD + 32.0) * scale).ceil() as i32;
-                let cap_h = ((340.0 + ui::theme::PAD + 40.0) * scale).ceil() as i32;
+                // Size for the largest card (System/Ai are 400 tall); a smaller
+                // cap costs ~100 ms recreating the D3D surface on first open.
+                let (mut max_cw, mut max_ch) = (0.0f32, 0.0f32);
+                for pg in Page::all().iter().chain(std::iter::once(&Page::Settings)) {
+                    let (cw, ch) = UiState::card_target(*pg);
+                    max_cw = max_cw.max(cw);
+                    max_ch = max_ch.max(ch);
+                }
+                let cap_w = ((max_cw + 2.0 * ui::theme::PAD + 32.0) * scale).ceil() as i32;
+                let cap_h = ((max_ch + ui::theme::PAD + 40.0) * scale).ceil() as i32;
                 *p = Presenter::new(cap_w, cap_h);
                 if let Some(pr) = p.as_ref() {
                     let (_d, cache) = paths::ensure_dirs();

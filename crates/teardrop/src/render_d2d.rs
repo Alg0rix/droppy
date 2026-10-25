@@ -20,8 +20,8 @@ pub mod d2d {
         D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F, D2D_SIZE_U,
     };
     use windows::Win32::Graphics::Direct2D::{
-        D2D1CreateFactory, ID2D1Bitmap, ID2D1Brush, ID2D1DCRenderTarget, ID2D1Factory, ID2D1PathGeometry, ID2D1RenderTarget,
-        ID2D1SolidColorBrush, ID2D1StrokeStyle, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+        D2D1CreateFactory, ID2D1Bitmap, ID2D1Brush, ID2D1DCRenderTarget, ID2D1Factory, ID2D1LinearGradientBrush, ID2D1PathGeometry,
+        ID2D1RenderTarget, ID2D1SolidColorBrush, ID2D1StrokeStyle, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
         D2D1_BITMAP_BRUSH_PROPERTIES, D2D1_BITMAP_PROPERTIES, D2D1_BRUSH_PROPERTIES, D2D1_CAP_STYLE_ROUND,
         D2D1_DASH_STYLE_DASH, D2D1_DASH_STYLE_SOLID, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ELLIPSE, D2D1_EXTEND_MODE_CLAMP,
         D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT, D2D1_GAMMA_2_2, D2D1_LINE_JOIN_ROUND,
@@ -30,7 +30,7 @@ pub mod d2d {
         D2D1_STROKE_STYLE_PROPERTIES, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE,
     };
     use windows::Win32::Graphics::DirectWrite::{
-        DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL,
+        DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL,
         DWRITE_FONT_STYLE_ITALIC, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
         DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING,
         DWRITE_TEXT_METRICS, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP,
@@ -61,14 +61,25 @@ pub mod d2d {
         D2D_RECT_F { left: r.x, top: r.y, right: r.x + r.w, bottom: r.y + r.h }
     }
 
+    /// `layouts` key: string + format key + box w/h bits.
+    type LayoutKey = (String, (u32, Weight, u8), u32, u32);
+    /// `grads` key: target pointer + stop-colour bits.
+    type GradKey = (usize, [u32; 4], [u32; 4]);
+
     /// Factories + caches shared by every target.
     pub struct Painter {
         factory: ID2D1Factory,
         dwrite: IDWriteFactory,
         fmts: RefCell<HashMap<(u32, Weight, u8), IDWriteTextFormat>>,
+        /// Shaped text: layouts are device-independent so they survive
+        /// render-target recreation.
+        layouts: RefCell<HashMap<LayoutKey, IDWriteTextLayout>>,
         /// Uploaded bitmaps keyed by (render target, image id): a D2D bitmap is
         /// bound to the target that created it, so both halves of the key matter.
         bitmaps: RefCell<HashMap<(usize, u64), ID2D1Bitmap>>,
+        /// Gradient brushes by target + colours; start/end points are re-set
+        /// per use so one brush serves every bounds/orientation.
+        grads: RefCell<HashMap<GradKey, ID2D1LinearGradientBrush>>,
         round: ID2D1StrokeStyle,
         dashed: ID2D1StrokeStyle,
     }
@@ -92,8 +103,22 @@ pub mod d2d {
                 };
                 let round = mk(D2D1_DASH_STYLE_SOLID).ok()?;
                 let dashed = mk(D2D1_DASH_STYLE_DASH).ok()?;
-                Some(Self { factory, dwrite, fmts: RefCell::new(HashMap::new()), bitmaps: RefCell::new(HashMap::new()), round, dashed })
+                Some(Self {
+                    factory,
+                    dwrite,
+                    fmts: RefCell::new(HashMap::new()),
+                    layouts: RefCell::new(HashMap::new()),
+                    bitmaps: RefCell::new(HashMap::new()),
+                    grads: RefCell::new(HashMap::new()),
+                    round,
+                    dashed,
+                })
             }
+        }
+
+        /// Shared key for the `fmts`/`layouts` caches.
+        fn fmt_key(size: f32, weight: Weight, align: Align, italic: bool, mono: bool) -> (u32, Weight, u8) {
+            ((size * 10.0) as u32, weight, align as u8 | (italic as u8) << 4 | (mono as u8) << 5)
         }
 
         fn format(&self, size: f32, weight: Weight, align: Align) -> Option<IDWriteTextFormat> {
@@ -101,7 +126,7 @@ pub mod d2d {
         }
 
         fn format_styled(&self, size: f32, weight: Weight, align: Align, italic: bool, mono: bool) -> Option<IDWriteTextFormat> {
-            let key = ((size * 10.0) as u32, weight, align as u8 | (italic as u8) << 4 | (mono as u8) << 5);
+            let key = Self::fmt_key(size, weight, align, italic, mono);
             if let Some(f) = self.fmts.borrow().get(&key) {
                 return Some(f.clone());
             }
@@ -143,12 +168,36 @@ pub mod d2d {
         fn text_width(&self, s: &[u16], fmt: &IDWriteTextFormat) -> f32 {
             unsafe {
                 let Ok(layout) = self.dwrite.CreateTextLayout(s, fmt, 4000.0, 200.0) else { return 0.0 };
+                Self::layout_width(&layout)
+            }
+        }
+
+        fn layout_width(layout: &IDWriteTextLayout) -> f32 {
+            unsafe {
                 let mut m = DWRITE_TEXT_METRICS::default();
                 if layout.GetMetrics(&mut m).is_ok() {
                     m.widthIncludingTrailingWhitespace
                 } else {
                     0.0
                 }
+            }
+        }
+
+        /// Shaped layout for a (string, format, box) triple; CreateTextLayout
+        /// was the dominant cost inside Text commands.
+        fn layout(&self, s: &str, wide: &[u16], fmt: &IDWriteTextFormat, key: (u32, Weight, u8), w: f32, h: f32) -> Option<IDWriteTextLayout> {
+            let k: LayoutKey = (s.to_string(), key, w.to_bits(), h.to_bits());
+            if let Some(l) = self.layouts.borrow().get(&k) {
+                return Some(l.clone());
+            }
+            unsafe {
+                let l = self.dwrite.CreateTextLayout(wide, fmt, w.max(1.0), h.max(1.0)).ok()?;
+                let mut map = self.layouts.borrow_mut();
+                if map.len() >= 1024 {
+                    map.clear();
+                }
+                map.insert(k, l.clone());
+                Some(l)
             }
         }
 
@@ -191,14 +240,29 @@ pub mod d2d {
                 Fill::VGrad(a, c) => (a, c, false),
                 Fill::DGrad(a, c) => (a, c, true),
             };
+            let (sp, ep) = if diag {
+                (pt(b.left, b.top), pt(b.right, b.bottom))
+            } else {
+                (pt((b.left + b.right) / 2.0, b.top), pt((b.left + b.right) / 2.0, b.bottom))
+            };
+            let bits = |c: Color| [c.r.to_bits(), c.g.to_bits(), c.b.to_bits(), c.a.to_bits()];
+            let key = (Interface::as_raw(rt) as usize, bits(a), bits(c));
+            // A cached brush just needs its endpoints moved to this bounds;
+            // the stop collection and gamma are identical for these colours.
+            if let Some(br) = self.grads.borrow().get(&key).cloned() {
+                br.SetStartPoint(sp);
+                br.SetEndPoint(ep);
+                return br.cast::<ID2D1Brush>().ok();
+            }
             let stops = [D2D1_GRADIENT_STOP { position: 0.0, color: d2d_color(a) }, D2D1_GRADIENT_STOP { position: 1.0, color: d2d_color(c) }];
             let coll = rt.CreateGradientStopCollection(&stops, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP).ok()?;
-            let props = if diag {
-                D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES { startPoint: pt(b.left, b.top), endPoint: pt(b.right, b.bottom) }
-            } else {
-                D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES { startPoint: pt((b.left + b.right) / 2.0, b.top), endPoint: pt((b.left + b.right) / 2.0, b.bottom) }
-            };
+            let props = D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES { startPoint: sp, endPoint: ep };
             let br = rt.CreateLinearGradientBrush(&props, None, &coll).ok()?;
+            let mut map = self.grads.borrow_mut();
+            if map.len() >= 256 {
+                map.clear();
+            }
+            map.insert(key, br.clone());
             br.cast::<ID2D1Brush>().ok()
         }
 
@@ -319,13 +383,16 @@ pub mod d2d {
                         rt.PopAxisAlignedClip();
                     } else {
                         solid.SetColor(&d2d_color(*color));
-                        rt.DrawText(&wide, &fmt, &rc(*r), solid, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
+                        let Some(layout) = self.layout(s, &wide, &fmt, Self::fmt_key(*size, *weight, *align, false, false), r.w, r.h) else {
+                            return;
+                        };
+                        rt.DrawTextLayout(pt(r.x, r.y), &layout, solid, D2D1_DRAW_TEXT_OPTIONS_NONE);
                         if let Some((frac, lit)) = karaoke {
-                            let tw = self.text_width(&wide, &fmt).min(r.w);
+                            let tw = Self::layout_width(&layout).min(r.w);
                             let clip = D2D_RECT_F { left: r.x, top: r.y, right: r.x + tw * frac, bottom: r.y + r.h };
                             rt.PushAxisAlignedClip(&clip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
                             solid.SetColor(&d2d_color(*lit));
-                            rt.DrawText(&wide, &fmt, &rc(*r), solid, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
+                            rt.DrawTextLayout(pt(r.x, r.y), &layout, solid, D2D1_DRAW_TEXT_OPTIONS_NONE);
                             rt.PopAxisAlignedClip();
                         }
                     }
@@ -544,8 +611,9 @@ pub mod d2d {
             if self.gpu.is_some() {
                 match make_gpu(&self.painter, nw, nh) {
                     Some(g) => {
-                        // Cached bitmaps belong to the old target (and its address may be reused).
+                        // Cached bitmaps/brushes belong to the old target (and its address may be reused).
                         self.painter.bitmaps.borrow_mut().clear();
+                        self.painter.grads.borrow_mut().clear();
                         self.gpu = Some(g);
                     }
                     None => return false,
@@ -582,6 +650,8 @@ pub mod d2d {
                     if g.rt.EndDraw(None, None).is_err() {
                         // Device lost / removed: drop to the CPU path for the rest of the session.
                         self.gpu = None;
+                        self.painter.bitmaps.borrow_mut().clear();
+                        self.painter.grads.borrow_mut().clear();
                         if let Some((dib, old)) = make_dib(self.dc, self.cap.0, self.cap.1) {
                             let _ = DeleteObject(self.dib);
                             self.dib = dib;
