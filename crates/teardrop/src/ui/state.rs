@@ -496,10 +496,13 @@ impl UiState {
         }
     }
 
-    /// Open-card size the island wants for `page` (w, h).
-    fn card_target(page: Page) -> (f32, f32) {
-        let _ = page;
-        (680.0, 318.0)
+    /// Open-card size the island wants for `page` (w, h). Pages drawn as
+    /// blobs get their own size; the rest share the classic card.
+    pub fn card_target(page: Page) -> (f32, f32) {
+        match page {
+            Page::Focus => (400.0, 300.0),
+            _ => (680.0, 318.0),
+        }
     }
 
     /// The collapsed body rect in window-local px (matches `layout::build`).

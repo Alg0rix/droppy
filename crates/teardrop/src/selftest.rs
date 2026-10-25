@@ -646,6 +646,9 @@ pub fn run(dir: &str) -> i32 {
         let mut g = geom;
         g.pill_w = ui.compact_w;
         g.pill_h = ui.compact_h;
+        let (cw, ch) = UiState::card_target(s.page);
+        g.card_w = cw;
+        g.card_h = ch;
         let view = IslandView { geom: g, open: s.open, wobble_px: s.wobble };
         let frame = build(&vm, &set, &ui, &view, now_ms);
         if s.open >= 1.0 {

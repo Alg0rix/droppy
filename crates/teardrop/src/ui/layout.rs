@@ -235,6 +235,58 @@ pub fn content_rect(card_x: f32, geom: &DropletGeom) -> Rect {
     Rect::new(card_x + 22.0, CONTENT_TOP, geom.card_w - 44.0, geom.card_h - CONTENT_TOP - 18.0)
 }
 
+/// Pages drawn as self-contained blobs: no header row, the bottom strip
+/// carries clock + page dots + pin/gear instead of the tab bar.
+pub fn is_blob_page(p: Page) -> bool {
+    p == Page::Focus
+}
+
+/// Content area of a blob page: the whole card minus padding and the nav strip.
+fn blob_content_rect(card_x: f32, geom: &DropletGeom) -> Rect {
+    Rect::new(card_x + 18.0, 14.0, geom.card_w - 36.0, geom.card_h - 14.0 - 44.0)
+}
+
+/// Bottom strip for blob pages: clock left, page dots centre, pin + gear right.
+fn blob_nav(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
+    let y = geom.card_h - 34.0;
+    let local = local_naive(c.vm.now);
+    c.s.text(local.format("%a %d %b  %H:%M").to_string(), Rect::new(card_x + 18.0, y + 2.0, 110.0, 20.0), 11.0, Weight::Medium, TEXT_3, Align::Left);
+
+    // Page dots: the active one stretches into a capsule.
+    let n = Page::all().len();
+    let total = n as f32 * 10.0 + 14.0;
+    let mut x = card_x + (geom.card_w - total) / 2.0;
+    for (i, &p) in Page::all().iter().enumerate() {
+        let amt = c.ui.tab_amt[i];
+        let w = 6.0 + 14.0 * amt;
+        let r = Rect::new(x, y + 6.0, w, 7.0);
+        let a = Action::Tab(p);
+        let h = c.hov(a);
+        c.s.rect(r, 3.5, accent(p).fade(0.18 + 0.7 * amt + 0.12 * h * (1.0 - amt)));
+        c.hit(Rect::new(x - 2.0, y, w + 4.0, 20.0), a);
+        x += w + 4.0;
+    }
+
+    let gr = Rect::new(card_x + geom.card_w - 18.0 - 24.0, y - 3.0, 24.0, 24.0);
+    let on = c.vm.page == Page::Settings;
+    let h = c.hov(Action::Gear);
+    if on || h > 0.01 {
+        c.s.rect(gr, 12.0, accent(Page::Settings).fade(if on { 0.22 } else { 0.35 * h }));
+    }
+    icons::draw(&mut c.s, Icon::Gear, gr.cx(), gr.cy(), 14.0, if on { TEXT } else { TEXT_2.mix(TEXT, h * 0.7) });
+    c.hit(gr, Action::Gear);
+
+    let pr = Rect::new(gr.x - 28.0, y, 22.0, 22.0);
+    let ph = c.hov(Action::Pin);
+    if c.vm.pinned {
+        c.s.rect(pr, 11.0, accent(Page::Focus).fade(0.22));
+    } else if ph > 0.01 {
+        c.s.rect(pr, 11.0, SURFACE_HOVER.fade(ph));
+    }
+    icons::draw(&mut c.s, Icon::Pin, pr.cx(), pr.cy(), 12.0, if c.vm.pinned { accent(Page::Focus) } else { TEXT_2.mix(TEXT, ph * 0.7) });
+    c.hit(pr, Action::Pin);
+}
+
 fn header(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
     // Live clock and date at the far left (e.g. "Sat 24 Oct  13:49").
     let local = local_naive(c.vm.now);
@@ -590,21 +642,25 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
         c.s.clip(Rect::new(body.x + 1.0, 0.0, body.w - 2.0, body.h - 1.0));
         c.s.set_transform(0.0, 0.0, oa);
         c.live = oa > 0.9;
-        header(&mut c, card_x, g);
+        if is_blob_page(vm.page) {
+            blob_nav(&mut c, card_x, g);
+        } else {
+            header(&mut c, card_x, g);
+        }
         c.s.reset_transform();
 
-        let area = content_rect(card_x, g);
+        let area_of = |p: Page| if is_blob_page(p) { blob_content_rect(card_x, g) } else { content_rect(card_x, g) };
         let ease = ui.page_ease();
         let sliding = ui.page_t < 1.0;
         if sliding {
             c.live = false;
             c.s.set_transform(-ui.page_dir * 26.0 * ease, 0.0, oa * (1.0 - ease));
-            pages::draw(&mut c, ui.prev_page, area);
+            pages::draw(&mut c, ui.prev_page, area_of(ui.prev_page));
         }
         c.live = oa > 0.9 && !sliding;
         let (dx, a) = if sliding { (ui.page_dir * 26.0 * (1.0 - ease), oa * ease) } else { (0.0, oa) };
         c.s.set_transform(dx, 0.0, a);
-        pages::draw(&mut c, vm.page, area);
+        pages::draw(&mut c, vm.page, area_of(vm.page));
         c.s.reset_transform();
 
         if let Some((msg, _)) = &ui.toast {
