@@ -413,7 +413,8 @@ impl Node {
 
     fn on_message(&mut self, pkt: Packet) -> (Vec<Op>, Vec<Event>) {
         let Some((id, nick, text)) = public_decode(&pkt.payload) else {
-            return (vec![], vec![]);
+            let head = pkt.payload.iter().take(48).map(|b| format!("{b:02x}")).collect::<String>();
+            return (vec![], vec![Event::Log(format!("mesh: public decode fail {}B {head}", pkt.payload.len()))]);
         };
         // The signature is verified against the sign key from the sender's
         // announce — until that arrives we can't prove authorship, so accept
