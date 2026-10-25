@@ -196,7 +196,8 @@ pub enum Cmd {
     /// centred). The renderer measures each run, so mixed styles never overlap.
     Runs { r: Rect, size: f32, runs: Vec<Run> },
     /// Raster image stretched to `r`; `img` holds premultiplied BGRA pixels.
-    Image { r: Rect, img: std::sync::Arc<Image>, opacity: f32 },
+    /// `radius` > 0 clips it to a rounded rect.
+    Image { r: Rect, radius: f32, img: std::sync::Arc<Image>, opacity: f32 },
     Clip(Rect),
     PopClip,
 }
@@ -345,11 +346,16 @@ impl Scene {
 
     /// Draw `img` (premultiplied BGRA) stretched into `r`.
     pub fn image(&mut self, r: Rect, img: &std::sync::Arc<Image>) {
+        self.image_rounded(r, 0.0, img);
+    }
+
+    /// Draw `img` clipped to a rounded rect (`radius` in px, like [`Scene::rect`]).
+    pub fn image_rounded(&mut self, r: Rect, radius: f32, img: &std::sync::Arc<Image>) {
         if self.alpha <= 0.003 {
             return;
         }
         let r = self.r(r);
-        self.cmds.push(Cmd::Image { r, img: img.clone(), opacity: self.alpha });
+        self.cmds.push(Cmd::Image { r, radius, img: img.clone(), opacity: self.alpha });
     }
 
     pub fn clip(&mut self, r: Rect) {

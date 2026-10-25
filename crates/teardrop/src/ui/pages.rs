@@ -187,10 +187,20 @@ fn music(c: &mut Ctx, a: Rect) {
     let art_size = 84.0;
     let art = Rect::new(a.x, a.y + 22.0, art_size, art_size);
     if has {
-        let (c1, c2) = art_colors(&t.title);
-        c.s.rect(art, 20.0, Fill::DGrad(c1, c2));
-        c.s.rect(Rect::new(art.x, art.y, art.w, art.h * 0.55), 20.0, Fill::VGrad(Color::rgba(255, 255, 255, 0.22), Color::rgba(255, 255, 255, 0.0)));
-        icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy() - 6.0, 36.0, WHITE.fade(0.92));
+        match crate::media_smtc::art_for(t) {
+            Some(img) => {
+                c.s.image_rounded(art, 20.0, &img);
+                // Darken the bottom so the visualizer stays legible over art.
+                let gh = art.h * 0.45;
+                c.s.rect(Rect::new(art.x, art.bottom() - gh, art.w, gh), 20.0, Fill::VGrad(Color::rgba(0, 0, 0, 0.0), Color::rgba(0, 0, 0, 0.35)));
+            }
+            None => {
+                let (c1, c2) = art_colors(&t.title);
+                c.s.rect(art, 20.0, Fill::DGrad(c1, c2));
+                c.s.rect(Rect::new(art.x, art.y, art.w, art.h * 0.55), 20.0, Fill::VGrad(Color::rgba(255, 255, 255, 0.22), Color::rgba(255, 255, 255, 0.0)));
+                icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy() - 6.0, 36.0, WHITE.fade(0.92));
+            }
+        }
         // Visualizer along the bottom of the tile.
         let n = 12;
         let (bw, gap) = (4.0, 2.5);

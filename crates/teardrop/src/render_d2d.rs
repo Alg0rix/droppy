@@ -22,7 +22,7 @@ pub mod d2d {
     use windows::Win32::Graphics::Direct2D::{
         D2D1CreateFactory, ID2D1Bitmap, ID2D1Brush, ID2D1DCRenderTarget, ID2D1Factory, ID2D1PathGeometry, ID2D1RenderTarget,
         ID2D1SolidColorBrush, ID2D1StrokeStyle, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
-        D2D1_BITMAP_PROPERTIES, D2D1_CAP_STYLE_ROUND,
+        D2D1_BITMAP_BRUSH_PROPERTIES, D2D1_BITMAP_PROPERTIES, D2D1_BRUSH_PROPERTIES, D2D1_CAP_STYLE_ROUND,
         D2D1_DASH_STYLE_DASH, D2D1_DASH_STYLE_SOLID, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ELLIPSE, D2D1_EXTEND_MODE_CLAMP,
         D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT, D2D1_GAMMA_2_2, D2D1_LINE_JOIN_ROUND,
         D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT,
@@ -358,7 +358,7 @@ pub mod d2d {
                     }
                     rt.PopAxisAlignedClip();
                 }
-                Cmd::Image { r, img, opacity } => {
+                Cmd::Image { r, radius, img, opacity } => {
                     let key = (Interface::as_raw(rt) as usize, img.id);
                     let cached = self.bitmaps.borrow().get(&key).cloned();
                     let bmp = match cached {
@@ -369,15 +369,40 @@ pub mod d2d {
                                 dpiX: 96.0,
                                 dpiY: 96.0,
                             };
-                            rt.CreateBitmap(D2D_SIZE_U { width: img.w, height: img.h }, Some(img.bgra.as_ptr() as *const _), img.w * 4, &props)
-                                .ok()
-                                .inspect(|b| {
-                                    self.bitmaps.borrow_mut().insert(key, b.clone());
-                                })
+                            let created = rt
+                                .CreateBitmap(D2D_SIZE_U { width: img.w, height: img.h }, Some(img.bgra.as_ptr() as *const _), img.w * 4, &props)
+                                .ok();
+                            if let Some(b) = &created {
+                                let mut map = self.bitmaps.borrow_mut();
+                                // Per-song covers would grow this without a cap.
+                                if map.len() >= 128 {
+                                    map.clear();
+                                }
+                                map.insert(key, b.clone());
+                            }
+                            created
                         }
                     };
                     if let Some(b) = bmp {
-                        rt.DrawBitmap(&b, Some(&rc(*r)), *opacity, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, None);
+                        if *radius <= 0.0 {
+                            rt.DrawBitmap(&b, Some(&rc(*r)), *opacity, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, None);
+                        } else {
+                            // Bitmap brush scaled+translated so the image covers
+                            // r exactly, then the rounded rect masks the corners.
+                            let brush_props = D2D1_BRUSH_PROPERTIES {
+                                opacity: *opacity,
+                                transform: Matrix3x2 { M11: r.w / img.w as f32, M12: 0.0, M21: 0.0, M22: r.h / img.h as f32, M31: r.x, M32: r.y },
+                            };
+                            let bmp_props = D2D1_BITMAP_BRUSH_PROPERTIES {
+                                extendModeX: D2D1_EXTEND_MODE_CLAMP,
+                                extendModeY: D2D1_EXTEND_MODE_CLAMP,
+                                interpolationMode: D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                            };
+                            if let Ok(brush) = rt.CreateBitmapBrush(&b, Some(&bmp_props), Some(&brush_props)) {
+                                let rad = radius.min(r.w / 2.0).min(r.h / 2.0);
+                                rt.FillRoundedRectangle(&D2D1_ROUNDED_RECT { rect: rc(*r), radiusX: rad, radiusY: rad }, &brush);
+                            }
+                        }
                     }
                 }
                 Cmd::Clip(r) => {

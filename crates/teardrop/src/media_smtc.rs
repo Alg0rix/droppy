@@ -95,16 +95,46 @@ pub fn seek_target_ms(duration_ms: u64, permille: u16) -> u64 {
     ((duration_ms as u128 * p) / 1000) as u64
 }
 
+/// Stable identity for the artwork of a title/artist/album triple: covers
+/// are fetched and cached per key so a previous song's image can never show
+/// for the next one.
+pub fn art_key(title: &str, artist: &str, album: &str) -> String {
+    [title, artist, album].join("\u{1}")
+}
+
+/// Cached artwork for `t`, or None while the gradient placeholder draws.
+/// Non-blocking; only returns a cover fetched for this exact track.
+#[cfg(windows)]
+pub fn art_for(t: &Track) -> Option<std::sync::Arc<crate::ui::scene::Image>> {
+    worker::art_for(t)
+}
+
+#[cfg(not(windows))]
+pub fn art_for(_t: &Track) -> Option<std::sync::Arc<crate::ui::scene::Image>> {
+    None
+}
+
 #[cfg(windows)]
 mod worker {
     use super::SmtcSnapshot;
+    use crate::ui::scene::Image;
     use std::sync::mpsc::{RecvTimeoutError, Sender};
-    use std::sync::{Mutex, Once, OnceLock};
+    use std::sync::{Arc, Mutex, Once, OnceLock};
     use std::time::{Duration, Instant};
+    use teardrop_core::Track;
+    use windows::Win32::Graphics::Imaging::{IWICBitmapSource, IWICImagingFactory};
 
     const POLL_EVERY: Duration = Duration::from_secs(2);
+    /// Cover art is decoded square at this size; every surface downscales.
+    const ART_PX: u32 = 256;
+    /// Some players publish the thumbnail a poll or two after the title, so
+    /// a missing cover is retried this many times per track, not forever.
+    const ART_ATTEMPTS: u8 = 5;
 
     static SLOT: Mutex<Option<(SmtcSnapshot, Instant)>> = Mutex::new(None);
+    /// Latest fetched cover: (art key, image, consecutive failures).
+    type ArtSlot = Option<(String, Option<Arc<Image>>, u8)>;
+    static ART: Mutex<ArtSlot> = Mutex::new(None);
     static ONCE: Once = Once::new();
     static SEEK_TX: OnceLock<Sender<u64>> = OnceLock::new();
 
@@ -204,6 +234,90 @@ mod worker {
         changed.unwrap_or(false)
     }
 
+    /// Artwork for `t` — only when the stored cover was fetched for this
+    /// exact title/artist/album key, never a previous song's.
+    pub fn art_for(t: &Track) -> Option<Arc<Image>> {
+        let key = super::art_key(&t.title, &t.artist, &t.album);
+        let g = ART.lock().ok()?;
+        let (k, img, _) = g.as_ref()?;
+        if *k == key {
+            img.clone()
+        } else {
+            None
+        }
+    }
+
+    /// A fetch is due when the track changed or the cover is still missing
+    /// and retries remain.
+    fn art_needed(key: &str) -> bool {
+        let Ok(g) = ART.lock() else { return false };
+        match g.as_ref() {
+            Some((k, img, attempts)) => k != key || (img.is_none() && *attempts < ART_ATTEMPTS),
+            None => true,
+        }
+    }
+
+    fn refresh_art(props: &windows::Media::Control::GlobalSystemMediaTransportControlsSessionMediaProperties, key: &str) {
+        let img = fetch_art(props);
+        if let Ok(mut g) = ART.lock() {
+            let attempts = g.as_ref().map(|(k, _, a)| if k == key { *a } else { 0 }).unwrap_or(0);
+            *g = match img {
+                Some(i) => Some((key.to_string(), Some(Arc::new(i)), 0)),
+                None => Some((key.to_string(), None, attempts + 1)),
+            };
+        }
+    }
+
+    /// SMTC thumbnail stream -> WIC decode -> square premultiplied cover.
+    /// Any failure returns None; the text snapshot is never at risk.
+    fn fetch_art(props: &windows::Media::Control::GlobalSystemMediaTransportControlsSessionMediaProperties) -> Option<Image> {
+        use windows::core::Interface;
+        use windows::Win32::Graphics::Imaging::{CLSID_WICImagingFactory, WICDecodeMetadataCacheOnDemand};
+        use windows::Win32::System::Com::{CoCreateInstance, IStream, CLSCTX_INPROC_SERVER};
+        use windows::Win32::System::WinRT::CreateStreamOverRandomAccessStream;
+        unsafe {
+            let ras = props.Thumbnail().ok()?.OpenReadAsync().ok()?.get().ok()?;
+            let stream: IStream = CreateStreamOverRandomAccessStream(&ras).ok()?;
+            let wic: IWICImagingFactory = CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).ok()?;
+            let frame = wic
+                .CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnDemand)
+                .ok()?
+                .GetFrame(0)
+                .ok()?;
+            square_image(&wic, &frame.cast::<IWICBitmapSource>().ok()?, ART_PX)
+        }
+    }
+
+    /// Center-crop `src` to a square (players publish 16:9 or letterboxed
+    /// thumbnails), scale to `px` (never upscale), premultiplied BGRA out.
+    pub(super) fn square_image(wic: &IWICImagingFactory, src: &IWICBitmapSource, px: u32) -> Option<Image> {
+        use windows::Win32::Graphics::Imaging::{
+            GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, WICBitmapInterpolationModeFant, WICBitmapPaletteTypeCustom, WICRect,
+            IWICPalette,
+        };
+        unsafe {
+            let (mut w, mut h) = (0, 0);
+            src.GetSize(&mut w, &mut h).ok()?;
+            if w == 0 || h == 0 {
+                return None;
+            }
+            let side = w.min(h);
+            let crop = WICRect { X: ((w - side) / 2) as i32, Y: ((h - side) / 2) as i32, Width: side as i32, Height: side as i32 };
+            let clipper = wic.CreateBitmapClipper().ok()?;
+            clipper.Initialize(src, &crop).ok()?;
+            let out = px.min(side);
+            let scaler = wic.CreateBitmapScaler().ok()?;
+            scaler.Initialize(&clipper, out, out, WICBitmapInterpolationModeFant).ok()?;
+            let conv = wic.CreateFormatConverter().ok()?;
+            conv.Initialize(&scaler, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None::<&IWICPalette>, 0.0, WICBitmapPaletteTypeCustom)
+                .ok()?;
+            let stride = out * 4;
+            let mut bgra = vec![0u8; (stride * out) as usize];
+            conv.CopyPixels(&WICRect { X: 0, Y: 0, Width: out as i32, Height: out as i32 }, stride, &mut bgra).ok()?;
+            Some(Image::new(out, out, bgra))
+        }
+    }
+
     fn nudge_published_position(target_ms: u64) {
         if let Ok(mut slot) = SLOT.lock() {
             if let Some((s, _)) = slot.as_mut() {
@@ -239,6 +353,12 @@ mod worker {
         let title = props.Title().ok().map(|h| hstr(&h)).unwrap_or_default();
         let artist = props.Artist().ok().map(|h| hstr(&h)).unwrap_or_default();
         let album = props.AlbumTitle().ok().map(|h| hstr(&h)).unwrap_or_default();
+        // Thumbnails can trail the text properties by a poll or two; retry
+        // while the cover stays missing. Failure never breaks the snapshot.
+        let key = super::art_key(&title, &artist, &album);
+        if !title.is_empty() && art_needed(&key) {
+            refresh_art(&props, &key);
+        }
         let info = session.GetPlaybackInfo().ok();
         let playing = info.as_ref().and_then(|i| i.PlaybackStatus().ok()).map(|st| st.0 == 4).unwrap_or(false);
         let rate = info
@@ -328,6 +448,61 @@ mod tests {
         assert_eq!(friendly_app("Chrome"), "Chrome");
         assert_eq!(friendly_app("Microsoft.MicrosoftEdge_8wekyb3d8bbwe!MicrosoftEdge"), "Edge");
         assert_eq!(friendly_app(""), "Music");
+    }
+
+    #[test]
+    fn art_key_distinguishes_tracks() {
+        assert_eq!(art_key("T", "A", "B"), art_key("T", "A", "B"));
+        assert_ne!(art_key("T", "A", "B"), art_key("T2", "A", "B"));
+        assert_ne!(art_key("T", "A", "B"), art_key("T", "A2", "B"));
+        assert_ne!(art_key("T", "A", "B"), art_key("T", "A", "B2"));
+        // The separator keeps field boundaries: no accidental joins.
+        assert_ne!(art_key("ab", "c", ""), art_key("a", "bc", ""));
+    }
+
+    /// WIC path the fetch uses: a 32x18 source must center-crop to a square
+    /// and never upscale past the source side.
+    #[cfg(windows)]
+    #[test]
+    fn square_image_crops_to_square() {
+        use windows::Win32::Graphics::Imaging::{CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, IWICBitmapSource, IWICImagingFactory};
+        use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED};
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+            let wic: IWICImagingFactory = CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).expect("wic");
+            // Opaque colour, wide aspect like a YouTube thumbnail.
+            let (w, h) = (32u32, 18u32);
+            let mut px = vec![0u8; (w * h * 4) as usize];
+            for p in px.chunks_exact_mut(4) {
+                p.copy_from_slice(&[10, 20, 30, 255]);
+            }
+            let bmp = wic.CreateBitmapFromMemory(w, h, &GUID_WICPixelFormat32bppPBGRA, w * 4, &px).expect("bmp");
+            let src: IWICBitmapSource = windows::core::Interface::cast(&bmp).expect("cast");
+            let img = worker::square_image(&wic, &src, 256).expect("square");
+            assert_eq!(img.w, img.h, "not square");
+            assert_eq!(img.w, 18, "must not upscale past the cropped side");
+            assert_eq!(img.bgra.len() as u32, img.w * img.h * 4);
+        }
+    }
+
+    /// A rounded Image cmd must clip the corners: opaque centre, transparent
+    /// just inside the top-left of the rect.
+    #[cfg(windows)]
+    #[test]
+    fn rounded_image_clips_corners() {
+        use crate::ui::scene::{Image, Rect, Scene};
+        // WIC/D2D factories need COM on this thread (as in appicons tests).
+        unsafe {
+            let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED);
+        }
+        let img = std::sync::Arc::new(Image::new(32, 32, vec![255u8; 32 * 32 * 4]));
+        let mut s = Scene::new();
+        s.image_rounded(Rect::new(0.0, 0.0, 32.0, 32.0), 10.0, &img);
+        let (pw, ph, px) = crate::render_d2d::d2d::render_offscreen(&s, (32.0, 32.0), 1.0).expect("offscreen render");
+        let a = |x: usize, y: usize| px[(y * pw as usize + x) * 4 + 3];
+        assert_eq!((pw, ph), (32, 32));
+        assert!(a(16, 16) > 200, "centre should be opaque, got {}", a(16, 16));
+        assert!(a(1, 1) <= 8, "corner should be clipped, got {}", a(1, 1));
     }
 
     #[test]

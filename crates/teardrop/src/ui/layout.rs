@@ -420,7 +420,10 @@ fn collapsed(c: &mut Ctx, r: Rect, a: f32) {
         c.s.ring(ring.0, ring.1, 9.0, 2.6, 0.0, vm.focus_progress().max(0.02), acc);
         let (c1, c2) = art_colors(&vm.track.title);
         let art = Rect::new(r.x + 44.0, cy - 11.0, 22.0, 22.0);
-        c.s.rect(art, 6.5, Fill::DGrad(c1, c2));
+        match crate::media_smtc::art_for(&vm.track) {
+            Some(img) => c.s.image_rounded(art, 6.5, &img),
+            None => c.s.rect(art, 6.5, Fill::DGrad(c1, c2)),
+        }
         let acc_m = c1.mix(Color::rgb(255, 255, 255), 0.25);
         let t = mmss(vm.focus_remaining_ms());
         let col = if vm.focus_running() { TEXT } else { TEXT_2 };
@@ -478,7 +481,10 @@ fn collapsed(c: &mut Ctx, r: Rect, a: f32) {
     } else if vm.music_active() {
         let (c1, c2) = art_colors(&vm.track.title);
         let art = Rect::new(r.x + 10.0, cy - 11.0, 22.0, 22.0);
-        c.s.rect(art, 6.5, Fill::DGrad(c1, c2));
+        match crate::media_smtc::art_for(&vm.track) {
+            Some(img) => c.s.image_rounded(art, 6.5, &img),
+            None => c.s.rect(art, 6.5, Fill::DGrad(c1, c2)),
+        }
         let acc = c1.mix(Color::rgb(255, 255, 255), 0.25);
         // Visualizer bars always; with Eyes they sit just left of the face.
         let eyes = c.set.idle_look == IdleLook::Eyes;
@@ -617,10 +623,15 @@ fn glance_music(c: &mut Ctx, r: Rect, cy: f32) {
         icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy(), 18.0, TEXT_3);
         c.text("Play something", Rect::new(art.right() + 12.0, cy - 10.0, 220.0, 20.0), 14.0, Weight::Semibold, TEXT_2, Align::Left);
     } else {
-        let (c1, c2) = art_colors(&t.title);
-        c.s.rect(art, 12.0, Fill::DGrad(c1, c2));
-        c.s.rect(Rect::new(art.x, art.y, art.w, art.h * 0.55), 12.0, Fill::VGrad(Color::rgba(255, 255, 255, 0.2), Color::rgba(255, 255, 255, 0.0)));
-        icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy(), 19.0, Color::rgb(255, 255, 255).fade(0.92));
+        match crate::media_smtc::art_for(t) {
+            Some(img) => c.s.image_rounded(art, 12.0, &img),
+            None => {
+                let (c1, c2) = art_colors(&t.title);
+                c.s.rect(art, 12.0, Fill::DGrad(c1, c2));
+                c.s.rect(Rect::new(art.x, art.y, art.w, art.h * 0.55), 12.0, Fill::VGrad(Color::rgba(255, 255, 255, 0.2), Color::rgba(255, 255, 255, 0.0)));
+                icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy(), 19.0, Color::rgb(255, 255, 255).fade(0.92));
+            }
+        }
         let tx = art.right() + 12.0;
         let tw = r.right() - 190.0 - tx;
         c.text(t.title.clone(), Rect::new(tx, cy - 20.0, tw, 18.0), 14.0, Weight::Semibold, TEXT, Align::Left);
