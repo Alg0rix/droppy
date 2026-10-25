@@ -371,9 +371,12 @@ impl Node {
         if PeerId::of_noise_pk(&npk) != pkt.sender {
             return (vec![], vec![Event::Log("mesh: announce id/key mismatch".into())]);
         }
-        let Ok(vk) = VerifyingKey::from_bytes(&spk) else { return (vec![], vec![]) };
-        if !pkt.verify(&vk) {
-            return (vec![], vec![Event::Log("mesh: announce bad signature".into())]);
+        // Real BitChat announces are unsigned; verify only when signed.
+        if pkt.signature.is_some() {
+            let Ok(vk) = VerifyingKey::from_bytes(&spk) else { return (vec![], vec![]) };
+            if !pkt.verify(&vk) {
+                return (vec![], vec![Event::Log("mesh: announce bad signature".into())]);
+            }
         }
         // Sign-key pinning: the first announce wins for this peer id.
         if self.peers.get(&pkt.sender).map(|p| p.sign_pk != spk).unwrap_or(false) {
