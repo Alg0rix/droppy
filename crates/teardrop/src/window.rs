@@ -990,6 +990,7 @@ mod inner {
                         let _ = ShowWindow(h, windows::Win32::UI::WindowsAndMessaging::SW_RESTORE);
                         let _ = SetForegroundWindow(h);
                     }
+                    with_eyes(|e| e.react(React::Peek));
                 }
                 save = false;
             }
@@ -1025,6 +1026,7 @@ mod inner {
             Action::QsVol | Action::QsBright => save = false,
             Action::QsLink(l) => {
                 shell_open(hwnd, "open", l.uri(), None);
+                with_eyes(|e| e.react(React::Salute));
                 save = false;
             }
             Action::QsExpand(sec) => {
@@ -1043,6 +1045,9 @@ mod inner {
                     (false, QsSection::Bt) => crate::radios::scan_bt(false),
                     _ => {}
                 }
+                if opening {
+                    with_eyes(|e| e.react(React::Peek));
+                }
                 save = false;
             }
             Action::QsWifiNet(i) => {
@@ -1051,9 +1056,11 @@ mod inner {
                     if n.connected {
                         crate::radios::disconnect_wifi();
                         toast(&format!("Disconnecting from {}", n.ssid));
+                        with_eyes(|e| e.react(React::Shake));
                     } else if n.has_profile || !n.secured {
                         crate::radios::connect_wifi(&n.ssid, None);
                         toast(&format!("Connecting to {}", n.ssid));
+                        with_eyes(|e| e.react(React::Nod));
                     } else {
                         // Secured with no saved profile: collect the key inline.
                         UI.with(|u| {
@@ -1078,6 +1085,7 @@ mod inner {
             }
             Action::QsWifiConnect => {
                 commit_wifi_pass(hwnd);
+                with_eyes(|e| e.react(React::Perk));
                 save = false;
             }
             Action::QsBtDev(i) => {
@@ -1086,6 +1094,7 @@ mod inner {
                     if !d.paired {
                         crate::radios::pair_bt(&d.id);
                         toast(&format!("Pairing {}", d.name));
+                        with_eyes(|e| e.react(React::Nod));
                     }
                 }
                 save = false;
@@ -1099,6 +1108,7 @@ mod inner {
                     }
                     QsSection::None => crate::radios::nudge(),
                 }
+                with_eyes(|e| e.react(React::Radar));
                 save = false;
             }
             Action::WinSearch => {
@@ -1111,6 +1121,7 @@ mod inner {
                 });
                 crate::launcher::warm();
                 activate(hwnd);
+                with_eyes(|e| e.react(React::Inspect));
                 save = false;
             }
             Action::WinLaunch(i) => {
@@ -1118,6 +1129,7 @@ mod inner {
                 if let Some(h) = hits.get(i as usize) {
                     crate::launcher::launch(&h.path);
                     UI.with(|u| u.borrow_mut().input = None);
+                    with_eyes(|e| e.react(React::Zoom));
                 }
                 save = false;
             }
@@ -1160,6 +1172,7 @@ mod inner {
             }
             Action::UpdateCheck => {
                 crate::update::check();
+                with_eyes(|e| e.react(React::Radar));
                 save = false;
             }
             Action::UpdateInstall => {
@@ -1492,6 +1505,7 @@ mod inner {
                         ui.note_search = None;
                     });
                     activate(hwnd);
+                    with_eyes(|e| e.react(React::Read));
                 }
                 save = false;
             }
@@ -1856,9 +1870,11 @@ mod inner {
             }
             Action::ChatSend => {
                 chat_commit_input();
+                with_eyes(|e| e.react(React::Perk));
                 save = false;
             }
             Action::Quit => unsafe {
+                with_eyes(|e| e.react(React::Goodnight));
                 let _ = DestroyWindow(hwnd);
                 return;
             },
