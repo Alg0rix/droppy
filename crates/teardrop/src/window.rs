@@ -1483,6 +1483,10 @@ mod inner {
                 SETTINGS.with(|s| s.borrow_mut().eye_style = st);
                 with_eyes(|e| e.react(React::Sparkle));
             }
+            Action::IslandTheme(t) => {
+                SETTINGS.with(|s| s.borrow_mut().theme = t);
+                with_eyes(|e| e.react(React::Sparkle));
+            }
             Action::Birthday => {
                 let has_bday = SETTINGS.with(|s| {
                     let mut st = s.borrow_mut();

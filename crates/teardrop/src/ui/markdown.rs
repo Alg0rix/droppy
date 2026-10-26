@@ -10,7 +10,7 @@
 
 use super::layout::est_w;
 use super::scene::{Color, Rect, Run, Scene, Weight, CHIP_PAD};
-use super::theme::{TEXT, TEXT_2, TEXT_3};
+use super::theme::{pal, theme_index};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -357,13 +357,13 @@ pub fn layout(blocks: &[Block], width: f32) -> Laid {
                     _ => (13.0, 19.0),
                 };
                 for line in wrap_spans(spans, width, size) {
-                    items.push(Item::Text { x: 0.0, y, h: lh, size, weight: Weight::Bold, color: TEXT, runs: line });
+                    items.push(Item::Text { x: 0.0, y, h: lh, size, weight: Weight::Bold, color: pal().text, runs: line });
                     y += lh;
                 }
             }
             Block::Para(spans) => {
                 for line in wrap_spans(spans, width, BODY) {
-                    items.push(Item::Text { x: 0.0, y, h: LH, size: BODY, weight: Weight::Regular, color: TEXT, runs: line });
+                    items.push(Item::Text { x: 0.0, y, h: LH, size: BODY, weight: Weight::Regular, color: pal().text, runs: line });
                     y += LH;
                 }
             }
@@ -376,7 +376,7 @@ pub fn layout(blocks: &[Block], width: f32) -> Laid {
                     items.push(Item::Number { x: ind, y, h: LH, label: marker.clone(), size: BODY });
                 }
                 for line in wrap_spans(spans, width - text_x, BODY) {
-                    items.push(Item::Text { x: text_x, y, h: LH, size: BODY, weight: Weight::Regular, color: TEXT, runs: line });
+                    items.push(Item::Text { x: text_x, y, h: LH, size: BODY, weight: Weight::Regular, color: pal().text, runs: line });
                     y += LH;
                 }
             }
@@ -384,7 +384,7 @@ pub fn layout(blocks: &[Block], width: f32) -> Laid {
                 let lines = wrap_spans(spans, width - 14.0, BODY);
                 items.push(Item::QuoteBar { x: 0.0, y: y + 1.0, h: lines.len() as f32 * LH - 2.0 });
                 for line in lines {
-                    items.push(Item::Text { x: 14.0, y, h: LH, size: BODY, weight: Weight::Regular, color: TEXT_2, runs: line });
+                    items.push(Item::Text { x: 14.0, y, h: LH, size: BODY, weight: Weight::Regular, color: pal().text_2, runs: line });
                     y += LH;
                 }
             }
@@ -422,14 +422,15 @@ pub fn layout(blocks: &[Block], width: f32) -> Laid {
 }
 
 thread_local! {
-    static CACHE: RefCell<HashMap<(u64, u32), Rc<Laid>>> = RefCell::new(HashMap::new());
+    static CACHE: RefCell<HashMap<(u64, u32, usize), Rc<Laid>>> = RefCell::new(HashMap::new());
 }
 
 /// Parse + lay out `src` at `width`, memoized: chat redraws every frame.
+/// The active theme is part of the key — item colours are baked at layout.
 pub fn laid(src: &str, width: f32) -> Rc<Laid> {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     src.hash(&mut h);
-    let key = (h.finish(), width.round() as u32);
+    let key = (h.finish(), width.round() as u32, theme_index());
     CACHE.with(|c| {
         let mut c = c.borrow_mut();
         if let Some(l) = c.get(&key) {
@@ -453,9 +454,9 @@ fn runs_of(runs: &[(String, Style)], base: Color, weight: Weight, acc: Color) ->
             weight: if st.bold { Weight::Bold } else { weight },
             italic: st.italic,
             mono: st.code,
-            color: if st.link { acc } else if st.code { TEXT } else { base },
+            color: if st.link { acc } else if st.code { pal().text } else { base },
             underline: st.link,
-            chip: st.code.then(|| Color::rgba(255, 255, 255, 0.11)),
+            chip: st.code.then(|| pal().ink(0.11)),
         })
         .collect()
 }
@@ -476,9 +477,9 @@ impl Laid {
                 Item::CodeBox { y: iy, h, lang } => {
                     let r = Rect::new(x, y + iy, w, *h);
                     s.rect(r, 9.0, Color::rgba(0, 0, 0, 0.34));
-                    s.stroke(r, 9.0, 1.0, Color::rgba(255, 255, 255, 0.07));
+                    s.stroke(r, 9.0, 1.0, pal().ink(0.07));
                     if !lang.is_empty() {
-                        s.text(lang.clone(), Rect::new(r.x + 10.0, r.y + 3.0, r.w - 20.0, 13.0), 9.0, Weight::Semibold, TEXT_3, super::scene::Align::Right);
+                        s.text(lang.clone(), Rect::new(r.x + 10.0, r.y + 3.0, r.w - 20.0, 13.0), 9.0, Weight::Semibold, pal().text_3, super::scene::Align::Right);
                     }
                 }
                 Item::CodeLine { x: ix, y: iy, h, text } => {
@@ -488,7 +489,7 @@ impl Laid {
                         vec![Run { text: text.clone(), weight: Weight::Regular, italic: false, mono: true, color: Color::rgba(255, 255, 255, 0.86), underline: false, chip: None }],
                     );
                 }
-                Item::Rule { y: iy } => s.line(x, y + iy, x + w, y + iy, 1.0, Color::rgba(255, 255, 255, 0.12)),
+                Item::Rule { y: iy } => s.line(x, y + iy, x + w, y + iy, 1.0, pal().ink(0.12)),
             }
         }
     }

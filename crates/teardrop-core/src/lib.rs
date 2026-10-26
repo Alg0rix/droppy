@@ -32,7 +32,7 @@ pub use media::{Playback, Track};
 pub use notes::{format_note_date, fuzzy_score, preview_of, title_of, Note, NoteDateFilter, NoteList};
 pub use pages::Page;
 pub use pomodoro::{Phase, Pomodoro};
-pub use settings::{AiProvider, EyeStyle, IdleLook, Settings};
+pub use settings::{AiProvider, EyeStyle, IdleLook, IslandTheme, Settings};
 pub use shelf::{Shelf, ShelfItem};
 pub use spring::Spring;
 pub use system::SystemSnapshot;

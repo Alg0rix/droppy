@@ -8,7 +8,7 @@ use super::textedit::TextField;
 use super::theme::*;
 use crate::viewmodel::{local_naive, mmss, one_line, SpeedPhase};
 use chrono::{Datelike, NaiveDate};
-use teardrop_core::{apps, format_note_date, AiProvider, AppCategory, EyeStyle, IdleLook, NoteDateFilter, Page, Phase, Playback};
+use teardrop_core::{apps, format_note_date, AiProvider, AppCategory, EyeStyle, IdleLook, IslandTheme, NoteDateFilter, Page, Phase, Playback};
 
 pub fn draw(c: &mut Ctx, page: Page, a: Rect) {
     match page {
@@ -36,25 +36,25 @@ fn windows_page(c: &mut Ctx, a: Rect) {
     let acc = accent(Page::Windows);
     let n = c.vm.windows.len();
     c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
-    c.text("ON THE DESKTOP", Rect::new(a.x + 12.0, a.y, a.w - 130.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
-    c.text(format!("{n} windows"), Rect::new(a.right() - 118.0, a.y, 118.0, 15.0), 10.5, Weight::Medium, TEXT_3, Align::Right);
+    c.text("ON THE DESKTOP", Rect::new(a.x + 12.0, a.y, a.w - 130.0, 15.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
+    c.text(format!("{n} windows"), Rect::new(a.right() - 118.0, a.y, 118.0, 15.0), 10.5, Weight::Medium, pal().text_3, Align::Right);
     // Launcher field: type to search apps + windows, Enter launches the top hit.
     let field = Rect::new(a.x + 8.0, a.y + 20.0, a.w - 16.0, 28.0);
-    c.s.rect(field, 14.0, SURFACE);
+    c.s.rect(field, 14.0, pal().surface);
     let q = c.ui.input.as_ref().map(|f| f.as_str().to_string()).unwrap_or_default();
     match &c.ui.input {
         Some(f) if !f.is_empty() => {
             let ed = field_edit(c, f, acc);
-            c.s.text_edit(f.as_str().to_string(), Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 12.0, Weight::Medium, TEXT, ed);
+            c.s.text_edit(f.as_str().to_string(), Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 12.0, Weight::Medium, pal().text, ed);
         }
         Some(_) => {
-            c.text("Search apps, files, and windows…", Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 11.5, Weight::Regular, TEXT_3, Align::Left);
+            c.text("Search apps, files, and windows…", Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 11.5, Weight::Regular, pal().text_3, Align::Left);
             if (c.ui.clock_s * 1.8) % 2.0 < 1.0 {
                 c.s.line(field.x + 12.0, field.y + 6.0, field.x + 12.0, field.y + field.h - 6.0, 1.5, acc);
             }
         }
         None => {
-            c.text("Search apps, files, and windows…", Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 11.5, Weight::Regular, TEXT_3, Align::Left);
+            c.text("Search apps, files, and windows…", Rect::new(field.x + 12.0, field.y, field.w - 16.0, field.h), 11.5, Weight::Regular, pal().text_3, Align::Left);
         }
     }
     c.hit(field, Action::WinSearch);
@@ -71,7 +71,7 @@ fn windows_page(c: &mut Ctx, a: Rect) {
             if c.ui.input.is_some() && i == sel {
                 c.s.rect(row, 9.0, acc.fade(0.22));
             } else if c.hov(Action::WinLaunch(i as u16)) > 0.01 {
-                c.s.rect(row, 9.0, SURFACE_HOVER);
+                c.s.rect(row, 9.0, pal().surface_hover);
             }
             let tile = Rect::new(row.x + 4.0, row.y + 3.0, 18.0, 18.0);
             match crate::appicons::icon_for(&h.icon) {
@@ -80,11 +80,11 @@ fn windows_page(c: &mut Ctx, a: Rect) {
                 None => {
                     c.s.rect(tile, 5.0, acc.fade(0.35));
                     let initial = h.name.chars().next().unwrap_or('?').to_uppercase().collect::<String>();
-                    c.text(initial, tile, 10.5, Weight::Semibold, TEXT, Align::Center);
+                    c.text(initial, tile, 10.5, Weight::Semibold, pal().text, Align::Center);
                 }
             }
-            c.text(h.name.clone(), Rect::new(row.x + 30.0, row.y + 3.0, row.w - 120.0, 17.0), 11.5, Weight::Medium, TEXT, Align::Left);
-            c.text(h.tag.clone(), Rect::new(row.right() - 84.0, row.y + 4.0, 80.0, 15.0), 9.5, Weight::Medium, TEXT_3, Align::Right);
+            c.text(h.name.clone(), Rect::new(row.x + 30.0, row.y + 3.0, row.w - 120.0, 17.0), 11.5, Weight::Medium, pal().text, Align::Left);
+            c.text(h.tag.clone(), Rect::new(row.right() - 84.0, row.y + 4.0, 80.0, 15.0), 9.5, Weight::Medium, pal().text_3, Align::Right);
             c.hit(row, Action::WinLaunch(i as u16));
             y += 25.0;
         }
@@ -111,18 +111,18 @@ fn windows_page(c: &mut Ctx, a: Rect) {
                 Some(img) => c.s.image(tile, &img),
                 None => c.s.rect(tile, 5.0, acc.fade(0.2)),
             }
-            c.text(w.app.clone(), Rect::new(a.x + 30.0, y, a.w - 130.0, 22.0), 12.5, Weight::Semibold, TEXT, Align::Left);
-            c.text(if n == 1 { "1 window".to_string() } else { format!("{} windows", n) }, Rect::new(a.right() - 120.0, y + 4.0, 112.0, 15.0), 10.0, Weight::Medium, TEXT_3, Align::Right);
+            c.text(w.app.clone(), Rect::new(a.x + 30.0, y, a.w - 130.0, 22.0), 12.5, Weight::Semibold, pal().text, Align::Left);
+            c.text(if n == 1 { "1 window".to_string() } else { format!("{} windows", n) }, Rect::new(a.right() - 120.0, y + 4.0, 112.0, 15.0), 10.0, Weight::Medium, pal().text_3, Align::Right);
             y += 24.0;
             // The app's audio session becomes a slim mixer under its header.
             if let Some(si) = c.vm.audio.iter().position(|s| s.exe == w.exe) {
                 let s = &c.vm.audio[si];
-                icons::draw(&mut c.s, Icon::Speaker, a.x + 32.0, y + 10.0, 12.0, TEXT_3);
+                icons::draw(&mut c.s, Icon::Speaker, a.x + 32.0, y + 10.0, 12.0, pal().text_3);
                 let track = Rect::new(a.x + 48.0, y + 6.0, a.w - 160.0, 8.0);
-                c.s.rect(track, 4.0, SURFACE_HOVER);
+                c.s.rect(track, 4.0, pal().surface_hover);
                 let fill = (track.w * s.volume).max(4.0);
-                c.s.rect(Rect::new(track.x, track.y, fill, track.h), 4.0, if s.muted { TEXT_3 } else { acc });
-                c.text(if s.muted { "muted".to_string() } else { format!("{:.0}%", s.volume * 100.0) }, Rect::new(a.right() - 104.0, y + 2.0, 96.0, 15.0), 10.5, Weight::Medium, TEXT_3, Align::Right);
+                c.s.rect(Rect::new(track.x, track.y, fill, track.h), 4.0, if s.muted { pal().text_3 } else { acc });
+                c.text(if s.muted { "muted".to_string() } else { format!("{:.0}%", s.volume * 100.0) }, Rect::new(a.right() - 104.0, y + 2.0, 96.0, 15.0), 10.5, Weight::Medium, pal().text_3, Align::Right);
                 c.hit(Rect::new(track.x - 4.0, track.y - 5.0, track.w + 8.0, track.h + 10.0), Action::MixerVol(si as u16));
                 y += 20.0;
             }
@@ -130,9 +130,9 @@ fn windows_page(c: &mut Ctx, a: Rect) {
         if y > a.bottom() - 26.0 { break; }
         let row = Rect::new(a.x + 34.0, y, a.w - 42.0, row_h - 4.0);
         if c.hov(Action::WinActivate(*orig as u16)) > 0.01 {
-            c.s.rect(row, 9.0, SURFACE_HOVER);
+            c.s.rect(row, 9.0, pal().surface_hover);
         }
-        c.text(w.title.clone(), Rect::new(row.x + 10.0, row.y + 3.0, row.w - 16.0, 16.0), 11.5, Weight::Regular, TEXT_2, Align::Left);
+        c.text(w.title.clone(), Rect::new(row.x + 10.0, row.y + 3.0, row.w - 16.0, 16.0), 11.5, Weight::Regular, pal().text_2, Align::Left);
         c.hit(row, Action::WinActivate(*orig as u16));
         y += row_h;
     }
@@ -175,13 +175,13 @@ fn music(c: &mut Ctx, a: Rect) {
     };
 
     // Top strip: source on the left, position/duration on the right.
-    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, if app_name.to_lowercase().contains("spotify") { Color::rgb(30, 215, 96) } else if has { acc } else { TEXT_3 });
+    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, if app_name.to_lowercase().contains("spotify") { Color::rgb(30, 215, 96) } else if has { acc } else { pal().text_3 });
     let top = if has { format!("NOW PLAYING \u{00b7} {}", app_name.to_uppercase()) } else { "MUSIC".to_string() };
-    c.text(top, Rect::new(a.x + 12.0, a.y, a.w - 130.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    c.text(top, Rect::new(a.x + 12.0, a.y, a.w - 130.0, 15.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
     if has {
         let pos_str = fmt_ms(t.position_ms);
         let dur_str = fmt_ms(t.duration_ms);
-        c.text(format!("{pos_str} / {dur_str}"), Rect::new(a.right() - 118.0, a.y, 118.0, 15.0), 10.5, Weight::Medium, TEXT_3, Align::Right);
+        c.text(format!("{pos_str} / {dur_str}"), Rect::new(a.right() - 118.0, a.y, 118.0, 15.0), 10.5, Weight::Medium, pal().text_3, Align::Right);
     }
 
     // Album art
@@ -198,7 +198,7 @@ fn music(c: &mut Ctx, a: Rect) {
             None => {
                 let (c1, c2) = art_colors(&t.title);
                 c.s.rect(art, 20.0, Fill::DGrad(c1, c2));
-                c.s.rect(Rect::new(art.x, art.y, art.w, art.h * 0.55), 20.0, Fill::VGrad(Color::rgba(255, 255, 255, 0.22), Color::rgba(255, 255, 255, 0.0)));
+                c.s.rect(Rect::new(art.x, art.y, art.w, art.h * 0.55), 20.0, Fill::VGrad(pal().ink(0.22), pal().ink(0.0)));
                 icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy() - 6.0, 36.0, WHITE.fade(0.92));
             }
         }
@@ -211,15 +211,15 @@ fn music(c: &mut Ctx, a: Rect) {
             c.s.rect(Rect::new(x0 + i as f32 * (bw + gap), art.bottom() - 10.0 - h, bw, h), 2.0, WHITE.fade(0.85));
         }
     } else {
-        c.s.rect(art, 20.0, SURFACE);
-        icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy(), 36.0, TEXT_3);
+        c.s.rect(art, 20.0, pal().surface);
+        icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy(), 36.0, pal().text_3);
     }
 
     // Track info to the right of album art
     let tx = art.right() + 14.0;
     let tw = (a.x + left_w - tx).max(0.0);
     let title = if has { t.title.clone() } else { "Play something".to_string() };
-    c.text(title, Rect::new(tx, a.y + 28.0, tw, 24.0), 17.0, Weight::Semibold, if has { TEXT } else { TEXT_2 }, Align::Left);
+    c.text(title, Rect::new(tx, a.y + 28.0, tw, 24.0), 17.0, Weight::Semibold, if has { pal().text } else { pal().text_2 }, Align::Left);
     let sub = if !has {
         "Nothing playing".to_string()
     } else if t.album.is_empty() {
@@ -227,8 +227,8 @@ fn music(c: &mut Ctx, a: Rect) {
     } else {
         format!("{} \u{00b7} {}", t.display_artist(), t.album)
     };
-    c.text(sub, Rect::new(tx, a.y + 54.0, tw, 18.0), 12.0, Weight::Regular, TEXT_2, Align::Left);
-    c.text(app_name, Rect::new(tx, a.y + 78.0, tw, 16.0), 11.0, Weight::Semibold, TEXT_3, Align::Left);
+    c.text(sub, Rect::new(tx, a.y + 54.0, tw, 18.0), 12.0, Weight::Regular, pal().text_2, Align::Left);
+    c.text(app_name, Rect::new(tx, a.y + 78.0, tw, 16.0), 11.0, Weight::Semibold, pal().text_3, Align::Left);
 
     // Seek bar
     let sy = a.y + 126.0;
@@ -236,8 +236,8 @@ fn music(c: &mut Ctx, a: Rect) {
     let rem_ms = t.duration_ms.saturating_sub(t.position_ms);
     let rem_str = if has && t.duration_ms > 0 { format!("-{}", fmt_ms(rem_ms)) } else { fmt_ms(t.duration_ms) };
 
-    c.text(pos_str, Rect::new(a.x, sy - 8.0, 36.0, 16.0), 11.0, Weight::Medium, TEXT_3, Align::Left);
-    c.text(rem_str, Rect::new(a.x + left_w - 42.0, sy - 8.0, 42.0, 16.0), 11.0, Weight::Medium, TEXT_3, Align::Right);
+    c.text(pos_str, Rect::new(a.x, sy - 8.0, 36.0, 16.0), 11.0, Weight::Medium, pal().text_3, Align::Left);
+    c.text(rem_str, Rect::new(a.x + left_w - 42.0, sy - 8.0, 42.0, 16.0), 11.0, Weight::Medium, pal().text_3, Align::Right);
 
     let bar_x = a.x + 42.0;
     let bar_w = (left_w - 90.0).max(10.0);
@@ -255,7 +255,7 @@ fn music(c: &mut Ctx, a: Rect) {
         let bx = bar.x + i as f32 * bw;
         let h = (3.0 + b * (13.0 + sh * 4.0)).max(bh);
         let played = (bx + bw * 0.5 - bar.x) / bar.w <= p;
-        let col = if played { acc.mix(WHITE, 0.18) } else { Color::rgba(255, 255, 255, 0.16 + 0.10 * sh) };
+        let col = if played { acc.mix(WHITE, 0.18) } else { pal().ink(0.16 + 0.10 * sh) };
         c.s.rect(Rect::new(bx + 1.0, sy - h * 0.5, (bw - 2.0).max(1.5), h), (bw - 2.0) * 0.4, col);
     }
     if p > 0.0 || sh > 0.01 {
@@ -268,8 +268,8 @@ fn music(c: &mut Ctx, a: Rect) {
     // Transport buttons centered in the left column
     let cx = a.x + left_w * 0.5;
     let cy = a.y + 172.0;
-    c.ghost_icon(Rect::new(cx - 76.0, cy - 20.0, 40.0, 40.0), Action::MediaPrev, Icon::Prev, 19.0, TEXT);
-    c.ghost_icon(Rect::new(cx + 36.0, cy - 20.0, 40.0, 40.0), Action::MediaNext, Icon::Next, 19.0, TEXT);
+    c.ghost_icon(Rect::new(cx - 76.0, cy - 20.0, 40.0, 40.0), Action::MediaPrev, Icon::Prev, 19.0, pal().text);
+    c.ghost_icon(Rect::new(cx + 36.0, cy - 20.0, 40.0, 40.0), Action::MediaNext, Icon::Next, 19.0, pal().text);
     let pa = Action::MediaPlayPause;
     let r = 26.0 + c.hov(pa) * 1.5;
     let fill = if c.pressed(pa) { WHITE.mix(Color::rgb(0, 0, 0), 0.2) } else { WHITE };
@@ -284,7 +284,7 @@ fn music(c: &mut Ctx, a: Rect) {
     let lw = (a.right() - lx).max(0.0);
 
     if !c.set.lyrics_enabled {
-        c.text("Lyrics are turned off", Rect::new(lx, a.y + 90.0, lw, 24.0), 13.5, Weight::Regular, TEXT_3, Align::Left);
+        c.text("Lyrics are turned off", Rect::new(lx, a.y + 90.0, lw, 24.0), 13.5, Weight::Regular, pal().text_3, Align::Left);
     } else if let (true, Some(i)) = (has, vm.lyric_idx) {
         let curr_line = vm.lyric_lines.get(i);
         let curr_sublines = curr_line
@@ -321,7 +321,7 @@ fn music(c: &mut Ctx, a: Rect) {
             let prev_total_h = prev_count as f32 * prev_lh;
             let mut py = curr_y - 12.0 - prev_total_h;
             for line in &prev_sublines[prev_start..] {
-                c.text(line.clone(), Rect::new(lx, py, lw, prev_lh), 13.0, Weight::Regular, TEXT_3, Align::Left);
+                c.text(line.clone(), Rect::new(lx, py, lw, prev_lh), 13.0, Weight::Regular, pal().text_3, Align::Left);
                 py += prev_lh;
             }
         }
@@ -337,7 +337,7 @@ fn music(c: &mut Ctx, a: Rect) {
                     Rect::new(lx, cy, lw, curr_lh),
                     17.0,
                     Weight::Bold,
-                    TEXT_2,
+                    pal().text_2,
                     WHITE,
                     sub_frac,
                 );
@@ -350,13 +350,13 @@ fn music(c: &mut Ctx, a: Rect) {
                 if ny + next_lh > a.bottom() - 10.0 {
                     break;
                 }
-                c.text(line.clone(), Rect::new(lx, ny, lw, next_lh), 13.0, Weight::Regular, TEXT_3, Align::Left);
+                c.text(line.clone(), Rect::new(lx, ny, lw, next_lh), 13.0, Weight::Regular, pal().text_3, Align::Left);
                 ny += next_lh;
             }
         }
     } else {
         let msg = if has { "No synced lyrics for this track" } else { "Lyrics appear here while music plays" };
-        c.text(msg, Rect::new(lx, a.y + 90.0, lw, 24.0), 13.5, Weight::Regular, TEXT_3, Align::Left);
+        c.text(msg, Rect::new(lx, a.y + 90.0, lw, 24.0), 13.5, Weight::Regular, pal().text_3, Align::Left);
     }
 }
 
@@ -484,25 +484,25 @@ fn focus(c: &mut Ctx, a: Rect) {
         Phase::ShortBreak => "SHORT BREAK".into(),
         Phase::LongBreak => "LONG BREAK".into(),
     };
-    c.text(top, Rect::new(a.x + 12.0, a.y, a.w - 100.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    c.text(top, Rect::new(a.x + 12.0, a.y, a.w - 100.0, 15.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
     let right = match pomo.phase {
         Phase::Focus if vm.focus_running() => format!("{} left", mmss(vm.focus_remaining_ms())),
         Phase::ShortBreak | Phase::LongBreak => format!("break {}", mmss(vm.focus_remaining_ms())),
         _ => String::new(),
     };
-    c.text(right, Rect::new(a.right() - 100.0, a.y, 100.0, 15.0), 10.5, Weight::Medium, TEXT_3, Align::Right);
+    c.text(right, Rect::new(a.right() - 100.0, a.y, 100.0, 15.0), 10.5, Weight::Medium, pal().text_3, Align::Right);
 
     // Middle: progress ring on the left, session info on the right.
     let mid_y = a.y + 24.0;
     let ring_cx = a.x + 62.0;
     let ring_cy = mid_y + 64.0;
     let rr = 54.0;
-    c.s.ring(ring_cx, ring_cy, rr, 8.0, 0.0, 1.0, Color::rgba(255, 255, 255, 0.08));
+    c.s.ring(ring_cx, ring_cy, rr, 8.0, 0.0, 1.0, pal().ink(0.08));
     let prog = vm.focus_progress();
     if prog > 0.003 {
         c.s.ring(ring_cx, ring_cy, rr, 8.0, 0.0, prog, acc);
     }
-    c.text(mmss(vm.focus_remaining_ms()), Rect::new(ring_cx - 60.0, ring_cy - 20.0, 120.0, 32.0), 26.0, Weight::Semibold, TEXT, Align::Center);
+    c.text(mmss(vm.focus_remaining_ms()), Rect::new(ring_cx - 60.0, ring_cy - 20.0, 120.0, 32.0), 26.0, Weight::Semibold, pal().text, Align::Center);
     let phase = match pomo.phase {
         Phase::Idle => "READY",
         Phase::Focus => "FOCUS",
@@ -519,19 +519,19 @@ fn focus(c: &mut Ctx, a: Rect) {
         Phase::Focus => "Paused",
         _ => "Take a breather",
     };
-    c.text(sub, Rect::new(rx, mid_y + 10.0, rw, 22.0), 15.0, Weight::Semibold, TEXT, Align::Left);
+    c.text(sub, Rect::new(rx, mid_y + 10.0, rw, 22.0), 15.0, Weight::Semibold, pal().text, Align::Left);
 
     if pomo.phase == Phase::Idle {
-        c.icon_btn(Rect::new(rx, mid_y + 40.0, 26.0, 26.0), Action::FocusMinus, Icon::Minus, 11.0, TEXT_2);
-        c.text(format!("{} min", pomo.focus_min), Rect::new(rx + 28.0, mid_y + 40.0, 56.0, 26.0), 13.0, Weight::Semibold, TEXT, Align::Center);
-        c.icon_btn(Rect::new(rx + 86.0, mid_y + 40.0, 26.0, 26.0), Action::FocusPlus, Icon::Plus, 11.0, TEXT_2);
+        c.icon_btn(Rect::new(rx, mid_y + 40.0, 26.0, 26.0), Action::FocusMinus, Icon::Minus, 11.0, pal().text_2);
+        c.text(format!("{} min", pomo.focus_min), Rect::new(rx + 28.0, mid_y + 40.0, 56.0, 26.0), 13.0, Weight::Semibold, pal().text, Align::Center);
+        c.icon_btn(Rect::new(rx + 86.0, mid_y + 40.0, 26.0, 26.0), Action::FocusPlus, Icon::Plus, 11.0, pal().text_2);
     } else {
         let done = if pomo.phase == Phase::LongBreak { n } else { pomo.completed_focus % n };
         for i in 0..n {
             let dx = rx + 5.0 + i as f32 * 16.0;
-            c.s.circle(dx, mid_y + 48.0, 4.5, if i < done { acc } else { Color::rgba(255, 255, 255, 0.14) });
+            c.s.circle(dx, mid_y + 48.0, 4.5, if i < done { acc } else { pal().ink(0.14) });
         }
-        c.text(format!("{} today", pomo.completed_focus), Rect::new(rx + 5.0 + n as f32 * 16.0 + 6.0, mid_y + 39.0, 120.0, 16.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
+        c.text(format!("{} today", pomo.completed_focus), Rect::new(rx + 5.0 + n as f32 * 16.0 + 6.0, mid_y + 39.0, 120.0, 16.0), 11.0, Weight::Regular, pal().text_3, Align::Left);
     }
 
     // What the eyes act out for the app in front; click (or wheel) to re-map it.
@@ -560,9 +560,9 @@ fn focus(c: &mut Ctx, a: Rect) {
     };
     let btn_w = (rw - 46.0).min(170.0);
     c.pill(Rect::new(rx, by, btn_w, 36.0), Action::FocusToggle, label, Some(acc), 13.0);
-    c.icon_btn(Rect::new(rx + btn_w + 10.0, by, 36.0, 36.0), Action::FocusReset, Icon::Reset, 15.0, if pomo.phase == Phase::Idle { TEXT_3 } else { TEXT });
+    c.icon_btn(Rect::new(rx + btn_w + 10.0, by, 36.0, 36.0), Action::FocusReset, Icon::Reset, 15.0, if pomo.phase == Phase::Idle { pal().text_3 } else { pal().text });
 
-    c.text("S start \u{00b7} P pause \u{00b7} R reset", Rect::new(a.x, a.bottom() - 8.0, a.w, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+    c.text("S start \u{00b7} P pause \u{00b7} R reset", Rect::new(a.x, a.bottom() - 8.0, a.w, 14.0), 10.5, Weight::Regular, pal().text_3, Align::Left);
 }
 
 // -------------------------------------------------------------------- water
@@ -598,13 +598,13 @@ fn water(c: &mut Ctx, a: Rect) {
     let ctr = (a.x + 66.0, a.y + 92.0);
     let r = 60.0;
 
-    c.s.circle(ctr.0, ctr.1, r, Color::rgba(255, 255, 255, 0.045));
+    c.s.circle(ctr.0, ctr.1, r, pal().ink(0.045));
     let t = c.ui.clock_s;
     if level > 0.001 {
         c.s.poly(wave_poly(ctr.0, ctr.1, r - 1.0, level, t, 4.0, 2.0), Fill::VGrad(acc.fade(0.45), acc.mix(Color::rgb(0, 0, 0), 0.5).fade(0.55)));
         c.s.poly(wave_poly(ctr.0, ctr.1, r - 1.0, level, t, 3.4, 0.0), Fill::VGrad(acc.fade(0.95), acc.mix(Color::rgb(0, 0, 0), 0.45)));
     }
-    c.s.ring(ctr.0, ctr.1, r, 2.5, 0.0, 1.0, Color::rgba(255, 255, 255, 0.16));
+    c.s.ring(ctr.0, ctr.1, r, 2.5, 0.0, 1.0, pal().ink(0.16));
     let pct = (vm.water.progress(day) * 100.0).round() as u32;
     c.text(format!("{pct}%"), Rect::new(ctr.0 - 50.0, ctr.1 - 22.0, 100.0, 32.0), 24.0, Weight::Semibold, WHITE, Align::Center);
     c.text(format!("{} / {}", teardrop_core::fmt_glasses(today), teardrop_core::glasses_label(goal)), Rect::new(ctr.0 - 60.0, ctr.1 + 10.0, 120.0, 16.0), 10.5, Weight::Medium, WHITE.fade(0.85), Align::Center);
@@ -618,7 +618,7 @@ fn water(c: &mut Ctx, a: Rect) {
     for (i, ml) in [125u32, 250, 500].iter().enumerate() {
         c.pill(Rect::new(x + i as f32 * 60.0, y, 54.0, 32.0), Action::WaterAdd(*ml), &teardrop_core::add_label(*ml), if *ml == 250 { Some(acc) } else { None }, 12.5);
     }
-    c.icon_btn(Rect::new(x + 184.0, y, 28.0, 32.0), Action::WaterUndo, Icon::Undo, 13.0, TEXT_2);
+    c.icon_btn(Rect::new(x + 184.0, y, 28.0, 32.0), Action::WaterUndo, Icon::Undo, 13.0, pal().text_2);
 
     // Seven-day chart against the goal.
     let week = vm.water.week(day);
@@ -629,14 +629,14 @@ fn water(c: &mut Ctx, a: Rect) {
     for (i, (d, ml)) in week.iter().enumerate() {
         let bx = x + i as f32 * (bw + gap);
         let is_today = i == week.len() - 1;
-        c.s.rect(Rect::new(bx, base - ch, bw, ch), 5.0, Color::rgba(255, 255, 255, 0.055));
+        c.s.rect(Rect::new(bx, base - ch, bw, ch), 5.0, pal().ink(0.055));
         let f = (*ml as f32 / goal as f32).clamp(0.0, 1.0);
         if f > 0.0 {
             let hh = (ch * f).max(5.0);
             c.s.rect(Rect::new(bx, base - hh, bw, hh), 5.0, if is_today { acc } else { acc.fade(0.5) });
         }
         let letter: String = d.format("%a").to_string().chars().take(1).collect();
-        c.text(letter, Rect::new(bx - 3.0, base + 3.0, bw + 6.0, 13.0), 10.0, if is_today { Weight::Semibold } else { Weight::Regular }, if is_today { TEXT } else { TEXT_3 }, Align::Center);
+        c.text(letter, Rect::new(bx - 3.0, base + 3.0, bw + 6.0, 13.0), 10.0, if is_today { Weight::Semibold } else { Weight::Regular }, if is_today { pal().text } else { pal().text_3 }, Align::Center);
     }
 }
 
@@ -706,9 +706,9 @@ fn drop_overlay(c: &mut Ctx, a: Rect) {
             let (zx, zy) = (z.cx(), z.cy() - 16.0);
             c.s.circle(zx, zy, (30.0 + 4.0 * hot) * amt.max(0.2), col.fade(0.14 * k));
             icons::draw(&mut c.s, icon, zx, zy + bob, 32.0, col.fade(k));
-            c.text(title, Rect::new(z.x, zy + 30.0, z.w, 20.0), 15.0, Weight::Semibold, TEXT.fade(k), Align::Center);
+            c.text(title, Rect::new(z.x, zy + 30.0, z.w, 20.0), 15.0, Weight::Semibold, pal().text.fade(k), Align::Center);
             let line = if hot > 0.5 && n > 1 { format!("{n} files") } else { sub.to_string() };
-            c.text(line, Rect::new(z.x, zy + 50.0, z.w, 16.0), 11.5, Weight::Regular, TEXT_2.fade(k), Align::Center);
+            c.text(line, Rect::new(z.x, zy + 50.0, z.w, 16.0), 11.5, Weight::Regular, pal().text_2.fade(k), Align::Center);
         }
     }
     if u > 0.0 {
@@ -722,7 +722,7 @@ fn drop_overlay(c: &mut Ctx, a: Rect) {
         let icon = if phone { Icon::Phone } else { Icon::Check };
         icons::draw(&mut c.s, icon, cx, cy, 28.0 * (0.7 + 0.3 * ease), ON_ACCENT.fade(u));
         if phone {
-            c.text("Opening share window\u{2026}", Rect::new(a.x, cy + 40.0, a.w, 18.0), 12.5, Weight::Medium, TEXT.fade(u), Align::Center);
+            c.text("Opening share window\u{2026}", Rect::new(a.x, cy + 40.0, a.w, 18.0), 12.5, Weight::Medium, pal().text.fade(u), Align::Center);
         }
     }
 }
@@ -733,12 +733,12 @@ fn shelf_list(c: &mut Ctx, a: Rect) {
     let n = vm.shelf.items.len();
     let sub = if n == 0 { String::new() } else { format!("{n} file{}", if n == 1 { "" } else { "s" }) };
     c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
-    c.text("SHELF \u{00b7} DRAG FILES HERE", Rect::new(a.x + 12.0, a.y, a.w - 140.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
-    c.text(sub, Rect::new(a.right() - 120.0, a.y, 120.0, 15.0), 11.0, Weight::Regular, TEXT_3, Align::Right);
+    c.text("SHELF \u{00b7} DRAG FILES HERE", Rect::new(a.x + 12.0, a.y, a.w - 140.0, 15.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
+    c.text(sub, Rect::new(a.right() - 120.0, a.y, 120.0, 15.0), 11.0, Weight::Regular, pal().text_3, Align::Right);
 
     let body = Rect::new(a.x, a.y + 22.0, a.w, a.h - 22.0);
     if n == 0 {
-        c.s.dashed(body.inset(2.0), 16.0, 1.5, Color::rgba(255, 255, 255, 0.16));
+        c.s.dashed(body.inset(2.0), 16.0, 1.5, pal().ink(0.16));
         c.empty_state(body, Icon::Tray, acc, "Drop files on the island", "They stay here until you remove them");
         return;
     }
@@ -755,7 +755,7 @@ fn shelf_list(c: &mut Ctx, a: Rect) {
         let reveal = Action::ShelfReveal(idx as u16);
         let remove = Action::ShelfRemove(idx as u16);
         let hv = c.hov(open).max(c.hov(reveal)).max(c.hov(remove));
-        let f = if c.pressed(open) { SURFACE_PRESS } else { SURFACE.mix(SURFACE_HOVER, hv) };
+        let f = if c.pressed(open) { pal().surface_press } else { pal().surface.mix(pal().surface_hover, hv) };
         c.s.rect(r, 14.0, f);
         c.hit(r, open);
 
@@ -777,12 +777,12 @@ fn shelf_list(c: &mut Ctx, a: Rect) {
         let right_pad = if hv > 0.05 { 56.0 } else { 12.0 };
         let tx = badge.right() + 10.0;
         let tr_w = r.right() - tx - right_pad;
-        c.text(item.name.clone(), Rect::new(tx, r.y + 8.0, tr_w, 20.0), 13.0, Weight::Medium, TEXT, Align::Left);
-        c.text(parent_of(&item.path), Rect::new(tx, r.y + 27.0, tr_w, 18.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
+        c.text(item.name.clone(), Rect::new(tx, r.y + 8.0, tr_w, 20.0), 13.0, Weight::Medium, pal().text, Align::Left);
+        c.text(parent_of(&item.path), Rect::new(tx, r.y + 27.0, tr_w, 18.0), 11.0, Weight::Regular, pal().text_3, Align::Left);
         if hv > 0.05 {
             c.s.set_transform(0.0, 0.0, hv.min(1.0) * 1.0);
-            c.ghost_icon(Rect::new(r.right() - 54.0, r.cy() - 12.0, 24.0, 24.0), reveal, Icon::Folder, 13.0, TEXT_2);
-            c.ghost_icon(Rect::new(r.right() - 29.0, r.cy() - 12.0, 24.0, 24.0), remove, Icon::Close, 12.0, TEXT_2);
+            c.ghost_icon(Rect::new(r.right() - 54.0, r.cy() - 12.0, 24.0, 24.0), reveal, Icon::Folder, 13.0, pal().text_2);
+            c.ghost_icon(Rect::new(r.right() - 29.0, r.cy() - 12.0, 24.0, 24.0), remove, Icon::Close, 12.0, pal().text_2);
             c.s.set_transform(0.0, 0.0, 1.0);
         }
     }
@@ -791,7 +791,7 @@ fn shelf_list(c: &mut Ctx, a: Rect) {
         let track_h = SHELF_ROWS as f32 * (th + 8.0) - 8.0;
         let th_h = track_h * SHELF_ROWS as f32 / tot;
         let ty = body.y + (track_h - th_h) * scroll as f32 / shelf_max_scroll(n) as f32;
-        c.s.rect(Rect::new(a.right() + 8.0, ty, 3.0, th_h), 1.5, Color::rgba(255, 255, 255, 0.25));
+        c.s.rect(Rect::new(a.right() + 8.0, ty, 3.0, th_h), 1.5, pal().ink(0.25));
     }
 }
 
@@ -809,29 +809,29 @@ fn tasks(c: &mut Ctx, a: Rect) {
 
     let n = vm.tasks.tasks.len();
     c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
-    c.text(format!("TASKS \u{00b7} {} OPEN", vm.tasks.open_count()), Rect::new(a.x + 12.0, a.y, a.w - 20.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    c.text(format!("TASKS \u{00b7} {} OPEN", vm.tasks.open_count()), Rect::new(a.x + 12.0, a.y, a.w - 20.0, 15.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
 
     // Add field.
     let field = Rect::new(a.x, a.y + 20.0, a.w, 40.0);
     let typing = c.ui.input.is_some();
-    c.s.rect(field, 14.0, if typing { SURFACE_HOVER } else { c.surface_fill(Action::TaskInput) });
+    c.s.rect(field, 14.0, if typing { pal().surface_hover } else { c.surface_fill(Action::TaskInput) });
     if typing {
         c.s.stroke(field, 14.0, 1.5, acc.fade(0.85));
     }
-    icons::draw(&mut c.s, Icon::Plus, field.x + 22.0, field.cy(), 15.0, if typing { acc } else { TEXT_3 });
+    icons::draw(&mut c.s, Icon::Plus, field.x + 22.0, field.cy(), 15.0, if typing { acc } else { pal().text_3 });
     let tr = Rect::new(field.x + 42.0, field.y, field.w - 54.0, field.h);
     match &c.ui.input {
         Some(f) if !f.is_empty() => {
             let ed = field_edit(c, f, acc);
-            c.s.text_edit(f.as_str().to_string(), tr, 14.0, Weight::Regular, TEXT, ed);
+            c.s.text_edit(f.as_str().to_string(), tr, 14.0, Weight::Regular, pal().text, ed);
         }
         Some(_) => {
-            c.text("What needs doing?", tr, 14.0, Weight::Regular, TEXT_3, Align::Left);
+            c.text("What needs doing?", tr, 14.0, Weight::Regular, pal().text_3, Align::Left);
             if (c.ui.clock_s * 1.8) % 2.0 < 1.0 {
                 c.s.rect(Rect::new(tr.x, field.cy() - 9.0, 1.6, 18.0), 0.8, acc);
             }
         }
-        None => c.text("Add a task", tr, 14.0, Weight::Regular, TEXT_3, Align::Left),
+        None => c.text("Add a task", tr, 14.0, Weight::Regular, pal().text_3, Align::Left),
     }
     c.hit_text(field, Action::TaskInput);
 
@@ -850,32 +850,32 @@ fn tasks(c: &mut Ctx, a: Rect) {
         let del = Action::TaskRemove(idx as u16);
         let hv = c.hov(tog).max(c.hov(del));
         if hv > 0.01 {
-            c.s.rect(r, 10.0, SURFACE.fade(hv));
+            c.s.rect(r, 10.0, pal().surface.fade(hv));
         }
         let cb = (r.x + 18.0, r.cy());
         if t.done {
             c.s.circle(cb.0, cb.1, 9.5, acc);
             icons::draw(&mut c.s, Icon::Check, cb.0, cb.1, 11.0, ON_ACCENT);
         } else {
-            c.s.ring(cb.0, cb.1, 8.5, 1.6, 0.0, 1.0, TEXT_3.mix(acc, c.hov(tog)));
+            c.s.ring(cb.0, cb.1, 8.5, 1.6, 0.0, 1.0, pal().text_3.mix(acc, c.hov(tog)));
         }
         let tx = r.x + 38.0;
         let right = if hv > 0.05 { 34.0 } else { 10.0 };
         let tr = Rect::new(tx, r.y, r.w - 38.0 - right, r.h);
-        let col = if t.done { TEXT_3 } else { TEXT };
+        let col = if t.done { pal().text_3 } else { pal().text };
         c.text(t.title.clone(), tr, 14.0, Weight::Regular, col, Align::Left);
         if t.done {
             let wd = est_w(&t.title, 14.0).min(tr.w);
-            c.s.line(tx, r.cy() + 0.5, tx + wd, r.cy() + 0.5, 1.3, TEXT_3);
+            c.s.line(tx, r.cy() + 0.5, tx + wd, r.cy() + 0.5, 1.3, pal().text_3);
         }
         c.hit(Rect::new(r.x, r.y, r.w - 30.0, r.h), tog);
         if hv > 0.05 {
-            c.ghost_icon(Rect::new(r.right() - 30.0, r.cy() - 12.0, 24.0, 24.0), del, Icon::Close, 12.0, TEXT_2);
+            c.ghost_icon(Rect::new(r.right() - 30.0, r.cy() - 12.0, 24.0, 24.0), del, Icon::Close, 12.0, pal().text_2);
         }
     }
     let open = vm.tasks.open_count();
     let done = n - open;
-    c.text(format!("{open} open"), Rect::new(a.x + 2.0, a.bottom() - 20.0, 100.0, 18.0), 11.5, Weight::Medium, TEXT_3, Align::Left);
+    c.text(format!("{open} open"), Rect::new(a.x + 2.0, a.bottom() - 20.0, 100.0, 18.0), 11.5, Weight::Medium, pal().text_3, Align::Left);
     if done > 0 {
         c.pill(Rect::new(a.right() - 104.0, a.bottom() - 24.0, 104.0, 24.0), Action::TaskClearDone, &format!("Clear {done} done"), None, 11.0);
     }
@@ -956,7 +956,7 @@ pub fn note_age(updated: chrono::DateTime<chrono::Utc>, now: chrono::DateTime<ch
 fn notes(c: &mut Ctx, a: Rect) {
     let acc = accent(Page::Notes);
     c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
-    c.text(format!("NOTES \u{00b7} {}", c.vm.notes.notes.len()), Rect::new(a.x + 12.0, a.y, 200.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    c.text(format!("NOTES \u{00b7} {}", c.vm.notes.notes.len()), Rect::new(a.x + 12.0, a.y, 200.0, 15.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
     let b = Rect::new(a.x, a.y + 20.0, a.w, a.h - 20.0);
     if c.ui.input.is_some() {
         note_editor(c, b, acc);
@@ -981,29 +981,29 @@ fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
     let search_rect = Rect::new(new_btn.right() + 10.0, a.y, search_w, 32.0);
     let searching = c.ui.note_search.is_some();
     let query = c.ui.note_search.as_ref().map(|f| f.as_str()).unwrap_or("");
-    c.s.rect(search_rect, 10.0, if searching { SURFACE_HOVER } else { SURFACE });
+    c.s.rect(search_rect, 10.0, if searching { pal().surface_hover } else { pal().surface });
     if searching {
         c.s.stroke(search_rect, 10.0, 1.2, acc.fade(0.85));
     }
-    icons::draw(&mut c.s, Icon::Search, search_rect.x + 15.0, search_rect.cy(), 12.0, if searching { acc } else { TEXT_3 });
+    icons::draw(&mut c.s, Icon::Search, search_rect.x + 15.0, search_rect.cy(), 12.0, if searching { acc } else { pal().text_3 });
     let tr = Rect::new(search_rect.x + 32.0, search_rect.y, search_rect.w - 56.0, search_rect.h);
     if !query.is_empty() {
         if let Some(f) = c.ui.note_search.as_ref() {
             let ed = field_edit(c, f, acc);
-            c.s.text_edit(f.as_str().to_string(), tr, 13.0, Weight::Regular, TEXT, ed);
+            c.s.text_edit(f.as_str().to_string(), tr, 13.0, Weight::Regular, pal().text, ed);
         } else {
-            c.text(query.to_string(), tr, 13.0, Weight::Regular, TEXT, Align::Left);
+            c.text(query.to_string(), tr, 13.0, Weight::Regular, pal().text, Align::Left);
         }
         // Clear search button
         let clr_btn = Rect::new(search_rect.right() - 26.0, search_rect.cy() - 10.0, 20.0, 20.0);
-        c.ghost_icon(clr_btn, Action::NoteSearchClear, Icon::Close, 11.0, TEXT_3);
+        c.ghost_icon(clr_btn, Action::NoteSearchClear, Icon::Close, 11.0, pal().text_3);
     } else if searching {
-        c.text("Search notes...", tr, 13.0, Weight::Regular, TEXT_3, Align::Left);
+        c.text("Search notes...", tr, 13.0, Weight::Regular, pal().text_3, Align::Left);
         if (c.ui.clock_s * 1.8) % 2.0 < 1.0 {
             c.s.rect(Rect::new(tr.x, search_rect.cy() - 8.0, 1.6, 16.0), 0.8, acc);
         }
     } else {
-        c.text("Search notes...", tr, 13.0, Weight::Regular, TEXT_3, Align::Left);
+        c.text("Search notes...", tr, 13.0, Weight::Regular, pal().text_3, Align::Left);
     }
     c.hit_text(search_rect, Action::NoteSearchInput);
 
@@ -1055,7 +1055,7 @@ fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
         let del = Action::NoteRemove(orig_idx as u16);
         let hv = c.hov(open).max(c.hov(del));
         if hv > 0.01 {
-            c.s.rect(r, 10.0, SURFACE.fade(hv));
+            c.s.rect(r, 10.0, pal().surface.fade(hv));
         }
         let title = teardrop_core::title_of(&note.text);
         let title = if title.is_empty() { "Untitled".to_string() } else { title };
@@ -1070,7 +1070,7 @@ fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
             Rect::new(r.x + 12.0, r.y + 3.0, (r.w - right_reserved - 16.0).max(60.0), 18.0),
             13.5,
             Weight::Semibold,
-            TEXT,
+            pal().text,
             Align::Left,
         );
         if !preview.is_empty() {
@@ -1079,7 +1079,7 @@ fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
                 Rect::new(r.x + 12.0, r.y + 20.0, (r.w - right_reserved - 16.0).max(60.0), 14.0),
                 11.0,
                 Weight::Regular,
-                TEXT_3,
+                pal().text_3,
                 Align::Left,
             );
         }
@@ -1092,7 +1092,7 @@ fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
             Rect::new(date_x, r.y + 4.0, date_w, 15.0),
             11.0,
             Weight::Medium,
-            TEXT_2,
+            pal().text_2,
             Align::Right,
         );
         // Relative age tag underneath
@@ -1101,13 +1101,13 @@ fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
             Rect::new(date_x, r.y + 19.0, date_w, 13.0),
             10.0,
             Weight::Regular,
-            TEXT_3,
+            pal().text_3,
             Align::Right,
         );
 
         c.hit(Rect::new(r.x, r.y, r.w - 36.0, r.h), open);
         if hv > 0.05 {
-            c.ghost_icon(Rect::new(r.right() - 32.0, r.cy() - 12.0, 24.0, 24.0), del, Icon::Close, 12.0, TEXT_2);
+            c.ghost_icon(Rect::new(r.right() - 32.0, r.cy() - 12.0, 24.0, 24.0), del, Icon::Close, 12.0, pal().text_2);
         }
     }
 
@@ -1116,13 +1116,13 @@ fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
     } else {
         format!("{n} of {total_notes} notes ({})", date_filter.label())
     };
-    c.text(count_text, Rect::new(a.x + 2.0, a.bottom() - 18.0, 200.0, 16.0), 11.0, Weight::Medium, TEXT_3, Align::Left);
+    c.text(count_text, Rect::new(a.x + 2.0, a.bottom() - 18.0, 200.0, 16.0), 11.0, Weight::Medium, pal().text_3, Align::Left);
     c.text(
         "N new note \u{00b7} Click search or / to filter \u{00b7} Esc clear",
         Rect::new(a.right() - 320.0, a.bottom() - 18.0, 320.0, 16.0),
         10.5,
         Weight::Regular,
-        TEXT_3,
+        pal().text_3,
         Align::Right,
     );
 }
@@ -1135,7 +1135,7 @@ fn note_editor(c: &mut Ctx, a: Rect, acc: Color) {
     let sel = field.selection();
     let caret = field.caret();
 
-    c.text("Note Editor", Rect::new(a.x, a.y + 2.0, 100.0, 24.0), 13.0, Weight::Semibold, TEXT, Align::Left);
+    c.text("Note Editor", Rect::new(a.x, a.y + 2.0, 100.0, 24.0), 13.0, Weight::Semibold, pal().text, Align::Left);
 
     // Block selection pill action
     let sel_label = if selected_all { "Deselect" } else { "Select All" };
@@ -1148,7 +1148,7 @@ fn note_editor(c: &mut Ctx, a: Rect, acc: Color) {
     c.pill(Rect::new(a.right() - 62.0, a.y, 62.0, 24.0), Action::NoteClose, "Done", Some(acc), 11.0);
 
     let body = Rect::new(a.x, a.y + 32.0, a.w, a.h - 60.0);
-    c.s.rect(body, 14.0, SURFACE);
+    c.s.rect(body, 14.0, pal().surface);
     if selected_all {
         c.s.stroke(body, 14.0, 1.5, acc.fade(0.85));
     }
@@ -1180,11 +1180,11 @@ fn note_editor(c: &mut Ctx, a: Rect, acc: Color) {
                 Rect::new(body.x + 12.0, y, inner_w, line_h),
                 13.5,
                 Weight::Regular,
-                TEXT,
+                pal().text,
                 TextEdit { caret: local_caret, show_caret: blink && on_caret_line, sel: local_sel, caret_color: acc, sel_color: acc.fade(0.35) },
             );
         } else if !line.is_empty() {
-            c.text(line, Rect::new(body.x + 12.0, y, inner_w, line_h), 13.5, Weight::Regular, TEXT, Align::Left);
+            c.text(line, Rect::new(body.x + 12.0, y, inner_w, line_h), 13.5, Weight::Regular, pal().text, Align::Left);
         }
         y += line_h;
         if y > body.bottom() - 4.0 {
@@ -1197,7 +1197,7 @@ fn note_editor(c: &mut Ctx, a: Rect, acc: Color) {
             Rect::new(body.x + 12.0, body.y + 10.0, inner_w, line_h),
             13.5,
             Weight::Regular,
-            TEXT_3,
+            pal().text_3,
             Align::Left,
         );
         if blink {
@@ -1209,7 +1209,7 @@ fn note_editor(c: &mut Ctx, a: Rect, acc: Color) {
     } else {
         "Enter adds a line \u{00b7} Ctrl+A select all \u{00b7} Esc when done"
     };
-    c.text(hint, Rect::new(a.x + 2.0, a.bottom() - 18.0, a.w, 16.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
+    c.text(hint, Rect::new(a.x + 2.0, a.bottom() - 18.0, a.w, 16.0), 11.0, Weight::Regular, pal().text_3, Align::Left);
 }
 
 // ---------------------------------------------------------------- clipboard
@@ -1225,7 +1225,7 @@ fn clipboard(c: &mut Ctx, a: Rect) {
     let vm = c.vm;
     let items = vm.clipboard.items();
     c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
-    c.text("CLIPBOARD", Rect::new(a.x + 12.0, a.y, 200.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    c.text("CLIPBOARD", Rect::new(a.x + 12.0, a.y, 200.0, 15.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
     if !items.is_empty() {
         c.pill(Rect::new(a.right() - 60.0, a.y - 4.0, 60.0, 22.0), Action::ClipClear, "Clear", None, 10.5);
     }
@@ -1245,12 +1245,12 @@ fn clipboard(c: &mut Ctx, a: Rect) {
         let r = Rect::new(a.x, body.y + slot as f32 * 36.0, a.w, 32.0);
         let act = Action::ClipCopy(idx as u16);
         let hv = c.hov(act);
-        c.s.rect(r, 11.0, if c.pressed(act) { SURFACE_PRESS } else { SURFACE.mix(SURFACE_HOVER, hv) });
+        c.s.rect(r, 11.0, if c.pressed(act) { pal().surface_press } else { pal().surface.mix(pal().surface_hover, hv) });
         if idx == 0 {
             c.s.circle(r.x + 14.0, r.cy(), 3.0, acc);
         }
         let tr = Rect::new(r.x + 28.0, r.y, r.w - 28.0 - 44.0, r.h);
-        c.text(one_line(s), tr, 13.0, Weight::Regular, TEXT.fade(0.92), Align::Left);
+        c.text(one_line(s), tr, 13.0, Weight::Regular, pal().text.fade(0.92), Align::Left);
         if hv > 0.02 {
             c.text("Copy", Rect::new(r.right() - 48.0, r.y, 40.0, r.h), 11.5, Weight::Semibold, acc.fade(hv), Align::Right);
         }
@@ -1295,7 +1295,7 @@ fn today(c: &mut Ctx, a: Rect) {
     let date = now.date();
 
     c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
-    c.text(format!("TODAY \u{00b7} {}", date.format("%a %d %b").to_string().to_uppercase()), Rect::new(a.x + 12.0, a.y, 220.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    c.text(format!("TODAY \u{00b7} {}", date.format("%a %d %b").to_string().to_uppercase()), Rect::new(a.x + 12.0, a.y, 220.0, 15.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
 
     // Month grid (Monday first), shifted by the browsing offset.
     let off_m = c.ui.cal_offset;
@@ -1304,15 +1304,15 @@ fn today(c: &mut Ctx, a: Rect) {
     let has_filter = off_m != 0 || c.ui.cal_selected_day.is_some() || c.ui.cal_selected_event.is_some();
     let title = NaiveDate::from_ymd_opt(shown_y, shown_m, 1).unwrap().format("%B %Y").to_string();
     let title_r = Rect::new(cal.x, cal.y, cal.w - 56.0, 24.0);
-    c.text(title, title_r, 14.0, Weight::Semibold, if off_m == 0 { TEXT } else { acc }, Align::Left);
+    c.text(title, title_r, 14.0, Weight::Semibold, if off_m == 0 { pal().text } else { acc }, Align::Left);
     if has_filter {
         c.hit(title_r, Action::CalToday);
     }
-    c.icon_btn(Rect::new(cal.right() - 52.0, cal.y + 1.0, 24.0, 22.0), Action::CalStep(-1), Icon::Prev, 10.0, TEXT_2);
-    c.icon_btn(Rect::new(cal.right() - 24.0, cal.y + 1.0, 24.0, 22.0), Action::CalStep(1), Icon::Next, 10.0, TEXT_2);
+    c.icon_btn(Rect::new(cal.right() - 52.0, cal.y + 1.0, 24.0, 22.0), Action::CalStep(-1), Icon::Prev, 10.0, pal().text_2);
+    c.icon_btn(Rect::new(cal.right() - 24.0, cal.y + 1.0, 24.0, 22.0), Action::CalStep(1), Icon::Next, 10.0, pal().text_2);
     let cell_w = cal.w / 7.0;
     for (i, d) in ["M", "T", "W", "T", "F", "S", "S"].iter().enumerate() {
-        c.text(*d, Rect::new(cal.x + i as f32 * cell_w, cal.y + 30.0, cell_w, 16.0), 10.5, Weight::Semibold, TEXT_3, Align::Center);
+        c.text(*d, Rect::new(cal.x + i as f32 * cell_w, cal.y + 30.0, cell_w, 16.0), 10.5, Weight::Semibold, pal().text_3, Align::Center);
     }
     let busy = crate::calendar::busy_days(&vm.calendar.events, shown_y, shown_m);
     let first = NaiveDate::from_ymd_opt(shown_y, shown_m, 1).unwrap();
@@ -1334,7 +1334,7 @@ fn today(c: &mut Ctx, a: Rect) {
             c.s.circle(r.cx(), r.cy(), 12.0, acc.fade(0.24));
             c.s.ring(r.cx(), r.cy(), 11.2, 1.5, 0.0, std::f32::consts::TAU, acc);
         } else if hv > 0.01 {
-            c.s.circle(r.cx(), r.cy(), 11.5, SURFACE_HOVER.fade(hv));
+            c.s.circle(r.cx(), r.cy(), 11.5, pal().surface_hover.fade(hv));
         }
         if busy.contains(&d) {
             c.s.circle(r.cx(), r.y + r.h - 2.5, 1.9, if is_today { ON_ACCENT } else { acc });
@@ -1346,9 +1346,9 @@ fn today(c: &mut Ctx, a: Rect) {
         } else if is_selected {
             acc
         } else if wk {
-            TEXT_3.mix(TEXT, hv * 0.5)
+            pal().text_3.mix(pal().text, hv * 0.5)
         } else {
-            TEXT_2.mix(TEXT, hv * 0.6)
+            pal().text_2.mix(pal().text, hv * 0.6)
         };
         c.text(d.to_string(), r, 12.0, weight, fg, Align::Center);
         c.hit(r, act);
@@ -1367,7 +1367,7 @@ fn today(c: &mut Ctx, a: Rect) {
     }
     if let Some((sy, sm, sd)) = c.ui.cal_selected_day {
         let sel_date = NaiveDate::from_ymd_opt(sy, sm, sd).unwrap_or(date);
-        c.text(sel_date.format("%A").to_string(), Rect::new(x, a.y, w - 68.0, 30.0), 21.0, Weight::Semibold, TEXT, Align::Left);
+        c.text(sel_date.format("%A").to_string(), Rect::new(x, a.y, w - 68.0, 30.0), 21.0, Weight::Semibold, pal().text, Align::Left);
         c.pill(Rect::new(x + w - 64.0, a.y + 4.0, 64.0, 22.0), Action::CalToday, "Upcoming", None, 10.0);
         let sub = if sel_date == date {
             format!("{} \u{00b7} Today", sel_date.format("%-d %B"))
@@ -1378,7 +1378,7 @@ fn today(c: &mut Ctx, a: Rect) {
         };
         c.text(sub, Rect::new(x, a.y + 30.0, w, 20.0), 14.0, Weight::Regular, acc, Align::Left);
     } else {
-        c.text(date.format("%A").to_string(), Rect::new(x, a.y, w, 30.0), 23.0, Weight::Semibold, TEXT, Align::Left);
+        c.text(date.format("%A").to_string(), Rect::new(x, a.y, w, 30.0), 23.0, Weight::Semibold, pal().text, Align::Left);
         c.text(date.format("%-d %B").to_string(), Rect::new(x, a.y + 30.0, w, 20.0), 14.0, Weight::Regular, acc, Align::Left);
     }
     agenda(c, Rect::new(x, a.y + 54.0, w, 150.0), &items, acc);
@@ -1390,7 +1390,7 @@ fn draw_today_sys_line(c: &mut Ctx, x: f32, y: f32, w: f32) {
     if let Some(b) = sys.battery_pct {
         line.push_str(&format!("  \u{00b7}  {b}%{}", if sys.charging { "\u{26a1}" } else { "" }));
     }
-    c.text(line, Rect::new(x, y, w, 16.0), 9.5, Weight::Regular, TEXT_3, Align::Left);
+    c.text(line, Rect::new(x, y, w, 16.0), 9.5, Weight::Regular, pal().text_3, Align::Left);
 }
 
 /// Upcoming meetings or selected day's events, or the prompt to connect a calendar.
@@ -1399,25 +1399,25 @@ fn agenda(c: &mut Ctx, r: Rect, items: &[&crate::calendar::Event], acc: Color) {
     let vm = c.vm;
     let now = vm.now.timestamp();
     if vm.calendar_feeds == 0 {
-        c.text("Never miss a meeting", Rect::new(r.x, r.y + 2.0, r.w, 20.0), 13.5, Weight::Semibold, TEXT, Align::Left);
+        c.text("Never miss a meeting", Rect::new(r.x, r.y + 2.0, r.w, 20.0), 13.5, Weight::Semibold, pal().text, Align::Left);
         for (i, l) in ["Paste an iCal link from Google", "Calendar or Outlook and Droppy", "alerts you before each meeting."].iter().enumerate() {
-            c.text(*l, Rect::new(r.x, r.y + 26.0 + i as f32 * 15.0, r.w, 15.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+            c.text(*l, Rect::new(r.x, r.y + 26.0 + i as f32 * 15.0, r.w, 15.0), 10.5, Weight::Regular, pal().text_3, Align::Left);
         }
         c.pill(Rect::new(r.x, r.y + 82.0, 150.0, 26.0), Action::CalendarPaste, "Paste calendar link", Some(acc), 11.0);
-        c.text("Copy the link first, then press it.", Rect::new(r.x, r.y + 114.0, r.w, 15.0), 10.0, Weight::Regular, TEXT_3, Align::Left);
+        c.text("Copy the link first, then press it.", Rect::new(r.x, r.y + 114.0, r.w, 15.0), 10.0, Weight::Regular, pal().text_3, Align::Left);
         return;
     }
     let day_mode = c.ui.cal_selected_day.is_some();
     if items.is_empty() {
         let (msg, col) = match vm.calendar.state {
-            FeedState::Loading | FeedState::Idle => ("Loading your calendar\u{2026}".to_string(), TEXT_3),
-            FeedState::Failed => (vm.calendar.error.clone(), AMBER),
-            FeedState::Ok if day_mode => ("No events on this day".to_string(), TEXT_3),
-            FeedState::Ok => ("No upcoming meetings".to_string(), TEXT_3),
+            FeedState::Loading | FeedState::Idle => ("Loading your calendar\u{2026}".to_string(), pal().text_3),
+            FeedState::Failed => (vm.calendar.error.clone(), pal().amber),
+            FeedState::Ok if day_mode => ("No events on this day".to_string(), pal().text_3),
+            FeedState::Ok => ("No upcoming meetings".to_string(), pal().text_3),
         };
         c.text(msg, Rect::new(r.x, r.y + 6.0, r.w, 18.0), 12.0, Weight::Medium, col, Align::Left);
         if day_mode && vm.calendar.state == FeedState::Ok {
-            c.text("Click another date on the calendar or press Upcoming.", Rect::new(r.x, r.y + 26.0, r.w, 15.0), 10.0, Weight::Regular, TEXT_3, Align::Left);
+            c.text("Click another date on the calendar or press Upcoming.", Rect::new(r.x, r.y + 26.0, r.w, 15.0), 10.0, Weight::Regular, pal().text_3, Align::Left);
         }
     }
     let scroll = c.ui.scroll_of(Page::Today).min(today_max_scroll(items.len()));
@@ -1425,7 +1425,7 @@ fn agenda(c: &mut Ctx, r: Rect, items: &[&crate::calendar::Event], acc: Color) {
         let row = Rect::new(r.x, r.y + slot as f32 * 38.0, r.w, 35.0);
         let ev_act = Action::CalEvent(i as u8);
         let hv = c.ui.hover_amt(ev_act);
-        c.s.rect(row, 9.0, SURFACE.mix(SURFACE_HOVER, hv * 0.85));
+        c.s.rect(row, 9.0, pal().surface.mix(pal().surface_hover, hv * 0.85));
         if hv > 0.01 {
             c.s.stroke(row, 9.0, 1.0, acc.fade(0.35 * hv));
         }
@@ -1434,7 +1434,7 @@ fn agenda(c: &mut Ctx, r: Rect, items: &[&crate::calendar::Event], acc: Color) {
         }
         let join = ev.join.is_some();
         let tw = row.w - 20.0 - if join { 48.0 } else { 0.0 };
-        c.text(ev.title.clone(), Rect::new(row.x + 12.0, row.y + 3.0, tw, 16.0), 12.0, Weight::Semibold, TEXT, Align::Left);
+        c.text(ev.title.clone(), Rect::new(row.x + 12.0, row.y + 3.0, tw, 16.0), 12.0, Weight::Semibold, pal().text, Align::Left);
         let when = if day_mode {
             time_range_label(ev)
         } else {
@@ -1447,7 +1447,7 @@ fn agenda(c: &mut Ctx, r: Rect, items: &[&crate::calendar::Event], acc: Color) {
             (None, 0) if !ev.all_day => format!(" \u{00b7} {}", countdown(ev, now)),
             _ => String::new(),
         };
-        c.text(format!("{when}{tail}"), Rect::new(row.x + 12.0, row.y + 19.0, tw, 13.0), 10.0, Weight::Regular, TEXT_3, Align::Left);
+        c.text(format!("{when}{tail}"), Rect::new(row.x + 12.0, row.y + 19.0, tw, 13.0), 10.0, Weight::Regular, pal().text_3, Align::Left);
         let hit_w = if join { row.w - 48.0 } else { row.w };
         c.hit(Rect::new(row.x, row.y, hit_w, row.h), ev_act);
         if join {
@@ -1463,7 +1463,7 @@ fn agenda(c: &mut Ctx, r: Rect, items: &[&crate::calendar::Event], acc: Color) {
             Rect::new(r.x + 146.0, fy + 3.0, r.w - 146.0, 16.0),
             10.0,
             Weight::Regular,
-            TEXT_3,
+            pal().text_3,
             Align::Right,
         );
     }
@@ -1478,7 +1478,7 @@ fn event_detail(c: &mut Ctx, r: Rect, ev_idx: usize, ev: &crate::calendar::Event
     c.text(status, Rect::new(r.x + 62.0, r.y + 3.0, r.w - 122.0, 16.0), 10.5, Weight::Semibold, acc, Align::Right);
 
     let card = Rect::new(r.x, r.y + 28.0, r.w, r.h - 28.0);
-    c.s.rect(card, 12.0, SURFACE);
+    c.s.rect(card, 12.0, pal().surface);
     c.s.rect(Rect::new(card.x, card.y + 10.0, 3.0, card.h - 20.0), 1.5, acc);
 
     let ix = card.x + 12.0;
@@ -1486,7 +1486,7 @@ fn event_detail(c: &mut Ctx, r: Rect, ev_idx: usize, ev: &crate::calendar::Event
     let mut y = card.y + 8.0;
 
     for line in wrap_lines(&ev.title, iw, 13.0).into_iter().take(2) {
-        c.text(line, Rect::new(ix, y, iw, 17.0), 13.0, Weight::Semibold, TEXT, Align::Left);
+        c.text(line, Rect::new(ix, y, iw, 17.0), 13.0, Weight::Semibold, pal().text, Align::Left);
         y += 17.0;
     }
     y += 3.0;
@@ -1496,7 +1496,7 @@ fn event_detail(c: &mut Ctx, r: Rect, ev_idx: usize, ev: &crate::calendar::Event
     y += 17.0;
 
     if !ev.location.is_empty() {
-        c.text(format!("Location: {}", one_line(&ev.location)), Rect::new(ix, y, iw, 14.0), 10.0, Weight::Regular, TEXT_2, Align::Left);
+        c.text(format!("Location: {}", one_line(&ev.location)), Rect::new(ix, y, iw, 14.0), 10.0, Weight::Regular, pal().text_2, Align::Left);
         y += 15.0;
     }
 
@@ -1505,11 +1505,11 @@ fn event_detail(c: &mut Ctx, r: Rect, ev_idx: usize, ev: &crate::calendar::Event
     if max_desc_lines > 0 {
         if !ev.description.is_empty() {
             for line in wrap_lines(&ev.description, iw, 10.0).into_iter().take(max_desc_lines) {
-                c.text(line, Rect::new(ix, y, iw, 13.5), 10.0, Weight::Regular, TEXT_3, Align::Left);
+                c.text(line, Rect::new(ix, y, iw, 13.5), 10.0, Weight::Regular, pal().text_3, Align::Left);
                 y += 13.5;
             }
         } else if ev.location.is_empty() {
-            c.text("No location or notes attached.", Rect::new(ix, y, iw, 14.0), 10.0, Weight::Regular, TEXT_3, Align::Left);
+            c.text("No location or notes attached.", Rect::new(ix, y, iw, 14.0), 10.0, Weight::Regular, pal().text_3, Align::Left);
         }
     }
 
@@ -1546,12 +1546,12 @@ fn speed(c: &mut Ctx, a: Rect) {
     let shown = c.ui.speed_val;
 
     c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, accent(Page::Speed));
-    c.text("SPEEDTEST", Rect::new(a.x + 12.0, a.y, a.w - 40.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    c.text("SPEEDTEST", Rect::new(a.x + 12.0, a.y, a.w - 40.0, 15.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
 
     // Dial: 270 degrees open at the bottom, log scale with Ookla-style ticks.
     let (cx, cy, r) = (a.x + 104.0, a.y + 112.0, 80.0);
     let (f0, span) = (0.625_f32, 0.75_f32);
-    c.s.ring(cx, cy, r, 9.0, f0, f0 + span, Color::rgba(255, 255, 255, 0.08));
+    c.s.ring(cx, cy, r, 9.0, f0, f0 + span, pal().ink(0.08));
     let frac = gauge_frac(shown);
     if !idle && frac > 0.004 {
         c.s.ring(cx, cy, r, 9.0, f0, f0 + span * frac, tint);
@@ -1564,9 +1564,9 @@ fn speed(c: &mut Ctx, a: Rect) {
         let f = gauge_frac(t);
         let (x1, y1) = at(f, r - 9.0);
         let (x2, y2) = at(f, r - 14.0);
-        c.s.line(x1, y1, x2, y2, 1.5, TEXT_3);
+        c.s.line(x1, y1, x2, y2, 1.5, pal().text_3);
         let (lx, ly) = at(f, r - 26.0);
-        c.text(format!("{t:.0}"), Rect::new(lx - 16.0, ly - 7.0, 32.0, 14.0), 9.5, Weight::Medium, TEXT_3, Align::Center);
+        c.text(format!("{t:.0}"), Rect::new(lx - 16.0, ly - 7.0, 32.0, 14.0), 9.5, Weight::Medium, pal().text_3, Align::Center);
     }
 
     if idle {
@@ -1585,7 +1585,7 @@ fn speed(c: &mut Ctx, a: Rect) {
         c.s.circle(cx, cy, 6.5, WHITE);
         c.s.circle(cx, cy, 3.0, tint);
         let big = if shown >= 100.0 { format!("{shown:.0}") } else { format!("{shown:.1}") };
-        c.text(big, Rect::new(cx - 52.0, cy + 18.0, 104.0, 40.0), 32.0, Weight::Semibold, TEXT, Align::Center);
+        c.text(big, Rect::new(cx - 52.0, cy + 18.0, 104.0, 40.0), 32.0, Weight::Semibold, pal().text, Align::Center);
         let cap = match sp.phase {
             SpeedPhase::Ping => "Pinging\u{2026}",
             SpeedPhase::Down => "Mbps \u{00b7} download",
@@ -1593,7 +1593,7 @@ fn speed(c: &mut Ctx, a: Rect) {
             SpeedPhase::Done => "Mbps \u{00b7} download",
             _ => "Offline?",
         };
-        let col = if sp.phase == SpeedPhase::Failed { AMBER } else { TEXT_2 };
+        let col = if sp.phase == SpeedPhase::Failed { pal().amber } else { pal().text_2 };
         c.text(cap, Rect::new(cx - 60.0, cy + 56.0, 120.0, 16.0), 11.0, Weight::Medium, col, Align::Center);
     }
 
@@ -1608,34 +1608,34 @@ fn speed(c: &mut Ctx, a: Rect) {
     let live = |p: SpeedPhase| sp.phase == p;
     let mbit = |v: f32| if v >= 100.0 { format!("{v:.0}") } else { format!("{v:.1}") };
     let rows = [
-        ("PING", "\u{25CF}", AMBER, SpeedPhase::Ping, sp.ping_ms.map(|p| format!("{p:.0}")), "ms"),
+        ("PING", "\u{25CF}", pal().amber, SpeedPhase::Ping, sp.ping_ms.map(|p| format!("{p:.0}")), "ms"),
         ("DOWNLOAD", "\u{2193}", DOWN, SpeedPhase::Down, Some(mbit(sp.down)), "Mbps"),
         ("UPLOAD", "\u{2191}", UP, SpeedPhase::Up, Some(mbit(sp.up)), "Mbps"),
     ];
     for (i, (label, glyph, col, phase, value, unit)) in rows.iter().enumerate() {
         let ry = a.y + 20.0 + i as f32 * 50.0;
         let card = Rect::new(x, ry, w, 44.0);
-        c.s.rect(card, 12.0, SURFACE);
+        c.s.rect(card, 12.0, pal().surface);
         if live(*phase) {
             c.s.stroke(card, 12.0, 1.5, col.fade(0.7));
         }
         let on = reached(*phase);
         c.s.circle(card.x + 20.0, card.cy(), 11.0, col.fade(if on { 0.20 } else { 0.08 }));
-        c.text(*glyph, Rect::new(card.x + 9.0, card.cy() - 10.0, 22.0, 20.0), 12.0, Weight::Bold, if on { *col } else { TEXT_3 }, Align::Center);
-        c.text(*label, Rect::new(card.x + 38.0, card.y + 4.0, w - 46.0, 13.0), 9.0, Weight::Semibold, TEXT_3, Align::Left);
+        c.text(*glyph, Rect::new(card.x + 9.0, card.cy() - 10.0, 22.0, 20.0), 12.0, Weight::Bold, if on { *col } else { pal().text_3 }, Align::Center);
+        c.text(*label, Rect::new(card.x + 38.0, card.y + 4.0, w - 46.0, 13.0), 9.0, Weight::Semibold, pal().text_3, Align::Left);
         match (on, value) {
             (true, Some(v)) => {
-                c.text(v.clone(), Rect::new(card.x + 38.0, card.y + 17.0, w - 46.0, 22.0), 16.0, Weight::Semibold, TEXT, Align::Left);
-                c.text(*unit, Rect::new(card.x + 42.0 + est_w(v, 16.0) * 1.08, card.y + 22.0, 50.0, 15.0), 10.0, Weight::Regular, TEXT_2, Align::Left);
+                c.text(v.clone(), Rect::new(card.x + 38.0, card.y + 17.0, w - 46.0, 22.0), 16.0, Weight::Semibold, pal().text, Align::Left);
+                c.text(*unit, Rect::new(card.x + 42.0 + est_w(v, 16.0) * 1.08, card.y + 22.0, 50.0, 15.0), 10.0, Weight::Regular, pal().text_2, Align::Left);
             }
-            _ => c.text("\u{2014}", Rect::new(card.x + 38.0, card.y + 17.0, w - 46.0, 22.0), 16.0, Weight::Semibold, TEXT_3, Align::Left),
+            _ => c.text("\u{2014}", Rect::new(card.x + 38.0, card.y + 17.0, w - 46.0, 22.0), 16.0, Weight::Semibold, pal().text_3, Align::Left),
         }
     }
 
     // Start / again.
     let pr = Rect::new(x, a.bottom() - 30.0, w, 28.0);
     match sp.phase {
-        SpeedPhase::Idle => c.text("Press GO to start", pr, 12.0, Weight::Medium, TEXT_3, Align::Center),
+        SpeedPhase::Idle => c.text("Press GO to start", pr, 12.0, Weight::Medium, pal().text_3, Align::Center),
         p if p.running() => c.pill(pr, Action::Island, "Testing\u{2026}", None, 12.5),
         _ => c.pill(pr, Action::SpeedTest, "Test again", Some(tint), 12.5),
     }
@@ -1646,29 +1646,29 @@ fn speed(c: &mut Ctx, a: Rect) {
 // -------------------------------------------------------------------- usage
 
 fn usage_bar(c: &mut Ctx, r: Rect, label: &str, w: Option<&crate::usage::Window>, now: i64, acc: Color) {
-    c.text(label, Rect::new(r.x, r.y, r.w - 40.0, 14.0), 10.5, Weight::Medium, TEXT_3, Align::Left);
+    c.text(label, Rect::new(r.x, r.y, r.w - 40.0, 14.0), 10.5, Weight::Medium, pal().text_3, Align::Left);
     let bar = Rect::new(r.x, r.y + 20.0, r.w, 6.0);
-    c.s.rect(bar, 3.0, Color::rgba(255, 255, 255, 0.10));
+    c.s.rect(bar, 3.0, pal().ink(0.10));
     match w {
         Some(w) => {
             let used = w.used_now(now);
-            let col = if used > 85.0 { RED } else if used > 65.0 { AMBER } else { acc };
-            c.text(format!("{used:.0}%"), Rect::new(r.right() - 40.0, r.y - 1.0, 40.0, 16.0), 12.0, Weight::Semibold, TEXT, Align::Right);
+            let col = if used > 85.0 { pal().red } else if used > 65.0 { pal().amber } else { acc };
+            c.text(format!("{used:.0}%"), Rect::new(r.right() - 40.0, r.y - 1.0, 40.0, 16.0), 12.0, Weight::Semibold, pal().text, Align::Right);
             if used > 0.0 {
                 c.s.rect(Rect::new(bar.x, bar.y, (bar.w * used / 100.0).max(6.0), 6.0), 3.0, col);
             }
         }
-        None => c.text("\u{2014}", Rect::new(r.right() - 40.0, r.y - 1.0, 40.0, 16.0), 12.0, Weight::Semibold, TEXT_3, Align::Right),
+        None => c.text("\u{2014}", Rect::new(r.right() - 40.0, r.y - 1.0, 40.0, 16.0), 12.0, Weight::Semibold, pal().text_3, Align::Right),
     }
 }
 
 fn limits_card(c: &mut Ctx, r: Rect, name: &str, l: &crate::usage::Limits, loaded: bool, acc: Color, now: i64) {
-    c.s.rect(r, 12.0, SURFACE);
+    c.s.rect(r, 12.0, pal().surface);
     let head = if l.plan.is_empty() { name.to_string() } else { format!("{name}  \u{00b7}  {}", l.plan) };
-    c.text(head, Rect::new(r.x + 12.0, r.y + 7.0, r.w - 24.0, 18.0), 13.0, Weight::Semibold, TEXT, Align::Left);
+    c.text(head, Rect::new(r.x + 12.0, r.y + 7.0, r.w - 24.0, 18.0), 13.0, Weight::Semibold, pal().text, Align::Left);
     if !l.has_data() {
         let msg = if !loaded { "Reading\u{2026}" } else if l.note.is_empty() { "No data yet" } else { l.note.as_str() };
-        c.text(msg, Rect::new(r.x + 12.0, r.y + 28.0, r.w - 24.0, 18.0), 11.5, Weight::Regular, TEXT_3, Align::Left);
+        c.text(msg, Rect::new(r.x + 12.0, r.y + 28.0, r.w - 24.0, 18.0), 11.5, Weight::Regular, pal().text_3, Align::Left);
         return;
     }
     let half = (r.w - 36.0) / 2.0;
@@ -1685,7 +1685,7 @@ fn usage(c: &mut Ctx, a: Rect) {
     let u = &c.vm.usage;
     let now = chrono::Utc::now().timestamp();
     c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
-    c.text("AI USAGE", Rect::new(a.x + 12.0, a.y, 200.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    c.text("AI USAGE", Rect::new(a.x + 12.0, a.y, 200.0, 15.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
     if u.refreshing {
         c.pill(Rect::new(a.right() - 88.0, a.y - 4.0, 88.0, 22.0), Action::Island, "Updating\u{2026}", None, 10.5);
     } else {
@@ -1697,21 +1697,21 @@ fn usage(c: &mut Ctx, a: Rect) {
 
     // OpenCode: spend from its local database (no plan limits to read).
     let r = Rect::new(a.x, a.y + 152.0, w, a.h - 152.0);
-    c.s.rect(r, 12.0, SURFACE);
+    c.s.rect(r, 12.0, pal().surface);
     let o = &u.opencode;
-    c.text("OpenCode", Rect::new(r.x + 12.0, r.y + 7.0, 120.0, 18.0), 13.0, Weight::Semibold, TEXT, Align::Left);
+    c.text("OpenCode", Rect::new(r.x + 12.0, r.y + 7.0, 120.0, 18.0), 13.0, Weight::Semibold, pal().text, Align::Left);
     if !u.loaded || !o.note.is_empty() {
         let msg = if !u.loaded { "Reading\u{2026}" } else { o.note.as_str() };
-        c.text(msg, Rect::new(r.x + 12.0, r.y + 28.0, r.w - 24.0, 18.0), 11.5, Weight::Regular, TEXT_3, Align::Left);
+        c.text(msg, Rect::new(r.x + 12.0, r.y + 28.0, r.w - 24.0, 18.0), 11.5, Weight::Regular, pal().text_3, Align::Left);
     } else if o.week_tokens == 0 {
-        c.text("No OpenCode activity in the last 7 days", Rect::new(r.x + 12.0, r.y + 28.0, r.w - 24.0, 18.0), 11.5, Weight::Regular, TEXT_3, Align::Left);
+        c.text("No OpenCode activity in the last 7 days", Rect::new(r.x + 12.0, r.y + 28.0, r.w - 24.0, 18.0), 11.5, Weight::Regular, pal().text_3, Align::Left);
     } else {
         let money = |v: f64| if v > 0.0 { format!(" \u{00b7} ${v:.2}") } else { String::new() };
         let line = format!("Today {} tokens{}    Week {} tokens{}", crate::usage::compact_count(o.today_tokens), money(o.today_cost), crate::usage::compact_count(o.week_tokens), money(o.week_cost));
-        c.text(line, Rect::new(r.x + 12.0, r.y + 26.0, r.w - 24.0, 18.0), 12.0, Weight::Medium, TEXT, Align::Left);
+        c.text(line, Rect::new(r.x + 12.0, r.y + 26.0, r.w - 24.0, 18.0), 12.0, Weight::Medium, pal().text, Align::Left);
         let top = o.top.iter().map(|s| format!("{} {}", s.label.rsplit('/').next().unwrap_or(&s.label), crate::usage::compact_count(s.tokens))).collect::<Vec<_>>().join("  \u{00b7}  ");
         if !top.is_empty() {
-            c.text(top, Rect::new(r.x + 12.0, r.y + 45.0, r.w - 24.0, 16.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+            c.text(top, Rect::new(r.x + 12.0, r.y + 45.0, r.w - 24.0, 16.0), 10.5, Weight::Regular, pal().text_3, Align::Left);
         }
     }
 }
@@ -1725,10 +1725,10 @@ fn voice(c: &mut Ctx, a: Rect) {
     let rec = v.phase == VoicePhase::Recording;
     let cx = a.cx();
 
-    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, if rec { acc } else { TEXT_3 });
-    c.text(if rec { "RECORDING" } else { "VOICE RECORDER" }, Rect::new(a.x + 12.0, a.y, 200.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, if rec { acc } else { pal().text_3 });
+    c.text(if rec { "RECORDING" } else { "VOICE RECORDER" }, Rect::new(a.x + 12.0, a.y, 200.0, 15.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
 
-    c.text(crate::voice::clock(v.elapsed_ms), Rect::new(a.x, a.y + 20.0, a.w, 34.0), 28.0, Weight::Semibold, if rec { TEXT } else { TEXT_3 }, Align::Center);
+    c.text(crate::voice::clock(v.elapsed_ms), Rect::new(a.x, a.y + 20.0, a.w, 34.0), 28.0, Weight::Semibold, if rec { pal().text } else { pal().text_3 }, Align::Center);
 
     // Waveform of the last few seconds, mirrored around the middle.
     let n = c.ui.voice_bars.len();
@@ -1738,7 +1738,7 @@ fn voice(c: &mut Ctx, a: Rect) {
     for (i, b) in c.ui.voice_bars.iter().enumerate() {
         let h = 3.0 + b * 40.0;
         let fade = 0.35 + 0.65 * (i as f32 / n as f32);
-        c.s.rect(Rect::new(x0 + i as f32 * (bw + gap), mid - h / 2.0, bw, h), 2.5, if rec { acc.fade(fade) } else { Color::rgba(255, 255, 255, 0.12) });
+        c.s.rect(Rect::new(x0 + i as f32 * (bw + gap), mid - h / 2.0, bw, h), 2.5, if rec { acc.fade(fade) } else { pal().ink(0.12) });
     }
 
     // Record / stop button.
@@ -1759,11 +1759,11 @@ fn voice(c: &mut Ctx, a: Rect) {
 
     // Status line.
     let (msg, col) = match v.phase {
-        VoicePhase::Recording => ("Recording\u{2026} tap to stop".to_string(), TEXT_2),
-        VoicePhase::Failed => (v.error.clone(), AMBER),
+        VoicePhase::Recording => ("Recording\u{2026} tap to stop".to_string(), pal().text_2),
+        VoicePhase::Failed => (v.error.clone(), pal().amber),
         VoicePhase::Idle => match &v.saved {
-            Some(name) => (format!("Saved to the shelf \u{00b7} {name}"), TEXT_2),
-            None => ("Tap to record from your microphone".to_string(), TEXT_3),
+            Some(name) => (format!("Saved to the shelf \u{00b7} {name}"), pal().text_2),
+            None => ("Tap to record from your microphone".to_string(), pal().text_3),
         },
     };
     c.text(msg, Rect::new(a.x, a.y + 176.0, a.w, 18.0), 12.0, Weight::Medium, col, Align::Center);
@@ -1813,7 +1813,7 @@ pub fn ai_hist_max_scroll(n: usize) -> usize {
 fn ai(c: &mut Ctx, a: Rect) {
     let acc = accent(Page::Ai);
     c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
-    c.text("AI CHAT", Rect::new(a.x + 12.0, a.y, 200.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
+    c.text("AI CHAT", Rect::new(a.x + 12.0, a.y, 200.0, 15.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
     let a = Rect::new(a.x, a.y + 20.0, a.w, a.h - 20.0);
     let ai = &c.vm.ai;
     let prov = c.set.ai_provider;
@@ -1829,11 +1829,11 @@ fn ai(c: &mut Ctx, a: Rect) {
 
     let badge_r = Rect::new(a.x, a.y, new_r.x - a.x - 8.0, 24.0);
     let bh = c.hov(Action::AiToggleSetup);
-    c.s.rect(badge_r, 12.0, SURFACE.mix(SURFACE_HOVER, bh));
+    c.s.rect(badge_r, 12.0, pal().surface.mix(pal().surface_hover, bh));
     let ready = ai.configured || prov == AiProvider::Ollama || prov == AiProvider::OpenAiCompat;
-    c.s.circle(badge_r.x + 12.0, badge_r.cy(), 3.8, if ready { GREEN } else { AMBER });
+    c.s.circle(badge_r.x + 12.0, badge_r.cy(), 3.8, if ready { pal().green } else { pal().amber });
     let head = format!("{} \u{00b7} {}", prov.label(), model);
-    c.text(head, Rect::new(badge_r.x + 22.0, badge_r.y, badge_r.w - 28.0, badge_r.h), 11.5, Weight::Semibold, TEXT, Align::Left);
+    c.text(head, Rect::new(badge_r.x + 22.0, badge_r.y, badge_r.w - 28.0, badge_r.h), 11.5, Weight::Semibold, pal().text, Align::Left);
     c.hit(badge_r, Action::AiToggleSetup);
 
     if ai.show_setup {
@@ -1857,7 +1857,7 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
 
     // 2. Provider auth / endpoint card.
     let card = Rect::new(a.x, a.y + 62.0, a.w, 56.0);
-    c.s.rect(card, 12.0, SURFACE);
+    c.s.rect(card, 12.0, pal().surface);
     match prov {
         AiProvider::ChatGpt => {
             c.text(
@@ -1865,7 +1865,7 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
                 Rect::new(card.x + 12.0, card.y + 6.0, card.w - 24.0, 18.0),
                 12.0,
                 Weight::Semibold,
-                TEXT,
+                pal().text,
                 Align::Left,
             );
             if ai.chatgpt_login_busy {
@@ -1886,19 +1886,19 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
                         Rect::new(card.x + 12.0, card.y + 28.0, card.w - 86.0, 20.0),
                         11.5,
                         Weight::Regular,
-                        TEXT_2,
+                        pal().text_2,
                         Align::Left,
                     );
                     c.pill(Rect::new(card.right() - 66.0, card.y + 26.0, 58.0, 24.0), Action::AiChatGptSignIn, "Cancel", None, 11.0);
                 }
             } else if ai.chatgpt_signed_in {
-                c.s.circle(card.x + 17.0, card.y + 37.0, 3.8, GREEN);
+                c.s.circle(card.x + 17.0, card.y + 37.0, 3.8, pal().green);
                 c.text(
                     "Connected (DPAPI OAuth token)",
                     Rect::new(card.x + 26.0, card.y + 27.0, card.w - 186.0, 20.0),
                     11.5,
                     Weight::Medium,
-                    TEXT_2,
+                    pal().text_2,
                     Align::Left,
                 );
                 c.pill(Rect::new(card.right() - 152.0, card.y + 26.0, 80.0, 24.0), Action::AiRefreshModels, "Sync models", None, 10.5);
@@ -1909,7 +1909,7 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
                     Rect::new(card.x + 12.0, card.y + 28.0, card.w - 166.0, 20.0),
                     11.5,
                     Weight::Regular,
-                    TEXT_3,
+                    pal().text_3,
                     Align::Left,
                 );
                 c.pill(
@@ -1927,7 +1927,7 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
                 Rect::new(card.x + 12.0, card.y + 6.0, card.w - 24.0, 18.0),
                 12.0,
                 Weight::Semibold,
-                TEXT,
+                pal().text,
                 Align::Left,
             );
             let sub = if ai.configured {
@@ -1935,14 +1935,14 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
             } else {
                 "Copy your OpenCode Go API key, then click Paste Key"
             };
-            c.text(sub, Rect::new(card.x + 12.0, card.y + 28.0, card.w - 176.0, 20.0), 11.0, Weight::Regular, if ai.configured { TEXT_2 } else { TEXT_3 }, Align::Left);
+            c.text(sub, Rect::new(card.x + 12.0, card.y + 28.0, card.w - 176.0, 20.0), 11.0, Weight::Regular, if ai.configured { pal().text_2 } else { pal().text_3 }, Align::Left);
             c.pill(Rect::new(card.right() - 158.0, card.y + 25.0, 74.0, 25.0), Action::AiPasteKey, "Paste Key", (!ai.configured).then_some(acc), 11.0);
             c.pill(Rect::new(card.right() - 78.0, card.y + 25.0, 70.0, 25.0), Action::AiRefreshModels, "Sync models", None, 10.5);
         }
         AiProvider::OpenAiCompat => {
             let url_box = Rect::new(card.x + 10.0, card.y + 6.0, card.w - 174.0, 22.0);
             let editing_url = c.ui.input.is_some() && ai.focus_field == AiFocusField::BaseUrl;
-            c.s.rect(url_box, 7.0, if editing_url { SURFACE_HOVER } else { Color::rgba(0, 0, 0, 0.25) });
+            c.s.rect(url_box, 7.0, if editing_url { pal().surface_hover } else { Color::rgba(0, 0, 0, 0.25) });
             if editing_url {
                 c.s.stroke(url_box, 7.0, 1.2, acc);
             }
@@ -1950,9 +1950,9 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
             if editing_url {
                 let f = c.ui.input.as_ref().unwrap();
                 let ed = field_edit(c, f, acc);
-                c.s.text_edit(f.as_str().to_string(), url_rect, 11.0, Weight::Medium, TEXT, ed);
+                c.s.text_edit(f.as_str().to_string(), url_rect, 11.0, Weight::Medium, pal().text, ed);
             } else {
-                c.text(c.set.active_ai_url().to_string(), url_rect, 11.0, Weight::Medium, TEXT, Align::Left);
+                c.text(c.set.active_ai_url().to_string(), url_rect, 11.0, Weight::Medium, pal().text, Align::Left);
             }
             c.hit_text(url_box, Action::AiFocusBaseUrl);
             c.pill(Rect::new(card.right() - 158.0, card.y + 6.0, 72.0, 22.0), Action::AiPasteUrl, "Paste URL", None, 10.5);
@@ -1963,24 +1963,24 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
             } else {
                 "Key optional for local servers \u{00b7} Paste Key for cloud APIs"
             };
-            c.text(note, Rect::new(card.x + 12.0, card.y + 32.0, card.w - 86.0, 18.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+            c.text(note, Rect::new(card.x + 12.0, card.y + 32.0, card.w - 86.0, 18.0), 10.5, Weight::Regular, pal().text_3, Align::Left);
             c.pill(Rect::new(card.right() - 68.0, card.y + 31.0, 60.0, 20.0), Action::AiRefreshModels, "Sync", None, 10.0);
         }
         AiProvider::Gemini | AiProvider::Claude => {
-            c.text(prov.full_name(), Rect::new(card.x + 12.0, card.y + 6.0, card.w - 110.0, 18.0), 12.0, Weight::Semibold, TEXT, Align::Left);
+            c.text(prov.full_name(), Rect::new(card.x + 12.0, card.y + 6.0, card.w - 110.0, 18.0), 12.0, Weight::Semibold, pal().text, Align::Left);
             let sub = if ai.configured {
                 "API key saved (encrypted with Windows DPAPI)"
             } else {
                 "Copy your API key to the clipboard, then click Paste Key"
             };
-            c.text(sub, Rect::new(card.x + 12.0, card.y + 28.0, card.w - 110.0, 20.0), 11.0, Weight::Regular, if ai.configured { TEXT_2 } else { TEXT_3 }, Align::Left);
+            c.text(sub, Rect::new(card.x + 12.0, card.y + 28.0, card.w - 110.0, 20.0), 11.0, Weight::Regular, if ai.configured { pal().text_2 } else { pal().text_3 }, Align::Left);
             c.pill(Rect::new(card.right() - 90.0, card.y + 15.0, 82.0, 26.0), Action::AiPasteKey, "Paste Key", (!ai.configured).then_some(acc), 11.0);
         }
         AiProvider::Ollama => {
-            c.text("Local Ollama \u{00b7} runs offline on your PC", Rect::new(card.x + 12.0, card.y + 5.0, card.w - 24.0, 18.0), 12.0, Weight::Semibold, TEXT, Align::Left);
+            c.text("Local Ollama \u{00b7} runs offline on your PC", Rect::new(card.x + 12.0, card.y + 5.0, card.w - 24.0, 18.0), 12.0, Weight::Semibold, pal().text, Align::Left);
             let url_box = Rect::new(card.x + 10.0, card.y + 27.0, card.w - 98.0, 22.0);
             let editing_url = c.ui.input.is_some() && ai.focus_field == AiFocusField::BaseUrl;
-            c.s.rect(url_box, 7.0, if editing_url { SURFACE_HOVER } else { Color::rgba(0, 0, 0, 0.25) });
+            c.s.rect(url_box, 7.0, if editing_url { pal().surface_hover } else { Color::rgba(0, 0, 0, 0.25) });
             if editing_url {
                 c.s.stroke(url_box, 7.0, 1.2, acc);
             }
@@ -1988,9 +1988,9 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
             if editing_url {
                 let f = c.ui.input.as_ref().unwrap();
                 let ed = field_edit(c, f, acc);
-                c.s.text_edit(f.as_str().to_string(), url_rect, 11.0, Weight::Medium, TEXT, ed);
+                c.s.text_edit(f.as_str().to_string(), url_rect, 11.0, Weight::Medium, pal().text, ed);
             } else {
-                c.text(c.set.active_ai_url().to_string(), url_rect, 11.0, Weight::Medium, TEXT, Align::Left);
+                c.text(c.set.active_ai_url().to_string(), url_rect, 11.0, Weight::Medium, pal().text, Align::Left);
             }
             c.hit_text(url_box, Action::AiFocusBaseUrl);
             c.pill(Rect::new(card.right() - 82.0, card.y + 27.0, 74.0, 22.0), Action::AiPasteUrl, "Paste URL", None, 10.5);
@@ -1999,10 +1999,10 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
 
     // 3. Model selector row: editable model field + Prev/Next + preset chips.
     let my = a.y + 125.0;
-    c.text("Model", Rect::new(a.x, my, 42.0, 24.0), 11.5, Weight::Medium, TEXT_2, Align::Left);
+    c.text("Model", Rect::new(a.x, my, 42.0, 24.0), 11.5, Weight::Medium, pal().text_2, Align::Left);
     let mbox = Rect::new(a.x + 44.0, my, 134.0, 24.0);
     let editing_model = c.ui.input.is_some() && ai.focus_field == AiFocusField::Model;
-    c.s.rect(mbox, 8.0, if editing_model { SURFACE_HOVER } else { SURFACE });
+    c.s.rect(mbox, 8.0, if editing_model { pal().surface_hover } else { pal().surface });
     if editing_model {
         c.s.stroke(mbox, 8.0, 1.2, acc);
     }
@@ -2010,14 +2010,14 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
     if editing_model {
         let f = c.ui.input.as_ref().unwrap();
         let ed = field_edit(c, f, acc);
-        c.s.text_edit(f.as_str().to_string(), model_rect, 11.5, Weight::Semibold, TEXT, ed);
+        c.s.text_edit(f.as_str().to_string(), model_rect, 11.5, Weight::Semibold, pal().text, ed);
     } else {
-        c.text(c.set.active_ai_model().to_string(), model_rect, 11.5, Weight::Semibold, TEXT, Align::Left);
+        c.text(c.set.active_ai_model().to_string(), model_rect, 11.5, Weight::Semibold, pal().text, Align::Left);
     }
     c.hit_text(mbox, Action::AiFocusModel);
 
-    c.icon_btn(Rect::new(mbox.right() + 4.0, my, 24.0, 24.0), Action::AiCycleModel(-1), Icon::Prev, 10.0, TEXT_2);
-    c.icon_btn(Rect::new(mbox.right() + 30.0, my, 24.0, 24.0), Action::AiCycleModel(1), Icon::Next, 10.0, TEXT_2);
+    c.icon_btn(Rect::new(mbox.right() + 4.0, my, 24.0, 24.0), Action::AiCycleModel(-1), Icon::Prev, 10.0, pal().text_2);
+    c.icon_btn(Rect::new(mbox.right() + 30.0, my, 24.0, 24.0), Action::AiCycleModel(1), Icon::Next, 10.0, pal().text_2);
 
     let mut cx = mbox.right() + 58.0;
     for (idx, m) in ai.available_models.iter().take(2).enumerate() {
@@ -2038,7 +2038,7 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
         Rect::new(a.x, sy, a.w - 52.0, 22.0),
         12.0,
         Weight::Regular,
-        TEXT,
+        pal().text,
         Align::Left,
     );
     c.switch(Rect::new(a.right() - 42.0, sy, 42.0, 22.0), SettingKey::AiShareDay, acc);
@@ -2046,7 +2046,7 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
     // 5. Status / footer note.
     let fy = a.bottom() - 18.0;
     let (foot, col) = if !ai.error.is_empty() {
-        (ai.error.clone(), AMBER)
+        (ai.error.clone(), pal().amber)
     } else if !ai.status_note.is_empty() {
         (ai.status_note.clone(), acc)
     } else {
@@ -2056,7 +2056,7 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
                 ai.memories_count,
                 if ai.memories_count == 1 { "y" } else { "ies" }
             ),
-            TEXT_3,
+            pal().text_3,
         )
     };
     c.text(foot, Rect::new(a.x, fy, a.w, 18.0), 10.5, Weight::Medium, col, Align::Left);
@@ -2078,22 +2078,22 @@ fn ai_history(c: &mut Ctx, a: Rect, acc: Color) {
         let del = Action::AiDeleteChat(item.id);
         let hv = c.hov(sel).max(c.hov(del));
         let active = item.id == ai.active_id;
-        c.s.rect(r, 10.0, if active { acc.fade(0.16) } else { SURFACE.mix(SURFACE_HOVER, hv) });
+        c.s.rect(r, 10.0, if active { acc.fade(0.16) } else { pal().surface.mix(pal().surface_hover, hv) });
         if active {
             c.s.circle(r.x + 14.0, r.cy(), 3.5, acc);
         }
         let tx = if active { r.x + 26.0 } else { r.x + 14.0 };
-        c.text(item.title.clone(), Rect::new(tx, r.y, r.w - 110.0, r.h), 12.5, if active { Weight::Semibold } else { Weight::Regular }, TEXT, Align::Left);
+        c.text(item.title.clone(), Rect::new(tx, r.y, r.w - 110.0, r.h), 12.5, if active { Weight::Semibold } else { Weight::Regular }, pal().text, Align::Left);
         c.text(
             format!("{} msg{}", item.msg_count, if item.msg_count == 1 { "" } else { "s" }),
             Rect::new(r.right() - 88.0, r.y, 52.0, r.h),
             11.0,
             Weight::Regular,
-            TEXT_3,
+            pal().text_3,
             Align::Right,
         );
         c.hit(Rect::new(r.x, r.y, r.w - 32.0, r.h), sel);
-        c.ghost_icon(Rect::new(r.right() - 28.0, r.cy() - 12.0, 24.0, 24.0), del, Icon::Close, 11.5, TEXT_2);
+        c.ghost_icon(Rect::new(r.right() - 28.0, r.cy() - 12.0, 24.0, 24.0), del, Icon::Close, 11.5, pal().text_2);
     }
 }
 
@@ -2106,11 +2106,11 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
     let in_y = a.bottom() - 34.0;
     let field = Rect::new(a.x, in_y, a.w - 40.0, 34.0);
     let typing = c.ui.input.is_some() && ai.focus_field == AiFocusField::Prompt;
-    c.s.rect(field, 12.0, if typing { SURFACE_HOVER } else { c.surface_fill(Action::AiInput) });
+    c.s.rect(field, 12.0, if typing { pal().surface_hover } else { c.surface_fill(Action::AiInput) });
     if typing {
         c.s.stroke(field, 12.0, 1.4, acc.fade(0.85));
     }
-    icons::draw(&mut c.s, Icon::Sparkle, field.x + 16.0, field.cy(), 14.0, if typing { acc } else { TEXT_3 });
+    icons::draw(&mut c.s, Icon::Sparkle, field.x + 16.0, field.cy(), 14.0, if typing { acc } else { pal().text_3 });
     let tr = Rect::new(field.x + 32.0, field.y, field.w - 42.0, field.h);
     let shown = if typing {
         c.ui.input.as_ref().map(|f| f.as_str()).unwrap_or("")
@@ -2121,9 +2121,9 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
         if typing {
             let f = c.ui.input.as_ref().unwrap();
             let ed = field_edit(c, f, acc);
-            c.s.text_edit(f.as_str().to_string(), tr, 12.5, Weight::Regular, TEXT, ed);
+            c.s.text_edit(f.as_str().to_string(), tr, 12.5, Weight::Regular, pal().text, ed);
         } else {
-            c.text(shown.to_string(), tr, 12.5, Weight::Regular, TEXT, Align::Left);
+            c.text(shown.to_string(), tr, 12.5, Weight::Regular, pal().text, Align::Left);
         }
     } else {
         let placeholder = if ai.busy {
@@ -2131,7 +2131,7 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
         } else {
             "Ask anything, add a task, or plan your day\u{2026}"
         };
-        c.text(placeholder, tr, 12.5, Weight::Regular, TEXT_3, Align::Left);
+        c.text(placeholder, tr, 12.5, Weight::Regular, pal().text_3, Align::Left);
         if typing && (c.ui.clock_s * 1.8) % 2.0 < 1.0 {
             c.s.rect(Rect::new(tr.x, field.cy() - 8.0, 1.5, 16.0), 0.7, acc);
         }
@@ -2141,8 +2141,8 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
     // Send button.
     let send_r = Rect::new(a.right() - 34.0, in_y, 34.0, 34.0);
     let can_send = !shown.trim().is_empty() && !ai.busy;
-    c.s.rect(send_r, 17.0, if can_send { acc } else { SURFACE });
-    icons::draw(&mut c.s, Icon::Send, send_r.cx(), send_r.cy(), 15.0, if can_send { ON_ACCENT } else { TEXT_3 });
+    c.s.rect(send_r, 17.0, if can_send { acc } else { pal().surface });
+    icons::draw(&mut c.s, Icon::Send, send_r.cx(), send_r.cy(), 15.0, if can_send { ON_ACCENT } else { pal().text_3 });
     c.hit(send_r, Action::AiSend);
 
     let body = Rect::new(a.x, a.y + 30.0, a.w, in_y - (a.y + 30.0) - 6.0);
@@ -2158,7 +2158,7 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
                 AiProvider::ChatGpt => "Sign in with your ChatGPT subscription to start",
                 _ => "Add your API key in Setup to start chatting",
             };
-            c.text(msg, Rect::new(ban.x + 12.0, ban.y, ban.w - 134.0, ban.h), 11.5, Weight::Medium, TEXT, Align::Left);
+            c.text(msg, Rect::new(ban.x + 12.0, ban.y, ban.w - 134.0, ban.h), 11.5, Weight::Medium, pal().text, Align::Left);
             let (cta_act, cta_lbl) = if prov == AiProvider::ChatGpt {
                 (Action::AiChatGptSignIn, "Sign in")
             } else {
@@ -2174,11 +2174,11 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
             let r = Rect::new(body.x + col as f32 * (cw + 10.0), grid_y + row as f32 * (card_h + 8.0), cw, card_h);
             let act = Action::AiStarter(i as u8);
             let hv = c.hov(act);
-            c.s.rect(r, 12.0, if c.pressed(act) { SURFACE_PRESS } else { SURFACE.mix(SURFACE_HOVER, hv) });
-            c.text(*title, Rect::new(r.x + 12.0, r.y + 7.0, r.w - 24.0, 18.0), 12.5, Weight::Semibold, TEXT, Align::Left);
+            c.s.rect(r, 12.0, if c.pressed(act) { pal().surface_press } else { pal().surface.mix(pal().surface_hover, hv) });
+            c.text(*title, Rect::new(r.x + 12.0, r.y + 7.0, r.w - 24.0, 18.0), 12.5, Weight::Semibold, pal().text, Align::Left);
             let lines = wrap_lines(prompt, r.w - 24.0, 10.5);
             for (li, l) in lines.iter().take(2).enumerate() {
-                c.text(l.clone(), Rect::new(r.x + 12.0, r.y + 26.0 + li as f32 * 13.0, r.w - 24.0, 14.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+                c.text(l.clone(), Rect::new(r.x + 12.0, r.y + 26.0 + li as f32 * 13.0, r.w - 24.0, 14.0), 10.5, Weight::Regular, pal().text_3, Align::Left);
             }
             c.hit(r, act);
         }
@@ -2271,7 +2271,7 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
                 c.s.rect(br, 14.0, acc.fade(0.2));
                 c.s.stroke(br, 14.0, 1.0, acc.fade(0.22));
                 for (li, l) in lines.iter().enumerate() {
-                    c.text(l.clone(), Rect::new(br.x + 12.0, br.y + 6.0 + li as f32 * 16.0, br.w - 24.0, 16.0), 12.0, Weight::Regular, TEXT, Align::Left);
+                    c.text(l.clone(), Rect::new(br.x + 12.0, br.y + 6.0 + li as f32 * 16.0, br.w - 24.0, 16.0), 12.0, Weight::Regular, pal().text, Align::Left);
                 }
             }
             RowItem::Assistant { msg_idx, md } => {
@@ -2284,10 +2284,10 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
             }
             RowItem::ActionRow { msg_idx, act_idx, label, can_undo, undone } => {
                 let ar = Rect::new(body.x + GUTTER, y, body.w - GUTTER, 22.0);
-                c.s.rect(ar, 8.0, GREEN.fade(0.12));
-                icons::draw(&mut c.s, Icon::Check, ar.x + 12.0, ar.cy(), 11.0, GREEN);
+                c.s.rect(ar, 8.0, pal().green.fade(0.12));
+                icons::draw(&mut c.s, Icon::Check, ar.x + 12.0, ar.cy(), 11.0, pal().green);
                 let txt = if *undone { format!("{label} (undone)") } else { label.clone() };
-                c.text(txt, Rect::new(ar.x + 24.0, ar.y, ar.w - 84.0, ar.h), 11.0, Weight::Medium, if *undone { TEXT_3 } else { TEXT_2 }, Align::Left);
+                c.text(txt, Rect::new(ar.x + 24.0, ar.y, ar.w - 84.0, ar.h), 11.0, Weight::Medium, if *undone { pal().text_3 } else { pal().text_2 }, Align::Left);
                 if *can_undo {
                     let undo_r = Rect::new(ar.right() - 52.0, ar.y + 2.0, 48.0, 18.0);
                     if undo_r.y >= body.y && undo_r.bottom() <= body.bottom() {
@@ -2303,13 +2303,13 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
                 for k in 0..3 {
                     let ph = ((t * 1.6 - k as f32 * 0.18) % 1.0).max(0.0);
                     let lift = (ph * std::f32::consts::PI).sin().max(0.0);
-                    c.s.circle(body.x + GUTTER + 6.0 + k as f32 * 11.0, y + 12.0 - lift * 3.0, 2.6, TEXT_2.fade(0.45 + 0.55 * lift));
+                    c.s.circle(body.x + GUTTER + 6.0 + k as f32 * 11.0, y + 12.0 - lift * 3.0, 2.6, pal().text_2.fade(0.45 + 0.55 * lift));
                 }
             }
             RowItem::ErrorBanner(err) => {
                 let br = Rect::new(body.x, y, body.w, 24.0);
-                c.s.rect(br, 8.0, AMBER.fade(0.14));
-                c.text(err.clone(), Rect::new(br.x + 10.0, br.y, br.w - 20.0, br.h), 11.0, Weight::Medium, AMBER, Align::Left);
+                c.s.rect(br, 8.0, pal().amber.fade(0.14));
+                c.text(err.clone(), Rect::new(br.x + 10.0, br.y, br.w - 20.0, br.h), 11.0, Weight::Medium, pal().amber, Align::Left);
             }
         }
         y += h;
@@ -2341,7 +2341,7 @@ fn settings(c: &mut Ctx, a: Rect) {
     let rx = a.x + col_w + 36.0;
 
     // LEFT COLUMN: General Toggles
-    c.text("General Settings", Rect::new(lx, a.y, col_w, 24.0), 16.0, Weight::Semibold, TEXT, Align::Left);
+    c.text("General Settings", Rect::new(lx, a.y, col_w, 24.0), 16.0, Weight::Semibold, pal().text, Align::Left);
     let keys = [
         SettingKey::OpenOnHover,
         SettingKey::Lyrics,
@@ -2355,15 +2355,15 @@ fn settings(c: &mut Ctx, a: Rect) {
     let ty = a.y + 30.0;
     for (i, k) in keys.iter().enumerate() {
         let y = ty + i as f32 * row_h;
-        c.text(k.label(), Rect::new(lx, y, col_w - 50.0, row_h - 4.0), 12.0, Weight::Regular, TEXT, Align::Left);
+        c.text(k.label(), Rect::new(lx, y, col_w - 50.0, row_h - 4.0), 12.0, Weight::Regular, pal().text, Align::Left);
         c.switch(Rect::new(lx + col_w - 42.0, y + 2.0, 42.0, 20.0), *k, acc_on());
     }
 
     // Global hotkeys: one chip per shortcut, lit = registered. Switch off any
     // that collides with another app.
     let hy = ty + keys.len() as f32 * row_h + 8.0;
-    c.text("Hotkeys", Rect::new(lx, hy, 60.0, 16.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
-    c.text("island \u{00b7} search \u{00b7} note \u{00b7} AI", Rect::new(lx + 62.0, hy, col_w - 62.0, 16.0), 10.0, Weight::Regular, TEXT_3.fade(0.8), Align::Left);
+    c.text("Hotkeys", Rect::new(lx, hy, 60.0, 16.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
+    c.text("island \u{00b7} search \u{00b7} note \u{00b7} AI", Rect::new(lx + 62.0, hy, col_w - 62.0, 16.0), 10.0, Weight::Regular, pal().text_3.fade(0.8), Align::Left);
     let hk_w = (col_w - 18.0) / 4.0;
     for (i, k) in [SettingKey::HotkeyIsland, SettingKey::HotkeySearch, SettingKey::HotkeyNote, SettingKey::HotkeyAi].iter().enumerate() {
         let on = k.get(c.set);
@@ -2376,13 +2376,40 @@ fn settings(c: &mut Ctx, a: Rect) {
 
     // Idle look
     let sy = a.y + 32.0;
-    c.text("Idle Look", Rect::new(rx, sy, 68.0, 26.0), 12.0, Weight::Medium, TEXT_2, Align::Left);
+    c.text("Idle Look", Rect::new(rx, sy, 68.0, 26.0), 12.0, Weight::Medium, pal().text_2, Align::Left);
     let look = c.vm.idle_look;
     let looks = [(IdleLook::Clock, "Clock"), (IdleLook::Eyes, "Eyes"), (IdleLook::Minimal, "Dot"), (IdleLook::Hidden, "Hidden")].map(|(l, s)| (Action::Idle(l), s, look == l));
     segmented(c, Rect::new(rx + 70.0, sy, col_w - 70.0, 26.0), &looks, 11.5);
 
+    // Island theme: a strip of body swatches, one per IslandTheme.
+    let th_y = sy + 34.0;
+    c.text("Theme", Rect::new(rx, th_y + 2.0, 68.0, 20.0), 12.0, Weight::Medium, pal().text_2, Align::Left);
+    // Swatch band: 72px label on the left, theme name right-aligned at the end.
+    let pitch = ((col_w - 72.0 - 22.0) / (IslandTheme::ALL.len() - 1) as f32).min(26.0);
+    for (i, t) in IslandTheme::ALL.iter().enumerate() {
+        let cx = rx + 72.0 + 11.0 + i as f32 * pitch;
+        let cy = th_y + 12.0;
+        let act = Action::IslandTheme(*t);
+        let tp = palette_for(*t);
+        let on = c.set.theme == *t;
+        if on {
+            c.s.circle(cx, cy, 11.0, pal().surface_press);
+        } else {
+            let hov = c.hov(act);
+            if hov > 0.01 {
+                c.s.circle(cx, cy, 11.0, pal().surface_hover.fade(hov));
+            }
+        }
+        c.s.circle(cx, cy, 8.0, Fill::VGrad(tp.body_top, tp.body_bottom));
+        c.s.ring(cx, cy, 8.0, 1.0, 0.0, 1.0, tp.rim.fade(tp.rim.a.max(0.4)));
+        if on {
+            c.s.ring(cx, cy, 10.0, 1.6, 0.0, 1.0, pal().text);
+        }
+        c.hit(Rect::new(cx - pitch / 2.0, cy - 11.0, pitch, 22.0), act);
+    }
+
     // Eyes Style & Extras (when Eyes active)
-    let ey = sy + 32.0;
+    let ey = th_y + 34.0;
     if look == IdleLook::Eyes {
         let style = c.set.eye_style;
         let styles = EyeStyle::ALL.map(|st| (Action::EyeStyle(st), st.label(), st == style));
@@ -2405,14 +2432,14 @@ fn settings(c: &mut Ctx, a: Rect) {
 
     // Water Goal Stepper
     let gy = if look == IdleLook::Eyes { ey + 64.0 } else { ey + 8.0 };
-    c.text("Daily water", Rect::new(rx, gy + 2.0, 75.0, 24.0), 12.0, Weight::Regular, TEXT, Align::Left);
-    c.icon_btn(Rect::new(rx + col_w - 110.0, gy, 24.0, 24.0), Action::GoalStep(-1), Icon::Minus, 11.0, TEXT_2);
-    c.text(teardrop_core::glasses_label(c.vm.water.goal_ml), Rect::new(rx + col_w - 84.0, gy + 2.0, 56.0, 24.0), 11.5, Weight::Semibold, TEXT, Align::Center);
-    c.icon_btn(Rect::new(rx + col_w - 26.0, gy, 24.0, 24.0), Action::GoalStep(1), Icon::Plus, 11.0, TEXT_2);
+    c.text("Daily water", Rect::new(rx, gy + 2.0, 75.0, 24.0), 12.0, Weight::Regular, pal().text, Align::Left);
+    c.icon_btn(Rect::new(rx + col_w - 110.0, gy, 24.0, 24.0), Action::GoalStep(-1), Icon::Minus, 11.0, pal().text_2);
+    c.text(teardrop_core::glasses_label(c.vm.water.goal_ml), Rect::new(rx + col_w - 84.0, gy + 2.0, 56.0, 24.0), 11.5, Weight::Semibold, pal().text, Align::Center);
+    c.icon_btn(Rect::new(rx + col_w - 26.0, gy, 24.0, 24.0), Action::GoalStep(1), Icon::Plus, 11.0, pal().text_2);
 
     // Pages on the island: each icon chips the page in/out of the nav and cycle.
     let py = gy + 36.0;
-    c.text("On island", Rect::new(rx, py + 2.0, 75.0, 24.0), 12.0, Weight::Regular, TEXT_2, Align::Left);
+    c.text("On island", Rect::new(rx, py + 2.0, 75.0, 24.0), 12.0, Weight::Regular, pal().text_2, Align::Left);
     let vis = super::layout::visible_pages(c.set);
     let pitch = ((col_w - 84.0) / Page::all().len() as f32).min(28.0);
     for (i, pg) in Page::all().iter().enumerate() {
@@ -2422,7 +2449,7 @@ fn settings(c: &mut Ctx, a: Rect) {
             Action::TogglePage(*pg),
             super::layout::tab_icon(*pg),
             13.0,
-            if on { accent(*pg) } else { TEXT_3.fade(0.45) },
+            if on { accent(*pg) } else { pal().text_3.fade(0.45) },
         );
     }
 
@@ -2436,29 +2463,29 @@ fn settings(c: &mut Ctx, a: Rect) {
     }
 
     // Keyboard hint at bottom
-    c.text("Esc closes the island", Rect::new(rx, a.bottom() - 16.0, col_w, 16.0), 10.5, Weight::Regular, TEXT_3, Align::Left);
+    c.text("Esc closes the island", Rect::new(rx, a.bottom() - 16.0, col_w, 16.0), 10.5, Weight::Regular, pal().text_3, Align::Left);
 }
 
 const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /// Pill-shaped segmented control; `items` = (action, label, selected).
 fn segmented(c: &mut Ctx, seg: Rect, items: &[(Action, &str, bool)], size: f32) {
-    c.s.rect(seg, seg.h / 2.0, SURFACE);
+    c.s.rect(seg, seg.h / 2.0, pal().surface);
     let sw = seg.w / items.len() as f32;
     for (i, &(act, label, on)) in items.iter().enumerate() {
         let r = Rect::new(seg.x + i as f32 * sw + 3.0, seg.y + 3.0, sw - 6.0, seg.h - 6.0);
         if on {
-            c.s.rect(r, r.h / 2.0, SURFACE_PRESS.mix(WHITE.fade(0.22), 0.4));
+            c.s.rect(r, r.h / 2.0, pal().surface_press.mix(WHITE.fade(0.22), 0.4));
         } else if c.hov(act) > 0.01 {
-            c.s.rect(r, r.h / 2.0, SURFACE_HOVER.fade(c.hov(act)));
+            c.s.rect(r, r.h / 2.0, pal().surface_hover.fade(c.hov(act)));
         }
-        c.text(label, r, size, if on { Weight::Semibold } else { Weight::Regular }, if on { TEXT } else { TEXT_2 }, Align::Center);
+        c.text(label, r, size, if on { Weight::Semibold } else { Weight::Regular }, if on { pal().text } else { pal().text_2 }, Align::Center);
         c.hit(r, act);
     }
 }
 
 fn acc_on() -> Color {
-    GREEN
+    pal().green
 }
 
 
@@ -2475,9 +2502,9 @@ fn chat(c: &mut Ctx, a: Rect) {
     let vm = c.vm;
     let chat = &vm.chat;
 
-    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, if chat.radio_on { acc } else { TEXT_3 });
-    c.text("MESH CHAT", Rect::new(a.x + 12.0, a.y, 110.0, 15.0), 10.5, Weight::Semibold, TEXT_3, Align::Left);
-    c.text(chat.status.clone(), Rect::new(a.x + 120.0, a.y, a.w - 120.0, 15.0), 10.5, Weight::Medium, TEXT_3, Align::Right);
+    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, if chat.radio_on { acc } else { pal().text_3 });
+    c.text("MESH CHAT", Rect::new(a.x + 12.0, a.y, 110.0, 15.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
+    c.text(chat.status.clone(), Rect::new(a.x + 120.0, a.y, a.w - 120.0, 15.0), 10.5, Weight::Medium, pal().text_3, Align::Right);
 
     let body = Rect::new(a.x, a.y + 20.0, a.w, a.h - 20.0);
     let side_w = 142.0;
@@ -2488,18 +2515,18 @@ fn chat(c: &mut Ctx, a: Rect) {
     // Our nickname (click to edit; Enter commits via ChatNick).
     let nick_r = Rect::new(side.x, side.y, side.w, 26.0);
     let editing = chat.editing_nick;
-    c.s.rect(nick_r, 9.0, if editing { SURFACE_HOVER } else { c.surface_fill(Action::ChatNick) });
+    c.s.rect(nick_r, 9.0, if editing { pal().surface_hover } else { c.surface_fill(Action::ChatNick) });
     if editing {
         c.s.stroke(nick_r, 9.0, 1.4, acc.fade(0.85));
     }
     if editing && c.ui.input.is_some() {
         let f = c.ui.input.as_ref().unwrap();
         let ed = field_edit(c, f, acc);
-        c.s.text_edit(f.as_str().to_string(), Rect::new(nick_r.x + 10.0, nick_r.y, nick_r.w - 16.0, nick_r.h), 12.0, Weight::Medium, TEXT, ed);
+        c.s.text_edit(f.as_str().to_string(), Rect::new(nick_r.x + 10.0, nick_r.y, nick_r.w - 16.0, nick_r.h), 12.0, Weight::Medium, pal().text, ed);
     } else {
-        c.text(format!("@{}", chat.nick), Rect::new(nick_r.x + 10.0, nick_r.y, nick_r.w - 56.0, nick_r.h), 12.0, Weight::Semibold, TEXT, Align::Left);
+        c.text(format!("@{}", chat.nick), Rect::new(nick_r.x + 10.0, nick_r.y, nick_r.w - 56.0, nick_r.h), 12.0, Weight::Semibold, pal().text, Align::Left);
         // Short peer id — compare in person to pin an identity.
-        c.text(chat.me.chars().take(4).collect::<String>(), Rect::new(nick_r.right() - 48.0, nick_r.y, 44.0, nick_r.h), 10.0, Weight::Medium, TEXT_3, Align::Right);
+        c.text(chat.me.chars().take(4).collect::<String>(), Rect::new(nick_r.right() - 48.0, nick_r.y, 44.0, nick_r.h), 10.0, Weight::Medium, pal().text_3, Align::Right);
     }
     c.hit(nick_r, Action::ChatNick);
 
@@ -2508,8 +2535,8 @@ fn chat(c: &mut Ctx, a: Rect) {
     let sel_room = chat.sel.is_none();
     let room_a = Action::ChatSelect(0);
     c.s.rect(room_r, 9.0, if sel_room { acc.fade(0.2) } else { c.surface_fill(room_a) });
-    c.s.circle(room_r.x + 13.0, room_r.cy(), 4.0, if sel_room { acc } else { TEXT_3 });
-    c.text("room", Rect::new(room_r.x + 24.0, room_r.y, room_r.w - 54.0, room_r.h), 12.0, Weight::Semibold, TEXT, Align::Left);
+    c.s.circle(room_r.x + 13.0, room_r.cy(), 4.0, if sel_room { acc } else { pal().text_3 });
+    c.text("room", Rect::new(room_r.x + 24.0, room_r.y, room_r.w - 54.0, room_r.h), 12.0, Weight::Semibold, pal().text, Align::Left);
     if chat.unread_room > 0 {
         let b = Rect::new(room_r.right() - 24.0, room_r.cy() - 8.0, 16.0, 16.0);
         c.s.rect(b, 8.0, acc);
@@ -2532,10 +2559,10 @@ fn chat(c: &mut Ctx, a: Rect) {
         } else {
             c.s.rect(r, 9.0, c.surface_fill(act));
         }
-        let dot = if p.fresh { acc } else { TEXT_3 };
+        let dot = if p.fresh { acc } else { pal().text_3 };
         c.s.circle(r.x + 13.0, r.cy(), 3.5, dot);
         let name_w = r.w - 24.0 - if p.secure { 20.0 } else { 6.0 } - if p.unread > 0 { 24.0 } else { 4.0 };
-        c.text(p.nick.clone(), Rect::new(r.x + 24.0, r.y, name_w, r.h), 12.0, if sel { Weight::Semibold } else { Weight::Regular }, TEXT, Align::Left);
+        c.text(p.nick.clone(), Rect::new(r.x + 24.0, r.y, name_w, r.h), 12.0, if sel { Weight::Semibold } else { Weight::Regular }, pal().text, Align::Left);
         if p.secure {
             // tiny lock
             let lx = r.right() - 18.0 - if p.unread > 0 { 24.0 } else { 0.0 };
@@ -2552,7 +2579,7 @@ fn chat(c: &mut Ctx, a: Rect) {
         y += 30.0;
     }
     if chat.peers.is_empty() {
-        c.text("no peers yet", Rect::new(side.x + 4.0, y + 4.0, side.w - 8.0, 30.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
+        c.text("no peers yet", Rect::new(side.x + 4.0, y + 4.0, side.w - 8.0, 30.0), 11.0, Weight::Regular, pal().text_3, Align::Left);
     }
 
     // -- conversation -----------------------------------------------------
@@ -2568,7 +2595,7 @@ fn chat(c: &mut Ctx, a: Rect) {
     } else {
         format!("{} \u{00b7} encrypting\u{2026}", chat.sel_nick)
     };
-    c.text(title, Rect::new(msg_area.x + 2.0, msg_area.y, msg_area.w - 4.0, 16.0), 11.0, Weight::Semibold, TEXT_3, Align::Left);
+    c.text(title, Rect::new(msg_area.x + 2.0, msg_area.y, msg_area.w - 4.0, 16.0), 11.0, Weight::Semibold, pal().text_3, Align::Left);
     let list = Rect::new(msg_area.x, msg_area.y + 18.0, msg_area.w, msg_area.h - 18.0);
 
     if chat.msgs.is_empty() {
@@ -2602,12 +2629,12 @@ fn chat(c: &mut Ctx, a: Rect) {
                     meta.push_str(" \u{00b7} \u{2026}");
                 }
             }
-            let meta_col = if m.failed { RED } else if m.mine { acc } else { TEXT_3 };
+            let meta_col = if m.failed { pal().red } else if m.mine { acc } else { pal().text_3 };
             c.text(meta, Rect::new(list.x + 2.0, cy, list.w - 60.0, 14.0), 10.0, Weight::Semibold, meta_col, Align::Left);
-            c.text(when, Rect::new(list.right() - 58.0, cy, 56.0, 14.0), 10.0, Weight::Regular, TEXT_3, Align::Right);
+            c.text(when, Rect::new(list.right() - 58.0, cy, 56.0, 14.0), 10.0, Weight::Regular, pal().text_3, Align::Right);
             let mut ly = cy + 15.0;
             for l in &lines {
-                c.text(l.clone(), Rect::new(list.x + 10.0, ly, list.w - 24.0, 15.0), 12.5, Weight::Regular, TEXT, Align::Left);
+                c.text(l.clone(), Rect::new(list.x + 10.0, ly, list.w - 24.0, 15.0), 12.5, Weight::Regular, pal().text, Align::Left);
                 ly += 15.0;
             }
         }
@@ -2620,16 +2647,16 @@ fn chat(c: &mut Ctx, a: Rect) {
     // -- input ------------------------------------------------------------
     let field = Rect::new(main.x, in_y, main.w - 40.0, 34.0);
     let typing = c.ui.input.is_some() && !chat.editing_nick;
-    c.s.rect(field, 12.0, if typing { SURFACE_HOVER } else { c.surface_fill(Action::ChatInput) });
+    c.s.rect(field, 12.0, if typing { pal().surface_hover } else { c.surface_fill(Action::ChatInput) });
     if typing {
         c.s.stroke(field, 12.0, 1.4, acc.fade(0.85));
     }
-    icons::draw(&mut c.s, Icon::Chat, field.x + 16.0, field.cy(), 13.0, if typing { acc } else { TEXT_3 });
+    icons::draw(&mut c.s, Icon::Chat, field.x + 16.0, field.cy(), 13.0, if typing { acc } else { pal().text_3 });
     let tr = Rect::new(field.x + 34.0, field.y, field.w - 44.0, field.h);
     match &c.ui.input {
         Some(f) if typing && !f.is_empty() => {
             let ed = field_edit(c, f, acc);
-            c.s.text_edit(f.as_str().to_string(), tr, 12.5, Weight::Regular, TEXT, ed);
+            c.s.text_edit(f.as_str().to_string(), tr, 12.5, Weight::Regular, pal().text, ed);
         }
         _ => {
             let ph = if editing {
@@ -2639,7 +2666,7 @@ fn chat(c: &mut Ctx, a: Rect) {
             } else {
                 "message the room\u{2026}"
             };
-            c.text(ph, tr, 12.5, Weight::Regular, TEXT_3, Align::Left);
+            c.text(ph, tr, 12.5, Weight::Regular, pal().text_3, Align::Left);
             if typing && (c.ui.clock_s * 1.8) % 2.0 < 1.0 {
                 c.s.rect(Rect::new(tr.x, field.cy() - 8.0, 1.5, 16.0), 0.7, acc);
             }
@@ -2649,8 +2676,8 @@ fn chat(c: &mut Ctx, a: Rect) {
 
     let send_r = Rect::new(main.right() - 34.0, in_y, 34.0, 34.0);
     let can_send = c.ui.input.as_ref().map(|f| !f.as_str().trim().is_empty()).unwrap_or(false) && !editing;
-    c.s.rect(send_r, 17.0, if can_send { acc } else { SURFACE });
-    icons::draw(&mut c.s, Icon::Send, send_r.cx(), send_r.cy(), 15.0, if can_send { ON_ACCENT } else { TEXT_3 });
+    c.s.rect(send_r, 17.0, if can_send { acc } else { pal().surface });
+    icons::draw(&mut c.s, Icon::Send, send_r.cx(), send_r.cy(), 15.0, if can_send { ON_ACCENT } else { pal().text_3 });
     c.hit(send_r, Action::ChatSend);
 }
 

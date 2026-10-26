@@ -99,7 +99,7 @@ Scroll the mouse wheel over the header, or use `←` `→`, to switch. Everythin
     <td><img src="docs/img/26-page-ai.png"><br><b>AI</b> &mdash; chat with an assistant that can see your day and act on it: add tasks, save notes, log water, start focus. Every action has an <b>Undo</b>. See <a href="#ai-chat">AI Chat</a>.</td>
   </tr>
   <tr>
-    <td><img src="docs/img/27-page-settings.png"><br><b>Settings</b> &mdash; behind the gear: hover-open, lyrics, reminders, history, sounds, fullscreen, start with Windows, water goal, idle look, and <b>Check for updates</b>.</td>
+    <td><img src="docs/img/27-page-settings.png"><br><b>Settings</b> &mdash; behind the gear: hover-open, lyrics, reminders, history, sounds, fullscreen, start with Windows, water goal, idle look, island theme, and <b>Check for updates</b>.</td>
   </tr>
 </table>
 

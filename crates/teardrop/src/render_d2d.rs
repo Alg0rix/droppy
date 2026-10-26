@@ -278,7 +278,7 @@ pub mod d2d {
 
         unsafe fn cmd(&self, rt: &ID2D1RenderTarget, solid: &ID2D1SolidColorBrush, cmd: &Cmd, scale: f32, clips: &mut i32) {
             match cmd {
-                Cmd::Body { pts, fill, rim, shadow } => {
+                Cmd::Body { pts, fill, rim, shadow, sheen } => {
                     let Some(geo) = self.path(pts, true) else { return };
                     let bounds = bounds_of(pts);
                     // Soft shadow: stacked, widening, low-alpha strokes offset downward.
@@ -292,8 +292,22 @@ pub mod d2d {
                     rt.SetTransform(&base);
                     let br = self.fill_with(rt, solid, fill, bounds);
                     rt.FillGeometry(&geo, &br, None::<&ID2D1Brush>);
-                    solid.SetColor(&d2d_color(*rim));
-                    rt.DrawGeometry(&geo, solid, 1.0, None::<&ID2D1StrokeStyle>);
+                    if sheen.a > 0.003 {
+                        // Glass specular: a top-light gradient that fades out
+                        // by mid-height, clipped to the silhouette.
+                        let sb = D2D_RECT_F { bottom: bounds.top + (bounds.bottom - bounds.top) * 0.55, ..bounds };
+                        let br = self.fill_with(rt, solid, &Fill::VGrad(*sheen, sheen.fade(0.0)), sb);
+                        rt.FillGeometry(&geo, &br, None::<&ID2D1Brush>);
+                    }
+                    if sheen.a > 0.003 {
+                        // Glass edge: bright catch-light at the top that
+                        // falls off toward the bottom, like a bevelled lens.
+                        let rb = self.fill_with(rt, solid, &Fill::VGrad(*rim, rim.fade(rim.a * 0.28)), bounds);
+                        rt.DrawGeometry(&geo, &rb, 1.25, None::<&ID2D1StrokeStyle>);
+                    } else {
+                        solid.SetColor(&d2d_color(*rim));
+                        rt.DrawGeometry(&geo, solid, 1.0, None::<&ID2D1StrokeStyle>);
+                    }
                 }
                 Cmd::Rect { r, radius, fill } => {
                     let b = rc(*r);

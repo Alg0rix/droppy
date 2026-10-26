@@ -35,11 +35,11 @@ fn tab_color(t: SysTab, sys: &SysView) -> Color {
         SysTab::Network => CYAN,
         SysTab::Battery => {
             if sys.battery.pct <= 15.0 && !sys.battery.charging {
-                RED
+                pal().red
             } else if sys.battery.pct <= 30.0 && !sys.battery.charging {
-                AMBER
+                pal().amber
             } else {
-                GREEN
+                pal().green
             }
         }
     }
@@ -48,9 +48,9 @@ fn tab_color(t: SysTab, sys: &SysView) -> Color {
 /// Warm a metric colour as it nears saturation.
 fn heat(base: Color, pct: f32) -> Color {
     if pct >= 90.0 {
-        RED
+        pal().red
     } else if pct >= 75.0 {
-        base.mix(AMBER, 0.75)
+        base.mix(pal().amber, 0.75)
     } else {
         base
     }
@@ -89,7 +89,7 @@ fn chips(c: &mut Ctx, a: Rect, cur: SysTab) {
             c.s.rect(r, 13.0, col.fade(0.15));
             c.s.stroke(r, 13.0, 1.2, col.fade(0.55));
         } else {
-            c.s.rect(r, 13.0, SURFACE.mix(SURFACE_HOVER, hv));
+            c.s.rect(r, 13.0, pal().surface.mix(pal().surface_hover, hv));
         }
         let s = &c.vm.sys;
         let (value, hist, max): (String, Vec<&Series>, f32) = if !s.loaded {
@@ -112,12 +112,12 @@ fn chips(c: &mut Ctx, a: Rect, cur: SysTab) {
             SysTab::Battery => ("AC".into(), vec![], 100.0),
             }
         };
-        c.text(t.label(), Rect::new(r.x + 10.0, r.y + 6.0, r.w - 20.0, 14.0), 10.0, Weight::Medium, if on { col } else { TEXT_3 }, Align::Left);
-        c.text(value, Rect::new(r.x + 10.0, r.y + 19.0, r.w - 20.0, 19.0), 14.0, Weight::Semibold, TEXT, Align::Left);
+        c.text(t.label(), Rect::new(r.x + 10.0, r.y + 6.0, r.w - 20.0, 14.0), 10.0, Weight::Medium, if on { col } else { pal().text_3 }, Align::Left);
+        c.text(value, Rect::new(r.x + 10.0, r.y + 19.0, r.w - 20.0, 19.0), 14.0, Weight::Semibold, pal().text, Align::Left);
         let sp = Rect::new(r.x + 10.0, r.bottom() - 13.0, r.w - 20.0, 8.0);
         let multi = hist.len() > 1;
         for (k, h) in hist.iter().enumerate() {
-            spark(c, sp, h, max, if multi && k == 1 { col.mix(TEXT, 0.45) } else { col });
+            spark(c, sp, h, max, if multi && k == 1 { col.mix(pal().text, 0.45) } else { col });
         }
         c.hit(r, act);
     }
@@ -126,12 +126,12 @@ fn chips(c: &mut Ctx, a: Rect, cur: SysTab) {
 // ---------------------------------------------------------------- widgets
 
 fn card(c: &mut Ctx, r: Rect, title: &str, aside: &str) -> Rect {
-    c.s.rect(r, 14.0, SURFACE);
+    c.s.rect(r, 14.0, pal().surface);
     if !title.is_empty() {
-        c.text(title.to_uppercase(), Rect::new(r.x + 12.0, r.y + 8.0, r.w * 0.55, 14.0), 9.5, Weight::Semibold, TEXT_3, Align::Left);
+        c.text(title.to_uppercase(), Rect::new(r.x + 12.0, r.y + 8.0, r.w * 0.55, 14.0), 9.5, Weight::Semibold, pal().text_3, Align::Left);
     }
     if !aside.is_empty() {
-        c.text(aside, Rect::new(r.x + r.w * 0.4, r.y + 8.0, r.w * 0.6 - 12.0, 14.0), 9.5, Weight::Medium, TEXT_3, Align::Right);
+        c.text(aside, Rect::new(r.x + r.w * 0.4, r.y + 8.0, r.w * 0.6 - 12.0, 14.0), 9.5, Weight::Medium, pal().text_3, Align::Right);
     }
     Rect::new(r.x + 12.0, r.y + 28.0, r.w - 24.0, r.h - 36.0)
 }
@@ -150,7 +150,7 @@ fn cols(body: Rect) -> [Rect; 3] {
 
 /// Track ring with stacked coloured arcs (fractions of a full turn).
 fn ring(c: &mut Ctx, cx: f32, cy: f32, r: f32, width: f32, parts: &[(f32, Color)]) {
-    c.s.ring(cx, cy, r, width, 0.0, 1.0, Color::rgba(255, 255, 255, 0.08));
+    c.s.ring(cx, cy, r, width, 0.0, 1.0, pal().ink(0.08));
     let mut from = 0.0;
     for (f, col) in parts {
         let to = (from + f.clamp(0.0, 1.0)).min(1.0);
@@ -182,7 +182,7 @@ fn spark(c: &mut Ctx, r: Rect, s: &Series, max: f32, col: Color) {
 fn area(c: &mut Ctx, r: Rect, series: &[(&Series, Color)], max: f32) {
     for k in 1..4 {
         let y = r.y + r.h * k as f32 / 4.0;
-        c.s.line(r.x, y, r.right(), y, 1.0, HAIRLINE);
+        c.s.line(r.x, y, r.right(), y, 1.0, pal().hairline);
     }
     let fill_a = if series.len() > 1 { 0.28 } else { 0.42 };
     for (s, col) in series {
@@ -207,16 +207,16 @@ fn row(c: &mut Ctx, r: Rect, swatch: Option<Color>, label: &str, value: &str) {
         c.s.rect(Rect::new(r.x, r.cy() - 4.0, 8.0, 8.0), 2.5, col);
         lx += 15.0;
     }
-    c.text(label, Rect::new(lx, r.y, r.w * 0.62 - (lx - r.x), r.h), 11.0, Weight::Regular, TEXT_2, Align::Left);
-    c.text(value, Rect::new(r.x + r.w * 0.5, r.y, r.w * 0.5, r.h), 11.0, Weight::Semibold, TEXT, Align::Right);
+    c.text(label, Rect::new(lx, r.y, r.w * 0.62 - (lx - r.x), r.h), 11.0, Weight::Regular, pal().text_2, Align::Left);
+    c.text(value, Rect::new(r.x + r.w * 0.5, r.y, r.w * 0.5, r.h), 11.0, Weight::Semibold, pal().text, Align::Right);
 }
 
 /// Labelled progress bar with the value on the right.
 fn bar(c: &mut Ctx, r: Rect, label: &str, value: &str, frac: f32, col: Color) {
-    c.text(label, Rect::new(r.x, r.y, r.w * 0.6, 14.0), 10.5, Weight::Medium, TEXT_2, Align::Left);
-    c.text(value, Rect::new(r.x + r.w * 0.4, r.y, r.w * 0.6, 14.0), 10.5, Weight::Semibold, TEXT, Align::Right);
+    c.text(label, Rect::new(r.x, r.y, r.w * 0.6, 14.0), 10.5, Weight::Medium, pal().text_2, Align::Left);
+    c.text(value, Rect::new(r.x + r.w * 0.4, r.y, r.w * 0.6, 14.0), 10.5, Weight::Semibold, pal().text, Align::Right);
     let t = Rect::new(r.x, r.y + 18.0, r.w, 6.0);
-    c.s.rect(t, 3.0, Color::rgba(255, 255, 255, 0.09));
+    c.s.rect(t, 3.0, pal().ink(0.09));
     if frac > 0.0 {
         c.s.rect(Rect::new(t.x, t.y, (t.w * frac.clamp(0.0, 1.0)).max(6.0), 6.0), 3.0, col);
     }
@@ -240,7 +240,7 @@ const WHITE: Color = Color::rgb(255, 255, 255);
 /// Ranked process list with a proportional bar behind each row.
 fn proc_list(c: &mut Ctx, r: Rect, items: &[ProcLoad], fmt: fn(f32) -> String, col: Color, empty: &str) {
     if items.is_empty() {
-        c.text(empty, Rect::new(r.x, r.y + 4.0, r.w, 16.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
+        c.text(empty, Rect::new(r.x, r.y + 4.0, r.w, 16.0), 11.0, Weight::Regular, pal().text_3, Align::Left);
         return;
     }
     let max = items.iter().map(|p| p.value).fold(0.0, f32::max).max(1e-3);
@@ -253,8 +253,8 @@ fn proc_list(c: &mut Ctx, r: Rect, items: &[ProcLoad], fmt: fn(f32) -> String, c
         let row = Rect::new(r.x - 4.0, y, r.w + 8.0, rh - 3.0);
         c.s.rect(Rect::new(row.x, row.y, (row.w * p.value / max).max(8.0), row.h), 8.0, col.fade(0.13));
         app_tile(c, Rect::new(r.x + 2.0, y + 3.0, 17.0, 17.0), p);
-        c.text(p.name.clone(), Rect::new(r.x + 26.0, y, r.w - 26.0 - 46.0, rh - 3.0), 11.0, Weight::Medium, TEXT, Align::Left);
-        c.text(fmt(p.value), Rect::new(r.right() - 46.0, y, 46.0, rh - 3.0), 10.5, Weight::Medium, TEXT_2, Align::Right);
+        c.text(p.name.clone(), Rect::new(r.x + 26.0, y, r.w - 26.0 - 46.0, rh - 3.0), 11.0, Weight::Medium, pal().text, Align::Left);
+        c.text(fmt(p.value), Rect::new(r.right() - 46.0, y, 46.0, rh - 3.0), 10.5, Weight::Medium, pal().text_2, Align::Right);
     }
 }
 
@@ -279,19 +279,19 @@ fn cpu_view(c: &mut Ctx, body: Rect) {
     let rad = 46.0;
     let (cx, cy) = (inner.cx(), inner.y + rad + 6.0);
     ring(c, cx, cy, rad, 10.0, &[(cpu.user / 100.0, heat(acc, cpu.total)), (cpu.system / 100.0, ROSE)]);
-    c.text(format!("{:.0}%", cpu.total), Rect::new(cx - 40.0, cy - 17.0, 80.0, 28.0), 24.0, Weight::Semibold, TEXT, Align::Center);
-    c.text("in use", Rect::new(cx - 40.0, cy + 10.0, 80.0, 14.0), 10.0, Weight::Regular, TEXT_3, Align::Center);
+    c.text(format!("{:.0}%", cpu.total), Rect::new(cx - 40.0, cy - 17.0, 80.0, 28.0), 24.0, Weight::Semibold, pal().text, Align::Center);
+    c.text("in use", Rect::new(cx - 40.0, cy + 10.0, 80.0, 14.0), 10.0, Weight::Regular, pal().text_3, Align::Center);
     let mut y = cy + rad + 12.0;
-    c.text(if cpu.name.is_empty() { "Processor".to_string() } else { cpu.name.clone() }, Rect::new(inner.x - 4.0, y, inner.w + 8.0, 14.0), 10.5, Weight::Medium, TEXT_2, Align::Center);
+    c.text(if cpu.name.is_empty() { "Processor".to_string() } else { cpu.name.clone() }, Rect::new(inner.x - 4.0, y, inner.w + 8.0, 14.0), 10.5, Weight::Medium, pal().text_2, Align::Center);
     y += 15.0;
     let threads = cpu.cores.len();
     let sub = if cpu.physical > 0 { format!("{} cores \u{00b7} {threads} threads", cpu.physical) } else { format!("{threads} threads") };
-    c.text(sub, Rect::new(inner.x, y, inner.w, 13.0), 10.0, Weight::Regular, TEXT_3, Align::Center);
+    c.text(sub, Rect::new(inner.x, y, inner.w, 13.0), 10.0, Weight::Regular, pal().text_3, Align::Center);
     y += 19.0;
     // Temperature and clock chips.
     let mut chips: Vec<(String, Color)> = Vec::new();
     if let Some(t) = cpu.temp_c {
-        chips.push((format!("{t:.0}\u{00b0}C"), if t >= 85.0 { RED } else if t >= 70.0 { AMBER } else { GREEN }));
+        chips.push((format!("{t:.0}\u{00b0}C"), if t >= 85.0 { pal().red } else if t >= 70.0 { pal().amber } else { pal().green }));
     }
     if cpu.ghz > 0.0 {
         chips.push((format!("{:.2} GHz", cpu.ghz), INDIGO));
@@ -304,7 +304,7 @@ fn cpu_view(c: &mut Ctx, body: Rect) {
     if !chips.is_empty() {
         y += 30.0;
     }
-    for (swatch, label, v) in [(ROSE, "System", cpu.system), (acc, "User", cpu.user), (Color::rgba(255, 255, 255, 0.28), "Idle", cpu.idle)] {
+    for (swatch, label, v) in [(ROSE, "System", cpu.system), (acc, "User", cpu.user), (pal().ink(0.28), "Idle", cpu.idle)] {
         if y + 16.0 > inner.bottom() + 6.0 {
             break;
         }
@@ -341,7 +341,7 @@ fn cpu_view(c: &mut Ctx, body: Rect) {
             Some(CoreClass::Performance) => INDIGO,
             _ => acc,
         };
-        c.s.rect(Rect::new(x, inner.y, bw, inner.h), bw.min(3.0), Color::rgba(255, 255, 255, 0.07));
+        c.s.rect(Rect::new(x, inner.y, bw, inner.h), bw.min(3.0), pal().ink(0.07));
         let h = (inner.h * load / 100.0).max(2.0);
         c.s.rect(Rect::new(x, inner.bottom() - h, bw, h), bw.min(3.0), heat(col, load));
     }
@@ -365,13 +365,13 @@ fn gpu_view(c: &mut Ctx, body: Rect) {
     let rad = 46.0;
     let (cx, cy) = (inner.cx(), inner.y + rad + 6.0);
     ring(c, cx, cy, rad, 10.0, &[(g.util / 100.0, heat(LIME, g.util))]);
-    c.text(format!("{:.0}%", g.util), Rect::new(cx - 40.0, cy - 17.0, 80.0, 28.0), 24.0, Weight::Semibold, TEXT, Align::Center);
-    c.text("busy", Rect::new(cx - 40.0, cy + 10.0, 80.0, 14.0), 10.0, Weight::Regular, TEXT_3, Align::Center);
+    c.text(format!("{:.0}%", g.util), Rect::new(cx - 40.0, cy - 17.0, 80.0, 28.0), 24.0, Weight::Semibold, pal().text, Align::Center);
+    c.text("busy", Rect::new(cx - 40.0, cy + 10.0, 80.0, 14.0), 10.0, Weight::Regular, pal().text_3, Align::Center);
     let mut y = cy + rad + 12.0;
-    c.text(g.name.clone(), Rect::new(inner.x - 4.0, y, inner.w + 8.0, 14.0), 10.5, Weight::Medium, TEXT_2, Align::Center);
+    c.text(g.name.clone(), Rect::new(inner.x - 4.0, y, inner.w + 8.0, 14.0), 10.5, Weight::Medium, pal().text_2, Align::Center);
     y += 24.0;
     if let Some(t) = g.temp_c {
-        small_pill(c, Rect::new(inner.x, y, inner.w, 22.0), &format!("{t:.0}\u{00b0}C"), if t >= 85.0 { RED } else { GREEN });
+        small_pill(c, Rect::new(inner.x, y, inner.w, 22.0), &format!("{t:.0}\u{00b0}C"), if t >= 85.0 { pal().red } else { pal().green });
         y += 30.0;
     }
     bar(
@@ -391,7 +391,7 @@ fn gpu_view(c: &mut Ctx, body: Rect) {
 
     let inner = card(c, r, "Engines", "");
     if g.engines.is_empty() {
-        c.text("Idle", Rect::new(inner.x, inner.y + 2.0, inner.w, 16.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
+        c.text("Idle", Rect::new(inner.x, inner.y + 2.0, inner.w, 16.0), 11.0, Weight::Regular, pal().text_3, Align::Left);
     }
     let mut y = inner.y;
     for (name, v) in g.engines.iter().take(4) {
@@ -399,7 +399,7 @@ fn gpu_view(c: &mut Ctx, body: Rect) {
         y += 31.0;
     }
     let y0 = (inner.y + 4.0 * 31.0 + 4.0).max(y + 4.0);
-    c.text("BY PROCESS", Rect::new(inner.x, y0, inner.w, 12.0), 9.0, Weight::Semibold, TEXT_3, Align::Left);
+    c.text("BY PROCESS", Rect::new(inner.x, y0, inner.w, 12.0), 9.0, Weight::Semibold, pal().text_3, Align::Left);
     proc_list(c, Rect::new(inner.x, y0 + 16.0, inner.w, inner.bottom() - y0 - 16.0), &g.procs, pct1, LIME, "No GPU activity");
 }
 
@@ -412,12 +412,12 @@ fn mem_view(c: &mut Ctx, body: Rect) {
     let rad = 46.0;
     let (cx, cy) = (inner.cx(), inner.y + rad + 6.0);
     ring(c, cx, cy, rad, 10.0, &[(mem.pct() / 100.0, heat(VIOLET, mem.pct()))]);
-    c.text(format!("{:.0}%", mem.pct()), Rect::new(cx - 40.0, cy - 17.0, 80.0, 28.0), 24.0, Weight::Semibold, TEXT, Align::Center);
-    c.text(format!("of {}", sysmon::fmt_gb(mem.total_gb)), Rect::new(cx - 44.0, cy + 10.0, 88.0, 14.0), 10.0, Weight::Regular, TEXT_3, Align::Center);
+    c.text(format!("{:.0}%", mem.pct()), Rect::new(cx - 40.0, cy - 17.0, 80.0, 28.0), 24.0, Weight::Semibold, pal().text, Align::Center);
+    c.text(format!("of {}", sysmon::fmt_gb(mem.total_gb)), Rect::new(cx - 44.0, cy + 10.0, 88.0, 14.0), 10.0, Weight::Regular, pal().text_3, Align::Center);
     let mut y = cy + rad + 14.0;
     for (swatch, label, v) in [
         (VIOLET, "In use", sysmon::fmt_gb(mem.used_gb)),
-        (Color::rgba(255, 255, 255, 0.28), "Available", sysmon::fmt_gb(mem.available_gb)),
+        (pal().ink(0.28), "Available", sysmon::fmt_gb(mem.available_gb)),
         (INDIGO, "Cached", sysmon::fmt_gb(mem.cached_gb)),
     ] {
         row(c, Rect::new(inner.x, y, inner.w, 17.0), Some(swatch), label, &v);
@@ -437,7 +437,7 @@ fn mem_view(c: &mut Ctx, body: Rect) {
         frac,
         heat(INDIGO, frac * 100.0),
     );
-    c.text("Virtual memory the system has promised to apps", Rect::new(inner.x, inner.y + 34.0, inner.w, 28.0), 10.0, Weight::Regular, TEXT_3, Align::Left);
+    c.text("Virtual memory the system has promised to apps", Rect::new(inner.x, inner.y + 34.0, inner.w, 28.0), 10.0, Weight::Regular, pal().text_3, Align::Left);
 
     let inner = card(c, r, "Top processes", "Memory");
     proc_list(c, inner, &mem.procs, sysmon::fmt_gb, VIOLET, "Reading processes\u{2026}");
@@ -452,15 +452,15 @@ fn drives_view(c: &mut Ctx, body: Rect) {
     let rad = 46.0;
     let (cx, cy) = (inner.cx(), inner.y + rad + 6.0);
     ring(c, cx, cy, rad, 10.0, &[(d.busy / 100.0, heat(GOLD, d.busy))]);
-    c.text(format!("{:.0}%", d.busy), Rect::new(cx - 40.0, cy - 17.0, 80.0, 28.0), 24.0, Weight::Semibold, TEXT, Align::Center);
-    c.text("active time", Rect::new(cx - 44.0, cy + 10.0, 88.0, 14.0), 10.0, Weight::Regular, TEXT_3, Align::Center);
+    c.text(format!("{:.0}%", d.busy), Rect::new(cx - 40.0, cy - 17.0, 80.0, 28.0), 24.0, Weight::Semibold, pal().text, Align::Center);
+    c.text("active time", Rect::new(cx - 44.0, cy + 10.0, 88.0, 14.0), 10.0, Weight::Regular, pal().text_3, Align::Center);
     let mut y = cy + rad + 16.0;
-    for (swatch, label, v) in [(GOLD, "Read", d.read_bps), (GOLD.mix(TEXT, 0.5), "Write", d.write_bps)] {
+    for (swatch, label, v) in [(GOLD, "Read", d.read_bps), (GOLD.mix(pal().text, 0.5), "Write", d.write_bps)] {
         row(c, Rect::new(inner.x, y, inner.w, 20.0), Some(swatch), label, &sysmon::fmt_rate(v));
         y += 23.0;
     }
     y += 6.0;
-    c.s.line(inner.x, y, inner.right(), y, 1.0, HAIRLINE);
+    c.s.line(inner.x, y, inner.right(), y, 1.0, pal().hairline);
     y += 8.0;
     for (label, v) in [("Peak read", d.read_hist.peak()), ("Peak write", d.write_hist.peak())] {
         row(c, Rect::new(inner.x, y, inner.w, 18.0), None, label, &sysmon::fmt_rate(v));
@@ -470,14 +470,14 @@ fn drives_view(c: &mut Ctx, body: Rect) {
     let pk = d.read_hist.peak().max(d.write_hist.peak()).max(1.0e6) * 1.15;
     let ch = card(c, Rect::new(m.x, m.y, m.w, body.h), "Throughput \u{00b7} 60 s", &format!("peak {}", sysmon::fmt_rate(pk / 1.15)));
     let chart = Rect::new(ch.x, ch.y, ch.w, ch.h - 52.0);
-    area(c, chart, &[(&d.read_hist, GOLD), (&d.write_hist, GOLD.mix(TEXT, 0.55))], pk);
+    area(c, chart, &[(&d.read_hist, GOLD), (&d.write_hist, GOLD.mix(pal().text, 0.55))], pk);
     let ly = chart.bottom() + 10.0;
     row(c, Rect::new(ch.x, ly, ch.w, 16.0), Some(GOLD), "Read \u{00b7} avg", &sysmon::fmt_rate(d.read_hist.avg()));
-    row(c, Rect::new(ch.x, ly + 17.0, ch.w, 16.0), Some(GOLD.mix(TEXT, 0.55)), "Write \u{00b7} avg", &sysmon::fmt_rate(d.write_hist.avg()));
+    row(c, Rect::new(ch.x, ly + 17.0, ch.w, 16.0), Some(GOLD.mix(pal().text, 0.55)), "Write \u{00b7} avg", &sysmon::fmt_rate(d.write_hist.avg()));
 
     let inner = card(c, r, "Volumes", "");
     if d.volumes.is_empty() {
-        c.text("No fixed drives", Rect::new(inner.x, inner.y + 2.0, inner.w, 16.0), 11.0, Weight::Regular, TEXT_3, Align::Left);
+        c.text("No fixed drives", Rect::new(inner.x, inner.y + 2.0, inner.w, 16.0), 11.0, Weight::Regular, pal().text_3, Align::Left);
     }
     for (i, v) in d.volumes.iter().take(6).enumerate() {
         bar(
@@ -498,26 +498,26 @@ fn net_view(c: &mut Ctx, body: Rect) {
     let n = c.vm.sys.net.clone();
     let inner = card(c, l, "Throughput", "");
     let mut y = inner.y + 6.0;
-    for (arrow, label, v, col) in [("\u{2193}", "Download", n.down_bps, CYAN), ("\u{2191}", "Upload", n.up_bps, CYAN.mix(TEXT, 0.5))] {
+    for (arrow, label, v, col) in [("\u{2193}", "Download", n.down_bps, CYAN), ("\u{2191}", "Upload", n.up_bps, CYAN.mix(pal().text, 0.5))] {
         c.s.circle(inner.x + 14.0, y + 22.0, 14.0, col.fade(0.16));
         c.text(arrow, Rect::new(inner.x, y + 8.0, 28.0, 28.0), 15.0, Weight::Bold, col, Align::Center);
-        c.text(label, Rect::new(inner.x + 36.0, y + 2.0, inner.w - 36.0, 14.0), 10.0, Weight::Medium, TEXT_3, Align::Left);
-        c.text(sysmon::fmt_rate(v), Rect::new(inner.x + 36.0, y + 16.0, inner.w - 36.0, 24.0), 18.0, Weight::Semibold, TEXT, Align::Left);
+        c.text(label, Rect::new(inner.x + 36.0, y + 2.0, inner.w - 36.0, 14.0), 10.0, Weight::Medium, pal().text_3, Align::Left);
+        c.text(sysmon::fmt_rate(v), Rect::new(inner.x + 36.0, y + 16.0, inner.w - 36.0, 24.0), 18.0, Weight::Semibold, pal().text, Align::Left);
         y += 62.0;
     }
-    c.s.line(inner.x, y - 4.0, inner.right(), y - 4.0, 1.0, HAIRLINE);
+    c.s.line(inner.x, y - 4.0, inner.right(), y - 4.0, 1.0, pal().hairline);
     row(c, Rect::new(inner.x, y + 2.0, inner.w, 18.0), None, "Combined", &sysmon::fmt_rate(n.down_bps + n.up_bps));
     if !n.adapter.is_empty() {
-        c.text(n.adapter.clone(), Rect::new(inner.x, inner.bottom() - 16.0, inner.w, 14.0), 10.0, Weight::Regular, TEXT_3, Align::Left);
+        c.text(n.adapter.clone(), Rect::new(inner.x, inner.bottom() - 16.0, inner.w, 14.0), 10.0, Weight::Regular, pal().text_3, Align::Left);
     }
 
     let pk = n.down_hist.peak().max(n.up_hist.peak()).max(1.0e5) * 1.15;
     let ch = card(c, Rect::new(m.x, m.y, m.w, body.h), "Traffic \u{00b7} 60 s", &format!("peak {}", sysmon::fmt_rate(pk / 1.15)));
     let chart = Rect::new(ch.x, ch.y, ch.w, ch.h - 52.0);
-    area(c, chart, &[(&n.down_hist, CYAN), (&n.up_hist, CYAN.mix(TEXT, 0.55))], pk);
+    area(c, chart, &[(&n.down_hist, CYAN), (&n.up_hist, CYAN.mix(pal().text, 0.55))], pk);
     let ly = chart.bottom() + 10.0;
     row(c, Rect::new(ch.x, ly, ch.w, 16.0), Some(CYAN), "Download", &sysmon::fmt_rate(n.down_bps));
-    row(c, Rect::new(ch.x, ly + 17.0, ch.w, 16.0), Some(CYAN.mix(TEXT, 0.55)), "Upload", &sysmon::fmt_rate(n.up_bps));
+    row(c, Rect::new(ch.x, ly + 17.0, ch.w, 16.0), Some(CYAN.mix(pal().text, 0.55)), "Upload", &sysmon::fmt_rate(n.up_bps));
 
     let inner = card(c, r, "Session", "since launch");
     let mut y = inner.y + 2.0;
@@ -539,7 +539,7 @@ fn net_view(c: &mut Ctx, body: Rect) {
 fn battery_view(c: &mut Ctx, body: Rect) {
     let b = c.vm.sys.battery.clone();
     if !b.present {
-        c.empty_state(body, Icon::Bolt, GREEN, "No battery", "This PC runs on mains power");
+        c.empty_state(body, Icon::Bolt, pal().green, "No battery", "This PC runs on mains power");
         return;
     }
     let [l, m, r] = cols(body);
@@ -548,11 +548,11 @@ fn battery_view(c: &mut Ctx, body: Rect) {
     let rad = 46.0;
     let (cx, cy) = (inner.cx(), inner.y + rad + 6.0);
     ring(c, cx, cy, rad, 10.0, &[(b.pct / 100.0, col)]);
-    c.text(format!("{:.0}%", b.pct), Rect::new(cx - 40.0, cy - 17.0, 80.0, 28.0), 24.0, Weight::Semibold, TEXT, Align::Center);
+    c.text(format!("{:.0}%", b.pct), Rect::new(cx - 40.0, cy - 17.0, 80.0, 28.0), 24.0, Weight::Semibold, pal().text, Align::Center);
     if b.charging {
         icons::draw(&mut c.s, Icon::Bolt, cx, cy + 17.0, 12.0, col);
     } else {
-        c.text("remaining", Rect::new(cx - 40.0, cy + 10.0, 80.0, 14.0), 10.0, Weight::Regular, TEXT_3, Align::Center);
+        c.text("remaining", Rect::new(cx - 40.0, cy + 10.0, 80.0, 14.0), 10.0, Weight::Regular, pal().text_3, Align::Center);
     }
     let status = if b.charging { "Charging" } else if b.on_ac { "Plugged in" } else { "On battery" };
     small_pill(c, Rect::new(inner.x, cy + rad + 16.0, inner.w, 22.0), status, col);
@@ -582,9 +582,9 @@ fn battery_view(c: &mut Ctx, body: Rect) {
 fn battery_glyph(c: &mut Ctx, area: Rect, pct: f32, charging: bool, col: Color) {
     let (bw, bh) = (62.0, (area.h - 26.0).min(150.0));
     let body = Rect::new(area.cx() - bw / 2.0, area.y + 12.0 + (area.h - 26.0 - bh) / 2.0, bw, bh);
-    c.s.rect(Rect::new(body.cx() - 10.0, body.y - 7.0, 20.0, 8.0), 3.0, Color::rgba(255, 255, 255, 0.22));
-    c.s.rect(body, 14.0, Color::rgba(255, 255, 255, 0.07));
-    c.s.stroke(body, 14.0, 2.0, Color::rgba(255, 255, 255, 0.22));
+    c.s.rect(Rect::new(body.cx() - 10.0, body.y - 7.0, 20.0, 8.0), 3.0, pal().ink(0.22));
+    c.s.rect(body, 14.0, pal().ink(0.07));
+    c.s.stroke(body, 14.0, 2.0, pal().ink(0.22));
     let inner = Rect::new(body.x + 5.0, body.y + 5.0, body.w - 10.0, body.h - 10.0);
     let h = (inner.h * pct / 100.0).clamp(0.0, inner.h);
     if h > 1.0 {
@@ -593,5 +593,5 @@ fn battery_glyph(c: &mut Ctx, area: Rect, pct: f32, charging: bool, col: Color) 
     if charging {
         icons::draw(&mut c.s, Icon::Bolt, body.cx(), body.cy(), 22.0, WHITE.fade(0.92));
     }
-    c.text(format!("{pct:.0}%"), Rect::new(area.x, body.bottom() + 8.0, area.w, 18.0), 13.0, Weight::Semibold, TEXT, Align::Center);
+    c.text(format!("{pct:.0}%"), Rect::new(area.x, body.bottom() + 8.0, area.w, 18.0), 13.0, Weight::Semibold, pal().text, Align::Center);
 }

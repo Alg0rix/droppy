@@ -44,6 +44,60 @@ impl EyeStyle {
     }
 }
 
+/// Island body theme. `Onyx` is the classic black droplet; the rest repaint
+/// the whole UI palette (see `ui::theme` in the app crate).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IslandTheme {
+    /// The classic black droplet.
+    #[default]
+    Onyx,
+    /// macOS-style frosted glass: translucent, specular, dark ink.
+    LiquidGlass,
+    /// Solid light mode.
+    Porcelain,
+    /// Deep ocean blue.
+    Ocean,
+    /// Deep forest green.
+    Forest,
+    /// Warm ember brown.
+    Ember,
+    /// Deep violet.
+    Amethyst,
+    /// Dark rose.
+    Rose,
+    /// Pure OLED black.
+    Stealth,
+}
+
+impl IslandTheme {
+    pub const ALL: [IslandTheme; 9] = [
+        IslandTheme::Onyx,
+        IslandTheme::LiquidGlass,
+        IslandTheme::Porcelain,
+        IslandTheme::Ocean,
+        IslandTheme::Forest,
+        IslandTheme::Ember,
+        IslandTheme::Amethyst,
+        IslandTheme::Rose,
+        IslandTheme::Stealth,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            IslandTheme::Onyx => "Onyx",
+            IslandTheme::LiquidGlass => "Liquid Glass",
+            IslandTheme::Porcelain => "Porcelain",
+            IslandTheme::Ocean => "Ocean",
+            IslandTheme::Forest => "Forest",
+            IslandTheme::Ember => "Ember",
+            IslandTheme::Amethyst => "Amethyst",
+            IslandTheme::Rose => "Rose",
+            IslandTheme::Stealth => "Stealth",
+        }
+    }
+}
+
 /// Which AI Chat provider is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -152,6 +206,9 @@ pub struct Settings {
     pub open_on_hover: bool,
     #[serde(default)]
     pub eye_style: EyeStyle,
+    /// Island body theme (palette + glass sheen).
+    #[serde(default)]
+    pub theme: IslandTheme,
     /// Eye colour drifts with CPU load, time of day and water intake.
     #[serde(default = "yes")]
     pub mood_ring: bool,
@@ -322,6 +379,7 @@ impl Default for Settings {
             hotkey_ai: true,
             open_on_hover: false,
             eye_style: EyeStyle::Round,
+            theme: IslandTheme::Onyx,
             mood_ring: true,
             weather_mood: true,
             birthday: None,

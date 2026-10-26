@@ -169,8 +169,10 @@ pub const CHIP_PAD: f32 = 4.0;
 
 #[derive(Debug, Clone)]
 pub enum Cmd {
-    /// The island silhouette: soft shadow, body fill, 1px rim light.
-    Body { pts: Vec<(f32, f32)>, fill: Fill, rim: Color, shadow: f32 },
+    /// The island silhouette: soft shadow, body fill, 1px rim light. `sheen`
+    /// (alpha 0 = off) is a specular top-light filled inside the silhouette —
+    /// the liquid-glass highlight.
+    Body { pts: Vec<(f32, f32)>, fill: Fill, rim: Color, shadow: f32, sheen: Color },
     Rect { r: Rect, radius: f32, fill: Fill },
     Stroke { r: Rect, radius: f32, width: f32, color: Color, dashed: bool },
     Circle { cx: f32, cy: f32, r: f32, fill: Fill },
@@ -243,8 +245,8 @@ impl Scene {
         pts.into_iter().map(|(x, y)| (x + self.dx, y + self.dy)).collect()
     }
 
-    pub fn body(&mut self, pts: Vec<(f32, f32)>, fill: Fill, rim: Color, shadow: f32) {
-        self.cmds.push(Cmd::Body { pts, fill, rim, shadow });
+    pub fn body(&mut self, pts: Vec<(f32, f32)>, fill: Fill, rim: Color, shadow: f32, sheen: Color) {
+        self.cmds.push(Cmd::Body { pts, fill, rim, shadow, sheen });
     }
 
     pub fn rect(&mut self, r: Rect, radius: f32, fill: impl Into<Fill>) {

@@ -725,6 +725,21 @@ fn shots() -> Vec<Shot> {
             },
             ..shot("57-collapsed-focus-music", 0.0, Page::Music)
         },
+        // Island themes: every palette renders an open page; the light bodies
+        // also get a collapsed pill so their translucency is checked small.
+        Shot { setup: |_, set, _, _| set.theme = teardrop_core::IslandTheme::Onyx, ..shot("60-theme-onyx", 1.0, Page::Music) },
+        Shot { setup: |_, set, _, _| set.theme = teardrop_core::IslandTheme::LiquidGlass, ..shot("61-theme-liquid-glass", 1.0, Page::Music) },
+        Shot { setup: |_, set, _, _| set.theme = teardrop_core::IslandTheme::Porcelain, ..shot("62-theme-porcelain", 1.0, Page::Music) },
+        Shot { setup: |_, set, _, _| set.theme = teardrop_core::IslandTheme::Ocean, ..shot("63-theme-ocean", 1.0, Page::Music) },
+        Shot { setup: |_, set, _, _| set.theme = teardrop_core::IslandTheme::Forest, ..shot("64-theme-forest", 1.0, Page::Music) },
+        Shot { setup: |_, set, _, _| set.theme = teardrop_core::IslandTheme::Ember, ..shot("65-theme-ember", 1.0, Page::Music) },
+        Shot { setup: |_, set, _, _| set.theme = teardrop_core::IslandTheme::Amethyst, ..shot("66-theme-amethyst", 1.0, Page::Music) },
+        Shot { setup: |_, set, _, _| set.theme = teardrop_core::IslandTheme::Rose, ..shot("67-theme-rose", 1.0, Page::Music) },
+        Shot { setup: |_, set, _, _| set.theme = teardrop_core::IslandTheme::Stealth, ..shot("68-theme-stealth", 1.0, Page::Music) },
+        Shot { setup: |_, set, _, _| set.theme = teardrop_core::IslandTheme::LiquidGlass, ..shot("69-collapsed-liquid-glass", 0.0, Page::Music) },
+        Shot { setup: |_, set, _, _| set.theme = teardrop_core::IslandTheme::Porcelain, ..shot("70-collapsed-porcelain", 0.0, Page::Music) },
+        Shot { setup: |_, set, _, _| set.theme = teardrop_core::IslandTheme::Ocean, ..shot("71-theme-settings", 1.0, Page::Settings) },
+        Shot { setup: |vm, set, _, _| { set.theme = teardrop_core::IslandTheme::LiquidGlass; eyes(vm, set, EyeStyle::Round, true); }, ..shot("72-eyes-liquid-glass", 0.0, Page::Music) },
     ]
 }
 

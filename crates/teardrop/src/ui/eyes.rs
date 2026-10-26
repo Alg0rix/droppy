@@ -18,7 +18,7 @@
 //! Pure data like the rest of `ui`: no Windows calls, unit-tested anywhere.
 
 use super::scene::{Align, Color, Fill, Rect, Scene, Weight};
-use super::theme::{hsl, TEXT, TEXT_3};
+use super::theme::{hsl, pal};
 use crate::viewmodel::{Ambient, Weather};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike, Weekday};
 use std::collections::VecDeque;
@@ -26,8 +26,6 @@ use std::f32::consts::{PI, TAU};
 use teardrop_core::pomodoro::Phase;
 use teardrop_core::{AppCategory, AppTheme, EyeStyle, Playback, Settings, SystemSnapshot, Track};
 
-const SCLERA: Color = Color::rgb(242, 242, 246);
-const PUPIL: Color = Color::rgb(14, 14, 18);
 const PINK: Color = Color::rgb(255, 92, 122);
 const GOLD: Color = Color::rgb(251, 191, 36);
 const ICE: Color = Color::rgb(125, 211, 252);
@@ -3179,7 +3177,7 @@ impl Eyes {
             let pts = ellipse(0.0, ry + 4.0, 2.0 * p.mouth, 2.3 * p.mouth, 16);
             let mut pts: Vec<_> = pts.iter().map(|&(x, y)| xf.p(x, y)).collect();
             pts.push(pts[0]);
-            sc.polyline(pts, 1.3 * pt.scale, TEXT.fade(0.9));
+            sc.polyline(pts, 1.3 * pt.scale, pal().text.fade(0.9));
         }
         if p.blush > 0.02 {
             for side in [-1.0f32, 1.0] {
@@ -3199,7 +3197,7 @@ impl Eyes {
         if let Some(cap) = x.caption {
             let (cx, cy) = at(31.0, 1.0);
             let w = 20.0 * pt.scale;
-            sc.text(cap, Rect::new(cx - w / 2.0, cy - 6.0 * pt.scale, w, 12.0 * pt.scale), 8.0 * pt.scale, Weight::Semibold, TEXT_3, Align::Center);
+            sc.text(cap, Rect::new(cx - w / 2.0, cy - 6.0 * pt.scale, w, 12.0 * pt.scale), 8.0 * pt.scale, Weight::Semibold, pal().text_3, Align::Center);
         }
         if let Some(c) = x.rec {
             let (cx, cy) = at(31.0, -9.0);
@@ -3235,7 +3233,7 @@ impl Eyes {
                 Fill::VGrad(c.mix(WHITE, 0.25), c.mix(Color::rgb(0, 0, 0), 0.2))
             }
             (_, EyeStyle::Robot) => tint.unwrap_or(Color::rgb(61, 230, 255)).fade(0.92).into(),
-            _ => SCLERA.into(),
+            _ => pal().sclera.into(),
         };
         let line_col = match sclera {
             Fill::Solid(c) | Fill::VGrad(c, _) | Fill::DGrad(c, _) => c,
@@ -3303,7 +3301,7 @@ impl Eyes {
                 self.highlights(sc, xf, &lid, ex, px - ir * 0.35, py - ir * 0.4, 1.5 * k, true);
             }
             _ if slit => {
-                let col = if x.glow.is_some() { Color::rgb(6, 30, 14) } else { PUPIL };
+                let col = if x.glow.is_some() { Color::rgb(6, 30, 14) } else { pal().pupil };
                 let w = 1.0 * k * p.pupil.powf(1.5);
                 put(sc, clip_ellipse(&lid, px, py, w, ry * 0.92, 10), col.into());
             }
@@ -3312,7 +3310,7 @@ impl Eyes {
                 if let Some(c) = tint {
                     put(sc, clip_ellipse(&lid, px, py, pr * 1.7, pr * 1.7, 18), c.into());
                 }
-                put(sc, clip_ellipse(&lid, px, py, pr, pr, 16), PUPIL.into());
+                put(sc, clip_ellipse(&lid, px, py, pr, pr, 16), pal().pupil.into());
                 let big = x.shine;
                 self.highlights(sc, xf, &lid, ex, px - pr * 0.4, py - pr * 0.45, if big { 1.3 * k } else { 0.8 * k }, big);
             }
@@ -3339,7 +3337,7 @@ impl Eyes {
     fn pixel_eye(&self, sc: &mut Scene, xf: &Xf, lid: &Lid, ex: f32, px: f32, py: f32, tint: Option<Color>) {
         let cell = 2.0;
         let snap = |v: f32| (v / cell).round() * cell;
-        let pupil = tint.map(|c| c.mix(Color::rgb(0, 0, 0), 0.3)).unwrap_or(PUPIL);
+        let pupil = tint.map(|c| c.mix(Color::rgb(0, 0, 0), 0.3)).unwrap_or(pal().pupil);
         let (ppx, ppy) = (snap(px), snap(py));
         let half = (2.0 * self.pose.pupil).max(1.0);
         let mut x = -lid.rx;
@@ -3348,7 +3346,7 @@ impl Eyes {
             if let Some((t, b)) = lid.span(xc) {
                 let (t, b) = (snap(t), snap(b));
                 if b > t {
-                    sc.rect(xf.rect(ex + x, t, cell, b - t), 0.0, SCLERA);
+                    sc.rect(xf.rect(ex + x, t, cell, b - t), 0.0, pal().sclera);
                     if xc > ppx - half && xc < ppx + half {
                         let (pt, pb) = ((ppy - half).max(t), (ppy + half).min(b));
                         if pb > pt {
@@ -3391,8 +3389,8 @@ impl Eyes {
             }
             Glyph::Cross => {
                 let d = rx * 0.7;
-                sc.polyline(vec![xf.p(ex - d, -d), xf.p(ex + d, d)], w, SCLERA);
-                sc.polyline(vec![xf.p(ex - d, d), xf.p(ex + d, -d)], w, SCLERA);
+                sc.polyline(vec![xf.p(ex - d, -d), xf.p(ex + d, d)], w, pal().sclera);
+                sc.polyline(vec![xf.p(ex - d, d), xf.p(ex + d, -d)], w, pal().sclera);
             }
             Glyph::Spiral => {
                 let pts = (0..=40)
@@ -3402,21 +3400,21 @@ impl Eyes {
                         xf.p(ex + a.cos() * rx * 0.95 * f, a.sin() * ry * 0.95 * f)
                     })
                     .collect();
-                sc.polyline(pts, 1.6 * xf.s, SCLERA);
+                sc.polyline(pts, 1.6 * xf.s, pal().sclera);
             }
             Glyph::Squeeze => {
                 let (dx, dy) = (rx * 0.55, ry * 0.62);
-                sc.polyline(vec![xf.p(ex + side * dx, -dy), xf.p(ex - side * dx, 0.0), xf.p(ex + side * dx, dy)], w, SCLERA);
+                sc.polyline(vec![xf.p(ex + side * dx, -dy), xf.p(ex - side * dx, 0.0), xf.p(ex + side * dx, dy)], w, pal().sclera);
             }
             Glyph::Ring => {
                 let mut pts: Vec<_> = ellipse(ex, 0.0, rx * 0.8, ry * 0.8, 20).into_iter().map(|(x, y)| xf.p(x, y)).collect();
                 pts.push(pts[0]);
-                sc.polyline(pts, 2.0 * xf.s, SCLERA);
+                sc.polyline(pts, 2.0 * xf.s, pal().sclera);
             }
             Glyph::Question => {
                 let (cx, cy) = xf.p(ex, 0.0);
                 let r = 9.0 * xf.s;
-                sc.text("?", Rect::new(cx - r, cy - r, 2.0 * r, 2.0 * r), 13.0 * xf.s, Weight::Bold, SCLERA, Align::Center);
+                sc.text("?", Rect::new(cx - r, cy - r, 2.0 * r, 2.0 * r), 13.0 * xf.s, Weight::Bold, pal().sclera, Align::Center);
             }
         }
     }
@@ -3435,7 +3433,7 @@ impl Eyes {
             let inner = base + p.angry * 3.0 - p.sad * 2.2;
             let outer = base - p.angry * 0.6 + p.sad * 1.4;
             let pts = vec![xf.p(ex + side * 5.5, outer), xf.p(ex - side * 5.5, inner)];
-            sc.polyline(pts, 1.7 * xf.s, TEXT.fade(show * 0.95));
+            sc.polyline(pts, 1.7 * xf.s, pal().text.fade(show * 0.95));
         }
     }
 
@@ -3449,12 +3447,12 @@ impl Eyes {
                 Kind::Z => {
                     let sz = p.size * (1.0 + p.age * 0.25) * k;
                     let s = if p.age > p.life * 0.4 { "Z" } else { "z" };
-                    sc.text(s, Rect::new(x - sz, y - sz, 2.0 * sz, 2.0 * sz), sz, Weight::Bold, TEXT.fade(a * 0.85), Align::Center);
+                    sc.text(s, Rect::new(x - sz, y - sz, 2.0 * sz, 2.0 * sz), sz, Weight::Bold, pal().text.fade(a * 0.85), Align::Center);
                 }
                 Kind::Note => {
                     let sz = p.size * k;
                     let s = if p.hue > 0.5 { "\u{266B}" } else { "\u{266A}" };
-                    let col = pt.accent.unwrap_or(TEXT);
+                    let col = pt.accent.unwrap_or(pal().text);
                     sc.text(s, Rect::new(x - sz, y - sz, 2.0 * sz, 2.0 * sz), sz, Weight::Bold, col.fade(a * 0.9), Align::Center);
                 }
                 Kind::Heart => sc.poly(heart(x, y, p.size * k), PINK.fade(a)),
@@ -3478,12 +3476,12 @@ impl Eyes {
                         })
                         .collect();
                     let fade = 1.0 - p.age / p.life;
-                    sc.polyline(pts, 1.3 * k, TEXT.fade(0.85 * fade));
+                    sc.polyline(pts, 1.3 * k, pal().text.fade(0.85 * fade));
                 }
                 Kind::Dash => {
                     // Trails behind the way it flies.
                     let len = 7.0 * k * (1.0 - p.age / p.life);
-                    sc.line(x, y, x - p.vx.signum() * len, y, 1.1 * k, TEXT.fade(0.7 * a));
+                    sc.line(x, y, x - p.vx.signum() * len, y, 1.1 * k, pal().text.fade(0.7 * a));
                 }
                 Kind::Bang => {
                     let sz = 9.0 * k;
@@ -3494,12 +3492,12 @@ impl Eyes {
                     let tilt = (p.age * 3.0 + p.hue * 6.0).sin() * 0.25;
                     let (c, sn) = (tilt.cos(), tilt.sin());
                     let at = |u: f32, v: f32| (x + u * c - v * sn, y + u * sn + v * c);
-                    sc.poly(vec![at(-w / 2.0, -h / 2.0), at(w / 2.0, -h / 2.0), at(w / 2.0, h / 2.0), at(-w / 2.0, h / 2.0)], SCLERA.fade(a));
+                    sc.poly(vec![at(-w / 2.0, -h / 2.0), at(w / 2.0, -h / 2.0), at(w / 2.0, h / 2.0), at(-w / 2.0, h / 2.0)], pal().sclera.fade(a));
                     for i in 0..3 {
                         let v = -h / 2.0 + h * (0.3 + 0.2 * i as f32);
                         let (x0, y0) = at(-w * 0.32, v);
                         let (x1, y1) = at(w * if i == 2 { 0.05 } else { 0.32 }, v);
-                        sc.line(x0, y0, x1, y1, 0.6 * k, PUPIL.fade(0.7 * a));
+                        sc.line(x0, y0, x1, y1, 0.6 * k, pal().pupil.fade(0.7 * a));
                     }
                 }
                 Kind::Rain => sc.line(x, y, x - 0.6 * k, y + 3.0 * k, 0.9 * k, Color::rgb(147, 197, 253).fade(a)),
@@ -3528,7 +3526,7 @@ impl Eyes {
                 }
                 Kind::Question => {
                     let sz = 9.0 * k;
-                    sc.text("?", Rect::new(x - sz, y - sz, 2.0 * sz, 2.0 * sz), sz, Weight::Bold, TEXT.fade(a), Align::Center);
+                    sc.text("?", Rect::new(x - sz, y - sz, 2.0 * sz, 2.0 * sz), sz, Weight::Bold, pal().text.fade(a), Align::Center);
                 }
                 Kind::Anger => {
                     let c = Color::rgb(255, 99, 99).fade(a);
@@ -3540,9 +3538,9 @@ impl Eyes {
                 }
                 Kind::Sheep => {
                     let (fx, fy) = at(0.0, pt.bounds.h / 2.0 / k * 0.45);
-                    sc.line(fx, fy - 4.0 * k, fx, fy + 3.0 * k, 0.9 * k, TEXT_3);
-                    sc.line(fx - 3.0 * k, fy - 1.5 * k, fx + 3.0 * k, fy - 1.5 * k, 0.9 * k, TEXT_3);
-                    let leg = TEXT.fade(0.7);
+                    sc.line(fx, fy - 4.0 * k, fx, fy + 3.0 * k, 0.9 * k, pal().text_3);
+                    sc.line(fx - 3.0 * k, fy - 1.5 * k, fx + 3.0 * k, fy - 1.5 * k, 0.9 * k, pal().text_3);
+                    let leg = pal().text.fade(0.7);
                     sc.line(x - 1.6 * k, y + 1.4 * k, x - 1.6 * k, y + 3.0 * k, 0.8 * k, leg);
                     sc.line(x + 1.6 * k, y + 1.4 * k, x + 1.6 * k, y + 3.0 * k, 0.8 * k, leg);
                     for (ox, oy, r) in [(-1.8, 0.0, 1.9), (0.4, -0.9, 2.1), (1.8, 0.3, 1.8)] {
@@ -3550,10 +3548,10 @@ impl Eyes {
                     }
                     sc.circle(x + 3.8 * k, y - 0.6 * k, 1.3 * k, Color::rgb(120, 120, 130));
                 }
-                Kind::Dot => sc.circle(x, y, 0.9 * k, TEXT.fade(a)),
+                Kind::Dot => sc.circle(x, y, 0.9 * k, pal().text.fade(a)),
                 Kind::Sym(txt) => {
                     let sz = p.size * k;
-                    let col = self.work.map(|w| w.tint.map(|[r, g, b]| Color::rgb(r, g, b)).unwrap_or(work_color(w.cat))).unwrap_or(TEXT);
+                    let col = self.work.map(|w| w.tint.map(|[r, g, b]| Color::rgb(r, g, b)).unwrap_or(work_color(w.cat))).unwrap_or(pal().text);
                     sc.text(txt, Rect::new(x - 2.0 * sz, y - sz, 4.0 * sz, 2.0 * sz), sz, Weight::Bold, col.fade(a * 0.9), Align::Center);
                 }
             }
@@ -3586,7 +3584,7 @@ fn types(c: AppCategory) -> bool {
 /// Colour of a work theme's symbols.
 fn work_color(c: AppCategory) -> Color {
     use AppCategory::*;
-    match c {
+    let col = match c {
         Coding => Color::rgb(125, 211, 252),
         Terminal => Color::rgb(74, 222, 128),
         Writing => Color::rgb(251, 191, 36),
@@ -3603,7 +3601,9 @@ fn work_color(c: AppCategory) -> Color {
         Learning => Color::rgb(250, 204, 21),
         Media => Color::rgb(248, 113, 113),
         Studio => Color::rgb(251, 113, 133),
-    }
+    };
+    // Pastels wash out on a light body.
+    if pal().light { col.mix(Color::rgb(10, 12, 20), 0.30) } else { col }
 }
 
 fn is_birthday(s: &Senses) -> bool {
