@@ -48,7 +48,7 @@ Brand files, mascot poses for each page and the drawing rules are in [docs/brand
 | <img src="docs/img/05-hud-volume.png" width="310"> | **Volume.** A level bar that follows your volume keys and mute. |
 | <img src="docs/img/06-hud-water.png" width="350"> | **Reminders.** Click the island to log **+250 ml** (or press `W` anywhere). |
 | <img src="docs/img/07-hud-charging.png" width="330"> | **Power and devices.** Charging, battery level, a headset arriving. |
-| <img src="docs/img/04-collapsed-eyes.png" width="144"> | **Idle.** A clock, a dot, nothing at all, or Droppy's eyes with a life of their own: they dance to music (on the real beat), doze off when you step away, react to your pointer, track changes, lock/unlock, downloads, screenshots and more. Five styles: round, cat, pixel, anime, robot. |
+| <img src="docs/img/04-collapsed-eyes.png" width="144"> | **Idle.** A clock, a dot, nothing at all, or Droppy's eyes with a life of their own: they dance to music (on the real beat), doze off when you step away, react to your pointer, track changes, lock/unlock, downloads, screenshots and more — and when it's quiet they put on little skits: opening a laptop and typing on it, reading a book, sipping coffee, juggling, doing a magic trick, a hundred and counting. Five styles: round, cat, pixel, anime, robot. |
 
 **Open it** by resting the pointer on it, clicking it, pressing `Win`+`Shift`+`T`, or dragging a file onto it. It doesn't scale a rectangle: it necks in where it hangs from the screen edge, swells into a bulb, then settles into a card.
 

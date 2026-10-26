@@ -94,8 +94,16 @@ Each page is `core` state + a thin Windows sampler:
 - **React**: short one-offs queued by events (`Eyes::react`). Window events
   (lock, shell flash, WerFault window, Downloads watcher, clipboard image,
   volume, water, drops, pokes) queue them; they play once the face is visible.
+- **React**: short one-offs queued by events (`Eyes::react`). Window events
+  (lock, shell flash, WerFault window, Downloads watcher, clipboard image,
+  volume, water, drops, pokes) queue them; they play once the face is visible.
+  Idle ones come from `bits()`: a mood-weighted table plus `BITS`, a pool of
+  ~100 gags and skits (typing on a laptop, reading a book, sipping coffee,
+  juggling, a magic trick...) that fire unprompted while nothing is going on.
 - **Pose**: numbers the painter draws (lids, gaze, brows, squash, glyphs,
   hats, particles). Lids are per-column spans so pupils clip without masks.
+  `Extras::prop` + `prop_k` add a held item (`prop()` draws laptops, books,
+  mugs, gamepads... in face space, so props squash and rock with the face).
 - **Jiggle**: a small spring layered over the pose. Reactions, pokes, beats
   and level changes kick it (hop, squish, wobble), so motion overshoots
   and settles instead of easing in flat.

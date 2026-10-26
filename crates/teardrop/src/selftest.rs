@@ -711,6 +711,38 @@ fn shots() -> Vec<Shot> {
             ..shot("52-eyes-noted", 0.0, Page::Music)
         },
         Shot {
+            setup: |vm, set, ui, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                ui.eyes.react(React::Laptop);
+            },
+            ticks: 85,
+            ..shot("58-eyes-laptop", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, ui, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                ui.eyes.react(React::Read);
+            },
+            ticks: 75,
+            ..shot("58b-eyes-read", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, ui, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                ui.eyes.react(React::Coffee);
+            },
+            ticks: 65,
+            ..shot("58c-eyes-coffee", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, ui, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                ui.eyes.react(React::Magic);
+            },
+            ticks: 80,
+            ..shot("58d-eyes-magic", 0.0, Page::Music)
+        },
+        Shot {
             setup: |vm, set, _, _| {
                 eyes(vm, set, EyeStyle::Round, false);
                 set.mood_ring = true;

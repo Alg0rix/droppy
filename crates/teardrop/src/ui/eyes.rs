@@ -14,6 +14,8 @@
 //! - [`Pose`]: plain numbers the painter draws. Moods and reactions only
 //!   produce a target pose; the brain eases toward it and layers blinks,
 //!   gaze and particles on top.
+//! - [`Prop`]: a held item for the object skits (a laptop, a book, a mug,
+//!   a guitar...), drawn under the face and animated by `Extras::prop_k`.
 //!
 //! Pure data like the rest of `ui`: no Windows calls, unit-tested anywhere.
 
@@ -159,6 +161,12 @@ pub enum Glyph {
     /// `O O`
     Ring,
     Question,
+    /// `- -` flat and unimpressed.
+    Minus,
+    /// Crescent moons.
+    Moon,
+    /// Lightning bolts.
+    Bolt,
 }
 
 /// A level the user is dialling right now (shown in a HUD).
@@ -219,6 +227,14 @@ pub enum Move {
     Float,
     /// Lean one way for a bar, then the other.
     Lean,
+    /// A full spin every beat, alternating direction.
+    Twirl,
+    /// Big slow swings left to right.
+    Pendulum,
+    /// A full-body buzz on the beat.
+    Vibrate,
+    /// Sharp sideways kicks on the beat.
+    Kick,
 }
 
 impl Move {
@@ -227,8 +243,8 @@ impl Move {
     fn pool(mood: Mood, energy: f32) -> &'static [(Move, u32)] {
         let hot = energy > 0.45;
         match mood {
-            Mood::Headbang => &[(Move::Bang, 4), (Move::SideBang, 3), (Move::Thrash, 2), (Move::Nod, 2), (Move::Hop, 1)],
-            Mood::Vibe => &[(Move::Drift, 4), (Move::Float, 3), (Move::Lean, 3), (Move::Nod, 2), (Move::Groove, 2)],
+            Mood::Headbang => &[(Move::Bang, 4), (Move::SideBang, 3), (Move::Thrash, 2), (Move::Nod, 2), (Move::Kick, 2), (Move::Hop, 1)],
+            Mood::Vibe => &[(Move::Drift, 4), (Move::Float, 3), (Move::Lean, 3), (Move::Pendulum, 3), (Move::Nod, 2), (Move::Groove, 2)],
             _ if hot => &[
                 (Move::Bounce, 3),
                 (Move::Hop, 3),
@@ -236,12 +252,16 @@ impl Move {
                 (Move::Twist, 2),
                 (Move::Pump, 2),
                 (Move::LookAround, 2),
+                (Move::Twirl, 2),
+                (Move::Kick, 2),
+                (Move::Vibrate, 2),
                 (Move::WinkStep, 1),
                 (Move::Sway, 1),
             ],
             _ => &[
                 (Move::Sway, 3),
                 (Move::Groove, 3),
+                (Move::Pendulum, 2),
                 (Move::Nod, 2),
                 (Move::Shuffle, 2),
                 (Move::Twist, 2),
@@ -365,6 +385,130 @@ pub enum React {
     Giggle,
     /// The pointer left after a long visit.
     Pout,
+    // Object skits: a held prop, a little routine, an ending.
+    /// Flips the laptop open, types a burst, closes it proud.
+    Laptop,
+    /// Opens a book, reads a few lines, flips the page.
+    Read,
+    /// Doomscrolls the phone and ends a little dizzy.
+    Phone,
+    /// A hot sip: steam, a long drink, an ahh.
+    Coffee,
+    /// Munches a cookie, crumbs everywhere.
+    Snack,
+    /// Button-mashes a game and wins.
+    Game,
+    /// Strums a chord; notes float up.
+    Guitar,
+    /// Belts a note into the mic.
+    Sing,
+    /// Deadlifts a dumbbell: squat, strain, hold, flex.
+    Lift,
+    /// Waves a wand: sparks, star eyes, smoke.
+    Magic,
+    /// Raises a camera, FLASH, checks the shot.
+    Photo,
+    /// Watches a sprout grow and loves it.
+    Plant,
+    /// Paints strokes in the air; flecks fly.
+    Paint,
+    /// Umbrella pops open; rain taps off it.
+    Umbrella,
+    /// A balloon lifts it, then pops.
+    Balloon,
+    /// Squeezes the teddy; hearts float.
+    Hug,
+    // Stage bits: no prop, just the face and a gimmick.
+    /// Slow suspicious side-eye, left then right.
+    SideEye,
+    /// Eyebrows wiggle one at a time.
+    BrowWiggle,
+    /// Narrows to slits, leans in, decides it's fine.
+    Squint,
+    /// Nods off twice, snaps awake.
+    Doze,
+    /// Eyes closed, levitates, glows faintly.
+    Meditate,
+    /// Cold: rattles in a frosty glow.
+    Shiver,
+    /// Overheated: panting mouth, sweat.
+    Hot,
+    /// A micro-nap and a jolt awake.
+    Nap,
+    /// Scans the horizon twice through narrowed eyes.
+    Spy,
+    /// Monocle inspect: one huge eye roaming low.
+    Inspect,
+    /// A full spin, lands wobbly.
+    Spin,
+    /// Glides one way while looking the other.
+    Moonwalk,
+    /// Robot mode: stepped snaps and a cyan glow.
+    Beep,
+    /// Enthusiastic hello bounces.
+    Wave,
+    /// Blows a bubble until it pops.
+    BubbleGum,
+    /// Blows a kiss; the heart drifts off.
+    Kiss,
+    /// A huffy grumble with an anger vein.
+    Grumble,
+    /// Ear tilted to listen, then a `!`.
+    Eavesdrop,
+    /// Ding: a lightbulb moment.
+    Idea,
+    /// Flat slump and a slow head-shake.
+    Facepalm,
+    /// Full-body cringe, then one eye opens.
+    Cringe,
+    /// Cheering: alternating winks and hops.
+    Cheer,
+    /// Marches in place, left right left.
+    March,
+    /// Pogo hops that keep getting bigger.
+    Pogo,
+    /// Poofs small, darts across, reappears smug.
+    Ninja,
+    /// Weightless drift with a slow roll.
+    ZeroG,
+    /// Hops into a puddle; drops fly.
+    Splash,
+    /// Tracks a firefly and catches it.
+    Catch,
+    /// Shades on, furious typing, code flies.
+    Hack,
+    /// Juggles three throws with its eyes.
+    Juggle,
+    /// Chest out, chin up: very proud.
+    Proud,
+    /// Eyes covered... BOO!
+    PeekABoo,
+    /// Counts on imaginary fingers, then has it.
+    Count,
+    /// Waiting: taps a foot, checks the time.
+    Wait,
+    /// Psyched up: pumping and shaking it off.
+    Hype,
+    /// Two little sniffs, then suspicious.
+    Sniff,
+    /// One slow deep breath, in and out.
+    Breathe,
+    /// Rubbing tired eyes.
+    Rub,
+    /// Overheats with anger, then deflates.
+    Rage,
+    /// Bobblehead nodding.
+    Bobble,
+    /// Glued to a flickering screen.
+    Binge,
+    /// Gazes up at the stars in awe.
+    Stargaze,
+    /// Checks itself out and approves.
+    Mirror,
+    /// Sunbathes behind shades.
+    Bask,
+    /// Raises a glass with a little clink.
+    Toast,
     Emote(Glyph),
 }
 
@@ -419,6 +563,67 @@ impl React {
             Faint => 2.6,
             Giggle => 1.6,
             Pout => 1.4,
+            Laptop => 3.2,
+            Read => 3.4,
+            Phone => 2.8,
+            Coffee => 2.6,
+            Snack => 2.4,
+            Game => 2.6,
+            Guitar => 2.8,
+            Sing => 2.6,
+            Lift => 2.6,
+            Magic => 2.4,
+            Photo => 1.8,
+            Plant => 2.8,
+            Paint => 2.8,
+            Umbrella => 2.6,
+            Balloon => 2.8,
+            Hug => 2.2,
+            SideEye => 1.6,
+            BrowWiggle => 1.6,
+            Squint => 1.8,
+            Doze => 3.0,
+            Meditate => 3.2,
+            Shiver => 1.8,
+            Hot => 2.0,
+            Nap => 2.4,
+            Spy => 2.8,
+            Inspect => 2.2,
+            Spin => 1.6,
+            Moonwalk => 1.8,
+            Beep => 1.8,
+            Wave => 1.4,
+            BubbleGum => 2.6,
+            Kiss => 1.4,
+            Grumble => 1.8,
+            Eavesdrop => 2.4,
+            Idea => 1.8,
+            Facepalm => 2.0,
+            Cringe => 1.6,
+            Cheer => 2.0,
+            March => 1.8,
+            Pogo => 2.0,
+            Ninja => 2.0,
+            ZeroG => 3.0,
+            Splash => 1.6,
+            Catch => 2.8,
+            Hack => 2.4,
+            Juggle => 2.6,
+            Proud => 1.6,
+            PeekABoo => 1.8,
+            Count => 2.6,
+            Wait => 2.8,
+            Hype => 1.8,
+            Sniff => 1.8,
+            Breathe => 3.0,
+            Rub => 2.0,
+            Rage => 2.2,
+            Bobble => 1.8,
+            Binge => 3.0,
+            Stargaze => 3.0,
+            Mirror => 2.0,
+            Bask => 2.4,
+            Toast => 1.6,
             Emote(_) => 1.6,
         }
     }
@@ -430,6 +635,28 @@ pub enum Hat {
     Santa,
     Party,
     Nightcap,
+}
+
+/// A held item for the object skits, drawn under the face and animated by
+/// `Extras::prop_k` (a lid opening, a sprout growing, a glass raising...).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Prop {
+    Laptop,
+    Book,
+    Phone,
+    Mug,
+    Cookie,
+    Gamepad,
+    Guitar,
+    Mic,
+    Dumbbell,
+    Wand,
+    Camera,
+    Plant,
+    Brush,
+    Umbrella,
+    Balloon,
+    Teddy,
 }
 
 /// The eased part of the face.
@@ -534,11 +761,15 @@ pub struct Extras {
     pub rec: Option<Color>,
     /// Soft light on the face (a screen being watched).
     pub screen: Option<Color>,
+    /// A held item for the object skits.
+    pub prop: Option<Prop>,
+    /// How far along the prop's own animation is, 0..1.
+    pub prop_k: f32,
 }
 
 impl Default for Extras {
     fn default() -> Self {
-        Self { glyph: Glyph::None, hat: Hat::None, shades: false, pumpkin: false, glow: None, slit: false, shine: false, dream: false, caption: None, rec: None, screen: None }
+        Self { glyph: Glyph::None, hat: Hat::None, shades: false, pumpkin: false, glow: None, slit: false, shine: false, dream: false, caption: None, rec: None, screen: None, prop: None, prop_k: 0.0 }
     }
 }
 
@@ -569,6 +800,10 @@ enum Kind {
     Bang,
     /// A short symbol (`{}`, `>_`, `@`...) in the work theme's colour.
     Sym(&'static str),
+    /// A wisp of steam curling up.
+    Steam,
+    /// A firefly looping around the face; `vx`/`vy` hold the orbit centre.
+    Fly,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -698,6 +933,73 @@ const T_FIREWORK: usize = 10;
 const T_LIGHTNING: usize = 11;
 const T_SEASON_HEART: usize = 12;
 const T_WORK: usize = 13;
+
+/// Skits the face may put on unprompted while nothing is happening: every
+/// one-off that isn't bound to an event or a mood lives here, so a long idle
+/// stretch never repeats the same trick twice.
+const BITS: &[React] = &[
+    React::Laptop,
+    React::Read,
+    React::Phone,
+    React::Coffee,
+    React::Snack,
+    React::Game,
+    React::Guitar,
+    React::Sing,
+    React::Lift,
+    React::Magic,
+    React::Photo,
+    React::Plant,
+    React::Paint,
+    React::Umbrella,
+    React::Balloon,
+    React::Hug,
+    React::SideEye,
+    React::BrowWiggle,
+    React::Squint,
+    React::Doze,
+    React::Meditate,
+    React::Shiver,
+    React::Hot,
+    React::Nap,
+    React::Spy,
+    React::Inspect,
+    React::Spin,
+    React::Moonwalk,
+    React::Beep,
+    React::Wave,
+    React::BubbleGum,
+    React::Kiss,
+    React::Grumble,
+    React::Eavesdrop,
+    React::Idea,
+    React::Facepalm,
+    React::Cringe,
+    React::Cheer,
+    React::March,
+    React::Pogo,
+    React::Ninja,
+    React::ZeroG,
+    React::Splash,
+    React::Catch,
+    React::Hack,
+    React::Juggle,
+    React::Proud,
+    React::PeekABoo,
+    React::Count,
+    React::Wait,
+    React::Hype,
+    React::Sniff,
+    React::Breathe,
+    React::Rub,
+    React::Rage,
+    React::Bobble,
+    React::Binge,
+    React::Stargaze,
+    React::Mirror,
+    React::Bask,
+    React::Toast,
+];
 
 pub struct Eyes {
     t: f32,
@@ -1067,6 +1369,12 @@ impl Eyes {
                 let w = if self.rand() < 0.5 { -3.5 } else { 3.5 };
                 self.jig.wobble(w);
             }
+            // Object skits get a small hop; routines with a lift get a big one.
+            React::Laptop | React::Read | React::Phone | React::Game | React::Guitar | React::Sing | React::Photo | React::Paint | React::Toast | React::Wave | React::Idea | React::Catch | React::Juggle | React::Cheer | React::Proud | React::PeekABoo | React::Eavesdrop | React::Count | React::Wait | React::Kiss | React::Spy | React::Inspect | React::BrowWiggle | React::Sniff | React::Binge | React::Stargaze | React::Mirror | React::Hack => self.jig.hop(26.0),
+            React::Coffee | React::Snack | React::Hug | React::Bask | React::Meditate | React::Breathe | React::Nap | React::BubbleGum => self.jig.hop(14.0),
+            React::Lift | React::Magic | React::Balloon | React::Ninja | React::Splash | React::Pogo | React::Hype | React::Spin | React::March | React::Moonwalk | React::Rage | React::Beep | React::ZeroG => self.jig.hop(45.0),
+            React::Umbrella | React::Grumble | React::Facepalm | React::Rub | React::Doze | React::SideEye | React::Squint => self.jig.squish(35.0),
+            React::Shiver | React::Cringe | React::Bobble | React::Hot | React::Plant => self.jig.wobble(3.0),
             _ => {}
         }
         match r {
@@ -1164,6 +1472,102 @@ impl Eyes {
                 self.blink_start = Some(self.t);
                 self.blink_double = true;
             }
+            React::Coffee => {
+                for i in 0..2 {
+                    self.spawn(Kind::Steam, -11.0 - 1.5 * i as f32, 9.0 - 2.0 * i as f32, -0.5, -5.0, 1.4 + 0.6 * i as f32, 1.0);
+                }
+            }
+            React::Snack => {
+                for i in 0..4 {
+                    let (x, vx, vy) = (self.range(6.0, 12.0), self.range(-2.0, 2.0), self.range(3.0, 7.0));
+                    self.spawn(Kind::Dot, x, 12.0, vx, -vy, 0.8 + 0.25 * i as f32, 0.9);
+                }
+            }
+            React::Guitar | React::Sing => {
+                for i in 0..4 {
+                    let (x, vx, life) = (self.range(-18.0, 14.0), self.range(-2.0, 2.0), 1.2 + 0.4 * i as f32);
+                    self.spawn(Kind::Note, x, 2.0, vx, -8.0, life, 7.5);
+                }
+            }
+            React::Paint => {
+                for _ in 0..5 {
+                    let (x, vx, vy) = (self.range(-18.0, 18.0), self.range(-3.0, 3.0), self.range(-10.0, -4.0));
+                    self.spawn(Kind::Firework, x, 8.0, vx, vy, 1.6, 1.0);
+                }
+            }
+            React::Umbrella => {
+                for i in 0..7 {
+                    let x = -21.0 + 7.0 * i as f32;
+                    self.spawn(Kind::Rain, x, -14.0, -2.0, 30.0, 0.9, 1.0);
+                }
+            }
+            React::Hug => {
+                for i in 0..2 {
+                    self.spawn(Kind::Heart, -6.0 + 10.0 * i as f32, 0.0, 0.0, -7.0, 1.3 + 0.3 * i as f32, 2.6);
+                }
+            }
+            React::Kiss => self.spawn(Kind::Heart, 16.0, -1.0, 9.0, -5.0, 1.3, 3.0),
+            React::BubbleGum => self.spawn(Kind::Bubble, 0.0, 8.0, 0.0, 0.0, 1.9, 2.2),
+            React::Cheer => {
+                for _ in 0..8 {
+                    let (x, vx, vy, life) = (self.range(-24.0, 24.0), self.range(-4.0, 4.0), self.range(-12.0, -6.0), self.range(1.0, 1.8));
+                    self.spawn(Kind::Confetti, x, 6.0, vx, vy, life, 1.0);
+                }
+            }
+            React::Catch => self.spawn(Kind::Fly, 0.0, 0.0, 0.0, -2.0, 2.9, 1.0),
+            React::Hack => {
+                for (i, s) in ["</>", "{ }", "=>", ";"].iter().enumerate() {
+                    self.spawn(Kind::Sym(s), -18.0 + 12.0 * i as f32, -6.0, 0.0, -7.0, 1.5, 5.5);
+                }
+            }
+            React::Juggle => {
+                for i in 0..3 {
+                    let vx = -7.0 + 7.0 * i as f32;
+                    self.spawn(Kind::Dot, -vx * 0.8, 8.0, vx, -16.0, 1.6 + 0.3 * i as f32, 1.4);
+                }
+            }
+            React::Stargaze => {
+                for _ in 0..4 {
+                    let (x, y, life) = (self.range(-22.0, 22.0), self.range(-14.0, -8.0), self.range(1.6, 2.6));
+                    self.spawn(Kind::Spark, x, y, 0.0, 0.0, life, 2.4);
+                }
+            }
+            React::ZeroG => {
+                for _ in 0..5 {
+                    let (x, y, life) = (self.range(-24.0, 24.0), self.range(-10.0, 8.0), self.range(1.4, 2.4));
+                    self.spawn(Kind::Spark, x, y, 0.0, 0.0, life, 2.2);
+                }
+            }
+            React::Shiver => {
+                for _ in 0..4 {
+                    let (x, vy) = (self.range(-20.0, 20.0), self.range(5.0, 8.0));
+                    self.spawn(Kind::Snow, x, -14.0, 0.0, vy, 1.6, 1.0);
+                }
+            }
+            React::Hot => {
+                for i in 0..3 {
+                    self.spawn(Kind::Sweat, 16.0 + 5.0 * i as f32, -8.0 + 4.0 * i as f32, 0.0, 2.0, 1.2, 2.0);
+                }
+            }
+            React::Rage | React::Grumble => {
+                self.spawn(Kind::Anger, -25.0, -7.0, 0.0, 0.0, 1.4, 1.0);
+                if r == React::Rage {
+                    self.spawn(Kind::Anger, 25.0, -7.0, 0.0, 0.0, 1.4, 1.0);
+                }
+            }
+            React::Ninja | React::Moonwalk => {
+                for i in 0..4 {
+                    let y = -7.0 + 4.5 * i as f32;
+                    self.spawn(Kind::Dash, 16.0, y, -34.0, 0.0, 0.4 + 0.08 * i as f32, 1.0);
+                }
+            }
+            React::Magic => {
+                for _ in 0..3 {
+                    let (x, y, life) = (self.range(-14.0, 14.0), self.range(-10.0, 0.0), self.range(0.5, 0.9));
+                    self.spawn(Kind::Spark, x, y, 0.0, 0.0, life, 2.2);
+                }
+            }
+            React::Nap => self.spawn(Kind::Z, 12.0, -5.0, 3.0, -4.0, 2.0, 7.0),
             _ => {}
         }
     }
@@ -1649,6 +2053,8 @@ impl Eyes {
             Move::Bang | Move::Thrash => self.jig.squish(15.0 + 25.0 * amp),
             Move::SideBang => self.jig.wobble(side * 2.5 * amp),
             Move::Pump => self.jig.squish(10.0 * amp),
+            Move::Twirl => self.jig.wobble(side * 4.0 * amp),
+            Move::Kick | Move::Vibrate => self.jig.hop(6.0 + 14.0 * amp),
             _ => {}
         }
         if s.visible && c % 2 == 0 {
@@ -1657,6 +2063,11 @@ impl Eyes {
             let size = 7.5 + 2.0 * amp;
             self.spawn(Kind::Note, side * (ax - 6.0).min(26.0), ay * 0.3, side * 2.0, -7.0 - 3.0 * amp, 1.6, size);
         }
+    }
+
+    /// A random idle skit.
+    fn bit(&mut self) -> React {
+        BITS[(self.rand() * BITS.len() as f32) as usize % BITS.len()]
     }
 
     /// Little unprompted bits of personality while nothing else happens.
@@ -1709,11 +2120,14 @@ impl Eyes {
                 self.next_bit = self.t + self.range(8.0, 16.0);
             }
             Bored => {
-                if r < 0.3 {
+                if r < 0.14 {
+                    let b = self.bit();
+                    self.start(b);
+                } else if r < 0.38 {
                     self.start(React::EyeRoll);
-                } else if r < 0.55 {
+                } else if r < 0.58 {
                     self.start(React::LookUp);
-                } else if r < 0.85 {
+                } else if r < 0.8 {
                     // Counting sheep: one hops the fence, the eyes follow it.
                     let ax = s.area.0;
                     self.spawn(Kind::Sheep, -ax, 0.0, 0.0, 0.0, 4.5, 1.0);
@@ -1723,20 +2137,50 @@ impl Eyes {
                 self.next_bit = self.t + self.range(5.0, 10.0);
             }
             Drowsy | Sleepy | Tired => {
-                if r < 0.6 {
-                    self.start(React::Yawn);
+                let pick = if r < 0.18 {
+                    React::Doze
+                } else if r < 0.33 {
+                    React::Nap
+                } else if r < 0.75 {
+                    React::Yawn
                 } else {
-                    self.start(React::DoubleBlink);
-                }
+                    React::DoubleBlink
+                };
+                self.start(pick);
                 self.next_bit = self.t + self.range(8.0, 18.0);
             }
+            Hungry => {
+                let pick = if r < 0.35 {
+                    React::Snack
+                } else if r < 0.6 {
+                    React::Coffee
+                } else {
+                    self.bit()
+                };
+                self.start(pick);
+                self.next_bit = self.t + self.range(6.0, 12.0);
+            }
+            Sunny => {
+                let pick = if r < 0.35 { React::Bask } else { self.bit() };
+                self.start(pick);
+                self.next_bit = self.t + self.range(7.0, 13.0);
+            }
             _ => {
+                // About one bit in seven is a full skit instead of a quick gag.
+                let r = if r < 0.15 {
+                    let b = self.bit();
+                    self.start(b);
+                    self.next_bit = self.t + self.range(9.0, 16.0);
+                    return;
+                } else {
+                    (r - 0.15) / 0.85
+                };
                 let pick = match (r * 100.0) as u32 {
                     0..=7 => React::Wink,
                     8..=14 => React::Peek,
                     15..=21 => React::ClockGlance,
                     22..=29 => {
-                        let g = [Glyph::Heart, Glyph::Star, Glyph::Squeeze, Glyph::Ring, Glyph::Cross, Glyph::Question];
+                        let g = [Glyph::Heart, Glyph::Star, Glyph::Squeeze, Glyph::Ring, Glyph::Cross, Glyph::Question, Glyph::Minus, Glyph::Moon, Glyph::Bolt];
                         React::Emote(g[(self.rand() * g.len() as f32) as usize % g.len()])
                     }
                     30..=36 => React::DoubleBlink,
@@ -2027,6 +2471,131 @@ impl Eyes {
                 self.react_mark = true;
                 self.blink_start = Some(self.t);
                 self.blink_double = true;
+            }
+            React::Laptop if e >= 2.7 && !self.react_mark => {
+                self.react_mark = true;
+                self.jig.hop(24.0);
+                self.spawn(Kind::Sym("</>"), 0.0, -10.0, 0.0, -6.0, 1.1, 6.0);
+            }
+            React::Read if e >= 2.0 && !self.react_mark => {
+                // The page turns with a soft whoosh.
+                self.react_mark = true;
+                self.jig.wobble(2.0);
+                self.spawn(Kind::Page, 8.0, 7.0, -11.0, -7.0, 1.2, 1.0);
+            }
+            React::Game if e >= 2.1 && !self.react_mark => {
+                // The run pays off.
+                self.react_mark = true;
+                self.jig.hop(40.0);
+                for _ in 0..5 {
+                    let (x, y, life) = (self.range(-20.0, 20.0), self.range(-10.0, 4.0), self.range(0.5, 0.9));
+                    self.spawn(Kind::Spark, x, y, 0.0, 0.0, life, 2.6);
+                }
+            }
+            React::Lift if e >= 1.9 && !self.react_mark => {
+                self.react_mark = true;
+                self.jig.hop(30.0);
+                self.spawn(Kind::Sweat, 21.0, -8.0, 0.0, 2.0, 1.2, 2.0);
+            }
+            React::Magic if e >= 1.1 && !self.react_mark => {
+                self.react_mark = true;
+                self.jig.hop(36.0);
+                for i in 0..8 {
+                    let a = i as f32 / 8.0 * TAU;
+                    self.spawn(Kind::Spark, a.cos() * 14.0, a.sin() * 8.0 - 4.0, a.cos() * 8.0, a.sin() * 5.0, 0.8, 2.4);
+                }
+            }
+            React::Photo if e >= 0.55 && !self.react_mark => {
+                // The shutter fires.
+                self.react_mark = true;
+                self.live.flash = 1.0;
+                self.blink_start = Some(self.t);
+                self.blink_double = false;
+            }
+            React::Plant if e >= 2.0 && !self.react_mark => {
+                self.react_mark = true;
+                self.spawn(Kind::Heart, 12.0, 2.0, 0.0, -7.0, 1.3, 2.6);
+            }
+            React::Balloon if e >= 2.05 && !self.react_mark => {
+                // Pop.
+                self.react_mark = true;
+                self.jig.squish(55.0);
+                for _ in 0..8 {
+                    let a = self.range(0.0, TAU);
+                    let v = self.range(12.0, 20.0);
+                    self.spawn(Kind::Dot, 8.6, -16.0, a.cos() * v, a.sin() * v * 0.7, 0.5, 1.0);
+                }
+            }
+            React::BubbleGum if e >= 1.85 && !self.react_mark => {
+                // The bubble pops on its nose.
+                self.react_mark = true;
+                self.jig.squish(30.0);
+                for _ in 0..5 {
+                    let (vx, vy) = (self.range(-14.0, 14.0), self.range(-10.0, 2.0));
+                    self.spawn(Kind::Dot, 0.0, 8.0, vx, vy, 0.5, 0.9);
+                }
+            }
+            React::Catch if e >= 2.1 && !self.react_mark => {
+                // Got it.
+                self.react_mark = true;
+                self.jig.hop(34.0);
+                self.spawn(Kind::Spark, 14.0, 2.0, 0.0, 0.0, 0.7, 3.0);
+            }
+            React::Ninja if e >= 0.75 && !self.react_mark => {
+                self.react_mark = true;
+                for i in 0..4 {
+                    let y = -7.0 + 4.5 * i as f32;
+                    self.spawn(Kind::Dash, -16.0, y, 34.0, 0.0, 0.4 + 0.08 * i as f32, 1.0);
+                }
+            }
+            React::Eavesdrop if e >= 1.7 && !self.react_mark => {
+                self.react_mark = true;
+                self.jig.hop(30.0);
+                self.spawn(Kind::Bang, -25.0, -9.0, 0.0, -3.0, 1.0, 1.0);
+            }
+            React::Idea if e >= 0.7 && !self.react_mark => {
+                self.react_mark = true;
+                self.jig.hop(42.0);
+                for _ in 0..4 {
+                    let (x, life) = (self.range(-14.0, 14.0), self.range(0.5, 0.9));
+                    self.spawn(Kind::Spark, x, -12.0, 0.0, 0.0, life, 2.6);
+                }
+            }
+            React::Count if e >= 2.0 && !self.react_mark => {
+                self.react_mark = true;
+                self.jig.hop(26.0);
+                self.spawn(Kind::Spark, 0.0, -11.0, 0.0, 0.0, 0.7, 2.8);
+            }
+            React::Toast if e >= 0.5 && !self.react_mark => {
+                self.react_mark = true;
+                self.jig.hop(18.0);
+                self.spawn(Kind::Spark, -9.0, 4.0, 0.0, 0.0, 0.6, 2.4);
+            }
+            React::Splash if e >= 0.7 && !self.react_mark => {
+                // Landed in the puddle.
+                self.react_mark = true;
+                self.jig.squish(50.0);
+                for i in 0..6 {
+                    let a = -PI / 2.0 + (i as f32 - 2.5) * 0.35;
+                    self.spawn(Kind::Sweat, a.cos() * 4.0, 8.0, a.cos() * 12.0, -14.0, 1.0, 1.6);
+                }
+            }
+            React::Sing if e >= 1.5 && !self.react_mark => {
+                self.react_mark = true;
+                self.wave_burst(2);
+            }
+            React::Guitar if e >= 1.5 && !self.react_mark => {
+                self.react_mark = true;
+                self.jig.wobble(4.0);
+                for i in 0..3 {
+                    let (x, vx) = (-8.0 + 8.0 * i as f32, self.range(-2.0, 2.0));
+                    self.spawn(Kind::Note, x, 2.0, vx, -8.0, 1.6, 8.5);
+                }
+            }
+            React::Coffee if e >= 1.9 && !self.react_mark => {
+                // One last curl of steam with the satisfied sigh.
+                self.react_mark = true;
+                self.spawn(Kind::Steam, -11.0, 8.0, -0.5, -5.0, 1.6, 1.0);
             }
             _ => {}
         }
@@ -2424,6 +2993,36 @@ impl Eyes {
                 lv.rot = l * 0.12;
                 lv.dx = l * 3.0;
                 lv.dy = pl * 1.2;
+            }
+            Move::Twirl => {
+                p.happy = 0.6;
+                p.open = 0.9;
+                lv.rot = ease * TAU * side;
+                lv.dy = -arc * 2.5;
+                *look = Some((0.0, -0.3));
+            }
+            Move::Pendulum => {
+                p.open = 0.7;
+                p.happy = 0.3;
+                *look = Some((sw * 0.9, 0.2));
+                lv.dx = sw * 6.0;
+                lv.rot = sw * 0.2;
+                lv.dy = -pl * 1.2;
+            }
+            Move::Vibrate => {
+                p.open = 0.9;
+                p.brow = 1.0;
+                lv.dx = (t * 55.0).sin() * 0.9 * (0.4 + pl);
+                lv.dy = (t * 47.0).cos() * 0.5;
+                *look = Some((side * 0.2, -0.1));
+            }
+            Move::Kick => {
+                p.happy = 0.45;
+                p.open = 0.85;
+                *look = Some((side * 0.9, 0.0));
+                lv.dx = side * pl * 5.0;
+                lv.rot = side * pl * 0.14;
+                lv.squash = -pl * 0.07;
             }
         }
         match self.mood {
@@ -3057,6 +3656,770 @@ impl Eyes {
                 *look = Some((self.hover_side * 0.9, 0.2));
                 lv.dy = 0.8;
             }
+            // ------------------------------------------------------ skits
+            React::Laptop => {
+                let lid = (e / 0.5).min(1.0).min(((r.duration() - e) / 0.45).clamp(0.0, 1.0));
+                x.prop = Some(Prop::Laptop);
+                x.prop_k = lid * lid * (3.0 - 2.0 * lid);
+                if x.prop_k > 0.6 && e < 2.7 {
+                    // Eyes on the deck; a small bob per keystroke.
+                    *look = Some(((e * 6.0).sin() * 0.45, 0.85));
+                    p.open = 0.85;
+                    p.brow = -0.4;
+                    p.angry = 0.1;
+                    lv.dy = (e * 9.0).sin().max(0.0) * 0.4;
+                    x.screen = Some(ICE);
+                } else {
+                    p.happy = 0.6;
+                    *look = Some((0.0, 0.6));
+                }
+            }
+            React::Read => {
+                let k = (e / 0.4).min(1.0).min(((r.duration() - e) / 0.4).clamp(0.0, 1.0));
+                x.prop = Some(Prop::Book);
+                x.prop_k = k;
+                if k >= 1.0 && e < r.duration() - 0.5 {
+                    // Scanning lines, slowing on a good bit.
+                    let u = (e * 1.1).fract();
+                    let line = ((e * 1.1) as u32 % 3) as f32;
+                    *look = Some((-0.75 + 1.5 * u, 0.3 + 0.22 * line));
+                    p.open = 0.68;
+                    p.brow = 0.5;
+                    if line == 1.0 && u > 0.75 {
+                        p.happy = 0.55;
+                    }
+                } else {
+                    p.happy = 0.8;
+                    p.open = 0.85;
+                }
+            }
+            React::Phone => {
+                x.prop = Some(Prop::Phone);
+                x.prop_k = (e / 0.4).min(1.0);
+                x.screen = Some(Color::rgb(148, 163, 253));
+                if e < 0.5 {
+                    p.happy = 0.4;
+                } else if e < 2.3 {
+                    // Flick, flick, flick: the eyes scroll with the thumb.
+                    let flick = ((e - 0.5) / 0.35).floor();
+                    *look = Some((0.45, 0.5 + 0.1 * (flick % 3.0)));
+                    p.open = 0.7;
+                    p.pupil = 0.8;
+                    lv.dy = ((e - 0.5) * 2.8).fract().min(0.15) * 3.0;
+                } else {
+                    x.glyph = Glyph::Spiral;
+                    lv.dx = (e * 4.0).sin() * 1.5;
+                }
+            }
+            React::Coffee => {
+                let k = ((e - 0.3) / 0.4).clamp(0.0, 1.0).min(((r.duration() - e) / 0.5).clamp(0.0, 1.0));
+                x.prop = Some(Prop::Mug);
+                x.prop_k = k;
+                if k > 0.8 && e < 1.9 {
+                    // The long sip.
+                    p.open = 0.0;
+                    p.happy = 0.9;
+                    p.mouth = 0.6;
+                    lv.rot = -0.08;
+                    lv.dy = -0.8 * k;
+                } else {
+                    p.happy = 0.7;
+                    p.open = 0.9;
+                    p.blush = 0.3 * bell;
+                }
+            }
+            React::Snack => {
+                x.prop = Some(Prop::Cookie);
+                x.prop_k = pr;
+                // Three bites, then a happy chew.
+                let bite = (e * 4.2).sin().abs();
+                p.mouth = 0.3 + 0.7 * bite * (1.0 - pr * 0.5);
+                p.happy = 0.7;
+                p.open = 0.75;
+                *look = Some((0.5, 0.7));
+                lv.squash = -0.06 * bite;
+            }
+            React::Game => {
+                x.prop = Some(Prop::Gamepad);
+                x.prop_k = 1.0;
+                if e < 2.1 {
+                    // Locked in: the eyes dart with the action.
+                    *look = Some(((e * 9.0).sin().signum() * 0.7, 0.5));
+                    p.open = 0.9;
+                    p.angry = 0.25;
+                    p.brow = -1.5;
+                    lv.dx = (e * 26.0).sin() * 0.6;
+                } else {
+                    p.happy = 1.0;
+                    p.open = 1.0;
+                    p.brow = 2.0;
+                    *look = Some((0.0, -0.3));
+                }
+            }
+            React::Guitar => {
+                x.prop = Some(Prop::Guitar);
+                x.prop_k = (e * 3.0).fract();
+                // Strum on the beat, rocking side to side.
+                *look = Some((0.2, 0.7));
+                p.happy = 0.6;
+                p.open = 0.7;
+                lv.rot = (e * 3.2).sin() * 0.1;
+                lv.dy = -((e * 3.0).fract() * PI).sin() * 1.4;
+            }
+            React::Sing => {
+                x.prop = Some(Prop::Mic);
+                x.prop_k = (e / 0.4).min(1.0);
+                // La-a-a: the mouth opens on the note, head tipped back.
+                let note = (e * 4.0).sin().abs();
+                p.mouth = 0.3 + 0.9 * note;
+                p.open = 0.0;
+                p.happy = 1.0;
+                lv.rot = -0.1;
+                lv.dy = -1.0 - 0.8 * note;
+            }
+            React::Lift => {
+                x.prop = Some(Prop::Dumbbell);
+                if e < 0.8 {
+                    // Squatting to grab it.
+                    let k = (e / 0.8 * PI).sin();
+                    lv.squash = 0.2 * k;
+                    lv.dy = 2.5 * k;
+                    *look = Some((0.0, 0.8));
+                    p.open = 0.6;
+                    x.prop_k = 0.0;
+                } else if e < 1.9 {
+                    // The pull: shaking, straining.
+                    let k = ((e - 0.8) / 1.1).min(1.0);
+                    x.prop_k = k * k;
+                    p.angry = 0.5;
+                    p.open = 0.5;
+                    p.brow = -2.0;
+                    lv.dx = (e * 40.0).sin() * 0.6;
+                    lv.dy = -3.0 * k;
+                } else {
+                    // Held high, then a proud little flex.
+                    x.prop_k = 1.0;
+                    p.happy = 0.8;
+                    p.open = 0.9;
+                    p.brow = 1.5;
+                    lv.dy = -3.0 + bell * 0.5;
+                }
+            }
+            React::Magic => {
+                x.prop = Some(Prop::Wand);
+                x.prop_k = bell;
+                if e < 1.1 {
+                    // The wind-up: drawing a circle with the wand.
+                    *look = Some(((e * 5.0).cos() * 0.7, -0.3 + (e * 5.0).sin() * 0.4));
+                    p.open = 0.85;
+                    p.brow = 1.0;
+                    lv.rot = (e * 5.0).sin() * 0.08;
+                } else {
+                    x.glyph = Glyph::Star;
+                    p.size = 1.1;
+                    lv.dy = -1.5 * bell;
+                }
+            }
+            React::Photo => {
+                x.prop = Some(Prop::Camera);
+                x.prop_k = (e / 0.5).min(1.0).min(((r.duration() - e) / 0.4).clamp(0.0, 1.0));
+                if e < 0.55 {
+                    // Levelling the shot.
+                    lv.rot = -0.06;
+                    lv.dy = -0.8;
+                    *look = Some((0.0, -0.1));
+                    p.open = 0.8;
+                    p.size_l = 1.1;
+                } else if e < 0.9 {
+                    p.happy = 0.9;
+                    p.open = 0.0;
+                } else {
+                    // Checking the shot: a pleased tilt.
+                    p.happy = 0.7;
+                    *look = Some((0.5, 0.4));
+                    lv.rot = 0.08;
+                }
+            }
+            React::Plant => {
+                x.prop = Some(Prop::Plant);
+                x.prop_k = (e / 2.4).clamp(0.0, 1.0);
+                // Eyes follow the sprout up.
+                *look = Some((0.5, 0.8 - 0.9 * x.prop_k));
+                p.open = 0.9;
+                p.brow = 1.2 * x.prop_k;
+                if e > 2.0 {
+                    p.happy = 0.9;
+                    p.blush = 0.4;
+                }
+            }
+            React::Paint => {
+                x.prop = Some(Prop::Brush);
+                x.prop_k = (e * 0.8).fract();
+                // The artist's squint, gaze orbiting the canvas.
+                let a = e * 3.4;
+                *look = Some((a.cos() * 0.75, 0.15 + a.sin() * 0.4));
+                p.wink_l = 0.5;
+                p.brow = 0.7;
+                lv.rot = (e * 1.8).sin() * 0.07;
+                lv.dx = a.cos() * 1.5;
+            }
+            React::Umbrella => {
+                x.prop = Some(Prop::Umbrella);
+                x.prop_k = (e / 0.35).min(1.0).min(((r.duration() - e) / 0.4).clamp(0.0, 1.0));
+                // Dry and smug under it.
+                p.happy = 0.7;
+                p.open = 0.8;
+                *look = Some(((e * 1.1).sin() * 0.4, -0.35));
+                lv.dy = (e * 2.2).sin() * 0.5;
+            }
+            React::Balloon => {
+                let k = (e / 0.6).min(1.0);
+                if e < 2.05 {
+                    x.prop = Some(Prop::Balloon);
+                    x.prop_k = k;
+                    // It pulls and the face stretches upward.
+                    lv.squash = -0.16 * k;
+                    lv.dy = -3.5 * k + (e * 2.0).sin() * 0.5;
+                    *look = Some((0.4, -0.9));
+                    p.open = 0.9;
+                    p.brow = 1.0;
+                } else {
+                    // The pop: wide, small-pupiled shock, then a blink.
+                    calm(p);
+                    p.size = 1.3;
+                    p.pupil = 0.55;
+                    p.brow = 3.0;
+                    p.mouth = 0.8 * (1.0 - (pr - 0.73) * 3.0).max(0.0);
+                    lv.dx = (e * 60.0).sin() * 0.8;
+                }
+            }
+            React::Hug => {
+                x.prop = Some(Prop::Teddy);
+                x.prop_k = bell;
+                p.open = 0.0;
+                p.happy = 1.0;
+                p.blush = 0.8;
+                // Squeeze, release, squeeze.
+                lv.squash = 0.1 * (e * 5.0).sin().max(0.0);
+                lv.rot = (e * 2.2).sin() * 0.06;
+            }
+            React::SideEye => {
+                let side = if e < r.duration() / 2.0 { -1.0 } else { 1.0 };
+                *look = Some((side * 1.0, 0.15));
+                p.open = 0.6;
+                p.angry = 0.25;
+                p.brow = -0.8;
+                lv.rot = side * 0.05;
+                lv.dx = side * 1.5;
+            }
+            React::BrowWiggle => {
+                p.brow = if (e * 6.0) as i32 % 2 == 0 { 2.2 } else { -0.8 };
+                p.happy = 0.5;
+                p.open = 0.95;
+                lv.dy = -((e * 6.0).fract() * PI).sin() * 1.2;
+                lv.rot = (e * 3.0).sin() * 0.05;
+            }
+            React::Squint => {
+                if pr < 0.7 {
+                    p.open = 0.3;
+                    p.size = 0.92;
+                    p.brow = -0.8;
+                    lv.dx = -2.0 * (pr / 0.7);
+                    *look = Some((0.6, 0.1));
+                } else {
+                    p.open = 1.0;
+                    p.brow = 1.5;
+                    p.happy = 0.3;
+                }
+            }
+            React::Doze => {
+                // Two nod-offs with a snap back up.
+                let phase = if e < 1.4 { e / 1.4 } else { (e - 1.4) / 1.4 };
+                let dip = (phase * PI).min(PI * 0.9).sin();
+                p.open = 1.0 - 0.9 * dip;
+                lv.dy = 3.0 * dip;
+                lv.rot = 0.06 * dip;
+                if phase > 0.92 {
+                    p.open = 1.0;
+                    p.brow = 2.0;
+                    lv.dy = -1.0;
+                }
+                p.sad = 0.2;
+            }
+            React::Meditate => {
+                p.open = 0.0;
+                p.happy = 0.6;
+                let breath = (e * 1.2).sin();
+                p.size = 1.0 + 0.06 * breath;
+                lv.dy = -2.0 - 0.8 * breath;
+                lv.rot = (e * 0.6).sin() * 0.03;
+                x.glow = Some(GOLD.fade(0.4 + 0.2 * breath));
+            }
+            React::Shiver => {
+                p.open = 0.65;
+                p.sad = 0.3;
+                lv.dx = (e * 62.0).sin() * 0.9;
+                lv.dy = (e * 55.0).cos() * 0.4;
+                lv.squash = 0.06;
+                x.glow = Some(ICE.fade(0.5));
+                *look = Some((0.0, 0.4));
+            }
+            React::Hot => {
+                p.mouth = 0.5 + 0.4 * (e * 8.0).sin().abs();
+                p.open = 0.7;
+                p.sad = 0.15;
+                lv.dy = (e * 8.0).sin().abs() * 0.8;
+                lv.rot = (e * 1.4).sin() * 0.05;
+                *look = Some((0.0, -0.4));
+            }
+            React::Nap => {
+                if e < 1.8 {
+                    let k = (e / 1.8).min(1.0);
+                    p.open = (1.0 - k).max(0.0);
+                    lv.dy = 2.2 * k;
+                    lv.rot = 0.08 * k;
+                    p.happy = 0.3;
+                } else {
+                    // Jolt: wide, looking around, unsure where it is.
+                    calm(p);
+                    p.open = 1.0;
+                    p.size = 1.15;
+                    p.brow = 2.5;
+                    lv.dy = -1.0;
+                    *look = Some(((e * 8.0).sin() * 0.6, -0.2));
+                }
+            }
+            React::Spy => {
+                p.open = 0.5;
+                p.size = 0.95;
+                p.pupil = 0.85;
+                p.brow = -0.6;
+                let sweep = ((e * 0.9).fract() * 2.0 - 1.0).abs() * 2.0 - 1.0;
+                *look = Some((sweep, -0.35));
+                lv.rot = sweep * 0.04;
+            }
+            React::Inspect => {
+                p.size_l = 1.5;
+                p.wink_r = 0.45;
+                p.brow = 0.8;
+                *look = Some(((e * 1.9).sin() * 0.7, 0.55 + 0.25 * (e * 0.9).cos()));
+                lv.rot = 0.1;
+                lv.dx = 1.0;
+            }
+            React::Spin => {
+                lv.rot = pr * TAU;
+                p.happy = 0.6;
+                lv.dy = -bell * 3.0;
+                lv.squash = -0.1 * bell;
+                if pr > 0.85 {
+                    lv.dx = (e * 30.0).sin() * (1.0 - pr) * 6.0;
+                }
+            }
+            React::Moonwalk => {
+                // Feet go left, eyes stay right.
+                lv.dx = -8.0 * pr;
+                *look = Some((0.8, 0.0));
+                p.happy = 0.4;
+                p.open = 0.8;
+                lv.squash = 0.05 * (e * 10.0).sin();
+                x.shades = e > 0.5;
+            }
+            React::Beep => {
+                // Stepped gaze snaps and a hard square blink.
+                const SNAPS: [(f32, f32); 5] = [(-0.8, -0.2), (0.0, -0.5), (0.8, -0.2), (0.4, 0.4), (-0.4, 0.4)];
+                *look = Some(SNAPS[(e * 5.0) as usize % 5]);
+                p.open = if (e * 5.0).fract() < 0.12 { 0.0 } else { 0.9 };
+                p.pupil = 0.9;
+                x.glow = Some(ICE.fade(0.6));
+                lv.rot = 0.0;
+            }
+            React::Wave => {
+                p.happy = 1.0;
+                p.open = 1.0;
+                p.brow = 1.5;
+                lv.dy = -(e * 10.0).sin().abs() * 3.0;
+                lv.rot = (e * 10.0).sin() * 0.08;
+                lv.dx = (e * 5.0).sin() * 1.5;
+            }
+            React::BubbleGum => {
+                if e < 1.85 {
+                    // Watching it grow.
+                    *look = Some((0.0, 0.65));
+                    p.mouth = 0.4;
+                    p.brow = 0.8;
+                    p.open = 0.9;
+                    lv.dy = -0.5 * bell;
+                } else {
+                    // Popped on its nose.
+                    p.open = 0.0;
+                    p.angry = 0.3;
+                    lv.squash = 0.15 * (1.0 - pr);
+                    *look = Some((0.0, 0.8));
+                }
+            }
+            React::Kiss => {
+                if pr < 0.4 {
+                    p.wink_l = 1.0;
+                    p.happy = 0.8;
+                    p.blush = 0.6;
+                } else {
+                    p.mouth = 0.55;
+                    p.happy = 0.7;
+                    *look = Some((0.9, -0.2));
+                    lv.dy = -bell;
+                    p.blush = 0.5;
+                }
+            }
+            React::Grumble => {
+                p.angry = 0.7;
+                p.open = 0.4;
+                p.brow = -2.5;
+                *look = Some((-0.3, 0.5));
+                lv.dy = 1.0;
+                lv.squash = 0.08 + 0.06 * (e * 6.0).sin().abs();
+                p.mouth = 0.2 * (e * 6.0).sin().abs();
+            }
+            React::Eavesdrop => {
+                if e < 1.7 {
+                    // Very still, ear toward the sound on the left.
+                    lv.rot = -0.16;
+                    lv.dx = -4.0;
+                    *look = Some((-0.95, 0.0));
+                    p.open = 0.9;
+                    p.pupil = 0.8;
+                    p.brow = 0.6;
+                } else {
+                    calm(p);
+                    p.size = 1.25;
+                    p.brow = 3.0;
+                    p.mouth = 0.5;
+                    lv.dx = 0.0;
+                    lv.rot = 0.0;
+                    *look = Some((-0.6, -0.3));
+                }
+            }
+            React::Idea => {
+                if e < 0.7 {
+                    p.open = 0.7;
+                    p.sad = 0.2;
+                    *look = Some((0.0, 0.4));
+                    lv.dy = 0.8;
+                } else {
+                    x.glyph = Glyph::Bolt;
+                    p.size = 1.2;
+                    p.brow = 2.0;
+                }
+            }
+            React::Facepalm => {
+                lv.squash = 0.18;
+                *look = Some((0.0, 0.9));
+                p.open = 0.4;
+                p.sad = 0.5;
+                p.brow = -1.0;
+                lv.dy = 1.8;
+                lv.dx = (e * 2.4).sin() * 1.6 * (1.0 - pr * 0.5);
+                lv.rot = (e * 2.4).sin() * 0.05;
+            }
+            React::Cringe => {
+                if pr < 0.6 {
+                    x.glyph = Glyph::Squeeze;
+                    lv.dx = (e * 45.0).sin() * 0.7;
+                    lv.squash = 0.12;
+                } else {
+                    // One eye opens first, unsure it's over.
+                    p.open = 0.5;
+                    p.size_l = 0.85;
+                    p.sad = 0.3;
+                    *look = Some((0.4, 0.3));
+                }
+            }
+            React::Cheer => {
+                // Alternating winks and high hops.
+                if (e / 0.4) as i32 % 2 == 0 {
+                    p.wink_l = 1.0;
+                } else {
+                    p.wink_r = 1.0;
+                }
+                p.happy = 0.9;
+                lv.dy = -((e * 8.0).sin().abs()) * 4.0;
+                lv.rot = (e * 8.0).cos() * 0.1;
+                p.brow = 1.5;
+            }
+            React::March => {
+                let step = (e * 5.0).sin();
+                lv.dy = step.abs() * -1.6;
+                lv.rot = step.signum() * 0.09;
+                lv.dx = step * 1.5;
+                p.open = 0.9;
+                p.happy = 0.35;
+                p.brow = 0.8;
+                *look = Some((step.signum() * 0.4, -0.1));
+            }
+            React::Pogo => {
+                let hop_h = 1.5 + 3.5 * pr;
+                lv.dy = -((e * 6.0).sin().abs()) * hop_h;
+                lv.squash = 0.12 * ((e * 6.0).cos().max(0.0));
+                p.happy = 0.7;
+                p.open = 1.0;
+                p.brow = 1.2;
+            }
+            React::Ninja => {
+                if e < 0.7 {
+                    // Sucking in to vanish.
+                    let k = e / 0.7;
+                    p.open = 0.3;
+                    p.size = 1.0 - 0.4 * k;
+                    lv.squash = 0.2 * k;
+                    *look = Some((-0.6, 0.0));
+                } else {
+                    // Reappeared on the other side, smug.
+                    p.happy = 0.6;
+                    p.open = 0.9;
+                    lv.dx = 6.0 * (1.0 - (e - 0.7) / 1.3);
+                    *look = Some((-0.4, 0.0));
+                    p.brow = 0.8;
+                }
+            }
+            React::ZeroG => {
+                lv.dy = -1.5 + (e * 1.4).sin() * 1.6;
+                lv.rot = (e * 0.8).sin() * 0.16;
+                lv.dx = (e * 0.5).cos() * 2.5;
+                p.open = 0.95;
+                p.size = 1.08;
+                p.brow = 1.0;
+                *look = Some(((e * 0.9).sin() * 0.5, -0.3));
+                p.mouth = 0.25;
+            }
+            React::Splash => {
+                if e < 0.7 {
+                    // The leap up and over.
+                    let k = e / 0.7;
+                    lv.dy = -(k * PI).sin() * 4.5;
+                    p.happy = 0.6;
+                    p.open = 1.0;
+                    p.brow = 1.5;
+                    *look = Some((0.0, -0.4));
+                } else {
+                    p.open = 0.5;
+                    p.happy = 0.4;
+                    p.mouth = 0.3;
+                    lv.dy = 1.2 * (1.0 - pr);
+                    *look = Some((0.0, 0.7));
+                }
+            }
+            React::Catch => {
+                if e < 2.1 {
+                    // Tracking the firefly wherever it loops.
+                    if let Some(f) = self.parts.iter().find(|p| p.kind == Kind::Fly) {
+                        let lx = (f.x / s.area.0.max(1.0)).clamp(-1.0, 1.0);
+                        let ly = (f.y / s.area.1.max(1.0)).clamp(-1.0, 1.0);
+                        *look = Some((lx, ly * 0.8));
+                        lv.dx = lx * 1.5;
+                    }
+                    p.open = 1.0;
+                    p.pupil = 0.8;
+                    p.brow = 1.2;
+                } else {
+                    p.happy = 1.0;
+                    p.open = 0.85;
+                    p.blush = 0.4;
+                    *look = Some((0.5, 0.5));
+                }
+            }
+            React::Hack => {
+                x.shades = e > 0.25;
+                *look = Some(((e * 11.0).sin() * 0.5, 0.85));
+                p.open = 0.8;
+                p.brow = -1.2;
+                p.angry = 0.2;
+                lv.dy = (e * 14.0).sin().max(0.0) * 0.6;
+                lv.dx = (e * 3.0).sin() * 1.0;
+            }
+            React::Juggle => {
+                // Eyes chase the peak of each throw: up, across, up.
+                let u = (e * 1.8).fract();
+                let side = if (e * 1.8) as i32 % 2 == 0 { -1.0 } else { 1.0 };
+                *look = Some((side * (0.9 - 1.8 * u), -(u * PI).sin() * 0.9));
+                p.open = 1.0;
+                p.brow = 1.2;
+                p.size = 1.05;
+                lv.dy = -0.6 * (u * PI).sin();
+                lv.rot = -side * 0.05;
+            }
+            React::Proud => {
+                p.size = 1.15;
+                p.brow = 2.0;
+                p.happy = 0.55;
+                p.open = 0.75;
+                lv.squash = -0.1;
+                lv.rot = -0.05;
+                x.shine = true;
+                *look = Some((0.2, -0.3));
+            }
+            React::PeekABoo => {
+                if e < 0.9 {
+                    p.open = 0.0;
+                    lv.dy = 0.5;
+                } else {
+                    calm(p);
+                    p.open = 1.0;
+                    p.size = 1.3;
+                    p.brow = 3.0;
+                    p.mouth = 0.6 * bell;
+                    p.happy = 0.8;
+                    lv.dy = -2.0 * bell;
+                }
+            }
+            React::Count => {
+                if e < 2.0 {
+                    // Ticking through them, gaze stepping down-right.
+                    let n = (e * 2.2).floor();
+                    *look = Some((-0.6 + 0.3 * n.min(4.0), 0.8));
+                    p.open = 0.8;
+                    p.brow = 0.6;
+                    p.mouth = 0.25 * (e * 9.0).sin().abs();
+                    lv.dy = ((e * 2.2).fract() * PI).sin() * 0.6;
+                } else {
+                    p.happy = 0.9;
+                    p.brow = 2.0;
+                    *look = Some((0.0, -0.3));
+                }
+            }
+            React::Wait => {
+                // Foot tapping, checking the time twice.
+                lv.dy = (e * 10.0).sin().abs() * 0.7;
+                if (e > 0.9 && e < 1.3) || (e > 2.0 && e < 2.4) {
+                    *look = Some((0.95, 0.9));
+                } else {
+                    *look = Some(((e * 0.8).sin() * 0.4, 0.1));
+                }
+                p.open = 0.7;
+                p.sad = 0.2;
+                p.brow = -0.5;
+            }
+            React::Hype => {
+                let pump = (e * 12.0).sin().abs();
+                p.size = 1.0 + 0.15 * pump;
+                p.brow = 2.0 * pump;
+                p.angry = 0.15;
+                p.open = 1.0;
+                lv.dx = (e * 24.0).sin() * 0.8;
+                lv.dy = -pump * 1.5;
+                *look = Some((0.0, -0.2));
+            }
+            React::Sniff => {
+                // Two quick forward dips, then a suspicious narrow.
+                if e < 0.9 {
+                    lv.dy = -((e * 7.0).fract() * PI).sin() * 1.4;
+                    p.mouth = 0.2;
+                    *look = Some((0.0, 0.4));
+                    p.open = 0.85;
+                } else {
+                    p.open = 0.6;
+                    p.brow = -0.6;
+                    *look = Some(((e * 1.5).sin() * 0.6, 0.0));
+                }
+            }
+            React::Breathe => {
+                if pr < 0.45 {
+                    let k = pr / 0.45;
+                    p.size = 1.0 + 0.18 * k;
+                    p.brow = 1.5 * k;
+                    lv.dy = -1.5 * k;
+                    p.open = 0.7;
+                } else {
+                    let k = (pr - 0.45) / 0.55;
+                    p.size = 1.18 - 0.18 * k;
+                    p.happy = 0.7 * k;
+                    p.open = 0.5;
+                    lv.dy = -1.5 + 2.0 * k;
+                    lv.squash = 0.06 * k;
+                }
+            }
+            React::Rub => {
+                // Eyes shut, rocking in a tired little circle.
+                p.open = 0.15;
+                lv.rot = (e * 4.0).sin() * 0.1;
+                lv.dx = (e * 4.0).cos() * 1.2;
+                lv.dy = 0.8 + (e * 4.0).sin() * 0.5;
+                p.sad = 0.25;
+            }
+            React::Rage => {
+                if e < 1.4 {
+                    p.angry = 0.9;
+                    p.open = 0.35;
+                    p.brow = -3.0;
+                    p.mouth = 0.5;
+                    lv.dx = (e * 50.0).sin() * 1.0;
+                    lv.squash = 0.1;
+                    x.glow = Some(Color::rgb(255, 80, 80).fade(0.55));
+                } else {
+                    calm(p);
+                    p.sad = 0.5;
+                    p.open = 0.4;
+                    lv.dy = 2.0;
+                    lv.squash = 0.12;
+                }
+            }
+            React::Bobble => {
+                lv.rot = (e * 7.0).sin() * 0.2 * (1.0 - pr * 0.5);
+                lv.dx = (e * 7.0).sin() * 1.8 * (1.0 - pr * 0.5);
+                p.happy = 0.3;
+                p.open = 0.85;
+            }
+            React::Binge => {
+                // Slack-jawed, unblinking, lit by the flicker.
+                x.screen = Some(hsl((e * 90.0) % 360.0, 0.5, 0.55));
+                *look = Some((0.0, 0.05));
+                p.open = 1.0;
+                p.size = 1.1;
+                p.pupil = 1.25;
+                p.mouth = 0.3;
+                p.brow = -0.5;
+            }
+            React::Stargaze => {
+                *look = Some(((e * 0.7).sin() * 0.4, -0.95));
+                p.open = 1.0;
+                p.size = 1.1;
+                p.pupil = 1.2;
+                p.brow = 1.2;
+                p.mouth = 0.2;
+                lv.dy = -0.5 + (e * 0.9).sin() * 0.4;
+                x.shine = true;
+            }
+            React::Mirror => {
+                if e < 0.6 {
+                    *look = Some((0.3, -0.2));
+                    p.brow = 1.5;
+                    p.open = 0.9;
+                } else if e < 1.2 {
+                    p.wink_l = 1.0;
+                    p.happy = 0.8;
+                    lv.rot = 0.1;
+                } else {
+                    p.happy = 0.9;
+                    p.brow = 1.0;
+                    lv.dy = -bell;
+                    p.blush = 0.3;
+                }
+            }
+            React::Bask => {
+                x.shades = true;
+                p.happy = 0.7;
+                p.open = 0.5;
+                lv.dx = (e * 1.2).sin() * 2.0;
+                lv.rot = (e * 1.2).sin() * 0.08;
+                x.glow = Some(GOLD.fade(0.3));
+            }
+            React::Toast => {
+                x.prop = Some(Prop::Mug);
+                x.prop_k = (e / 0.4).min(1.0);
+                *look = Some((-0.2, -0.5));
+                p.happy = 0.8;
+                p.brow = 1.8;
+                lv.dy = -2.0 * (e / 0.5).min(1.0) + 2.0 * pr;
+                lv.rot = -0.08;
+            }
             React::Emote(g) => {
                 x.glyph = g;
                 p.size = 1.0 + 0.1 * bell;
@@ -3145,6 +4508,15 @@ impl Eyes {
                 }
                 Kind::Page => p.vx = (p.age * 3.0 + p.hue * 6.0).sin() * 3.0,
                 Kind::Dash => p.vx *= (0.9f32).powf(dt * 60.0),
+                Kind::Steam => p.vx = (p.age * 3.0 + p.hue * 6.0).sin() * 1.5,
+                Kind::Fly => {
+                    // Loops around its spawn point, drifting wider and wider.
+                    let rr = 4.0 + 15.0 * (p.age / p.life);
+                    let a = p.age * 3.6 + p.hue * TAU;
+                    p.x = p.vx + a.cos() * rr;
+                    p.y = p.vy + a.sin() * rr * 0.55;
+                    continue;
+                }
                 Kind::Sheep => {
                     let k = p.age / p.life;
                     p.x = -ax + 8.0 + (2.0 * ax - 16.0) * k;
@@ -3190,6 +4562,11 @@ impl Eyes {
             shades(sc, &xf, pt.scale);
         }
         hat(sc, &xf, x.hat, pt.scale);
+        if pt.props {
+            if let Some(pr) = x.prop {
+                prop(sc, &xf, pr, x.prop_k, pt.scale, self.t);
+            }
+        }
         let at = |x: f32, y: f32| (pt.cx + x * pt.scale, pt.cy + y * pt.scale);
         if x.pumpkin && pt.props {
             pumpkin(sc, at(34.0, 4.0), pt.scale);
@@ -3416,6 +4793,29 @@ impl Eyes {
                 let r = 9.0 * xf.s;
                 sc.text("?", Rect::new(cx - r, cy - r, 2.0 * r, 2.0 * r), 13.0 * xf.s, Weight::Bold, pal().sclera, Align::Center);
             }
+            Glyph::Minus => {
+                sc.polyline(vec![xf.p(ex - rx * 0.5, 0.0), xf.p(ex + rx * 0.5, 0.0)], w, pal().sclera);
+            }
+            Glyph::Moon => {
+                let mut pts: Vec<(f32, f32)> = (0..=14)
+                    .map(|i| {
+                        let a = -PI * 0.62 + PI * 1.24 * i as f32 / 14.0;
+                        xf.p(ex + a.cos() * rx * 0.85, a.sin() * ry * 0.85)
+                    })
+                    .collect();
+                for i in (0..=14).rev() {
+                    let a = -PI * 0.45 + PI * 0.9 * i as f32 / 14.0;
+                    pts.push(xf.p(ex + rx * 0.35 + a.cos() * rx * 0.62, a.sin() * ry * 0.62));
+                }
+                sc.poly(pts, GOLD);
+            }
+            Glyph::Bolt => {
+                let pts: Vec<(f32, f32)> = [(rx * 0.15, -ry * 0.9), (-rx * 0.3, ry * 0.1), (rx * 0.05, ry * 0.1), (-rx * 0.15, ry * 0.9), (rx * 0.35, -ry * 0.15), (0.0, -ry * 0.15)]
+                    .iter()
+                    .map(|&(u, v)| xf.p(ex + u, v))
+                    .collect();
+                sc.poly(pts, GOLD);
+            }
         }
     }
 
@@ -3549,6 +4949,19 @@ impl Eyes {
                     sc.circle(x + 3.8 * k, y - 0.6 * k, 1.3 * k, Color::rgb(120, 120, 130));
                 }
                 Kind::Dot => sc.circle(x, y, 0.9 * k, pal().text.fade(a)),
+                Kind::Steam => {
+                    let pts: Vec<(f32, f32)> = (0..=5)
+                        .map(|i| {
+                            let yy = y - i as f32 * 2.0 * k;
+                            (x + (i as f32 * 1.4 + p.age * 3.5 + p.hue * 6.0).sin() * 1.4 * k, yy)
+                        })
+                        .collect();
+                    sc.polyline(pts, 0.9 * k, pal().text.fade(0.45 * a));
+                }
+                Kind::Fly => {
+                    sc.circle(x, y, 2.4 * k, GOLD.fade(0.22 * a));
+                    sc.circle(x, y, 1.1 * k, GOLD.fade(a));
+                }
                 Kind::Sym(txt) => {
                     let sz = p.size * k;
                     let col = self.work.map(|w| w.tint.map(|[r, g, b]| Color::rgb(r, g, b)).unwrap_or(work_color(w.cat))).unwrap_or(pal().text);
@@ -3787,6 +5200,185 @@ fn hat(sc: &mut Scene, xf: &Xf, h: Hat, k: f32) {
             sc.polyline(pp(&[(-26.0, -9.0), (-4.0, -9.0)]), 3.0 * k, WHITE);
             let (cx, cy) = xf.p(-33.0, -7.0);
             sc.circle(cx, cy, 2.4 * k, WHITE);
+        }
+    }
+}
+
+/// Held items for the object skits: chunky silhouettes that read at 40 px.
+/// Everything is drawn in face space, so props squash and rock with the face.
+fn prop(sc: &mut Scene, xf: &Xf, which: Prop, k: f32, s: f32, t: f32) {
+    let pp = |pts: &[(f32, f32)]| pts.iter().map(|&(x, y)| xf.p(x, y)).collect::<Vec<_>>();
+    let fill = |pts: Vec<(f32, f32)>| pts.into_iter().map(|(x, y)| xf.p(x, y)).collect::<Vec<_>>();
+    let dark = Color::rgb(38, 40, 52);
+    let line = pal().text_3;
+    match which {
+        Prop::Laptop => {
+            sc.rect(xf.rect(-9.0, 14.0, 18.0, 2.4), 1.0 * s, dark);
+            let top = 14.0 - 9.0 * k;
+            let w2 = 7.0 * (0.55 + 0.45 * k);
+            sc.poly(pp(&[(-7.0, 14.0), (7.0, 14.0), (w2, top), (-w2, top)]), dark);
+            if k > 0.4 {
+                let w3 = w2 - 1.2;
+                sc.poly(pp(&[(-5.8, 13.2), (5.8, 13.2), (w3, top + 1.4), (-w3, top + 1.4)]), ICE.fade(0.55));
+            }
+        }
+        Prop::Book => {
+            let w = 2.0 + 7.5 * k;
+            for side in [-1.0f32, 1.0] {
+                sc.poly(pp(&[(0.0, 9.8), (side * w, 8.6), (side * (w + 0.6), 15.6), (0.0, 16.2)]), Color::rgb(178, 84, 84));
+            }
+            if k > 0.3 {
+                for side in [-1.0f32, 1.0] {
+                    sc.poly(pp(&[(0.0, 10.4), (side * (w - 0.7), 9.6), (side * (w - 0.2), 15.0), (0.0, 15.6)]), pal().sclera);
+                    for i in 0..2 {
+                        let y = 11.6 + 1.7 * i as f32;
+                        let (x0, y0) = xf.p(side * 1.4, y);
+                        let (x1, y1) = xf.p(side * (w - 1.6), y - 0.5);
+                        sc.line(x0, y0, x1, y1, 0.55 * s, pal().pupil.fade(0.55));
+                    }
+                }
+            }
+        }
+        Prop::Phone => {
+            let cy = 13.0 - 2.5 * k;
+            sc.rect(xf.rect(8.6, cy - 4.5, 5.0, 9.0), 1.4 * s, dark);
+            if k > 0.2 {
+                let glow = 0.5 + 0.25 * (t * 3.0).sin();
+                sc.rect(xf.rect(9.5, cy - 3.6, 3.2, 7.2), 0.7 * s, Color::rgb(148, 163, 253).fade(glow));
+            }
+        }
+        Prop::Mug => {
+            let cx = -9.5 - 1.5 * k;
+            let cy = 15.0 - 5.0 * k;
+            sc.rect(xf.rect(cx - 3.0, cy - 2.8, 6.0, 5.6), 1.1 * s, Color::rgb(220, 90, 90));
+            let pts: Vec<(f32, f32)> = (0..=8)
+                .map(|i| {
+                    let a = PI / 2.0 + PI * i as f32 / 8.0;
+                    xf.p(cx - 3.4 + 1.9 * a.cos(), cy + 1.9 * a.sin())
+                })
+                .collect();
+            sc.polyline(pts, 1.0 * s, Color::rgb(220, 90, 90));
+        }
+        Prop::Cookie => {
+            let r = 3.4 * (1.0 - 0.55 * k);
+            if r > 0.9 {
+                sc.poly(fill(ellipse(9.0, 14.0, r, r, 14)), Color::rgb(196, 148, 84));
+                for (dx, dy) in [(-0.9, -0.8), (0.9, 0.5), (-0.1, 1.0)] {
+                    let (cx, cy) = xf.p(9.0 + dx * r * 0.6, 14.0 + dy * r * 0.6);
+                    sc.circle(cx, cy, 0.65 * s, Color::rgb(92, 62, 42));
+                }
+            }
+        }
+        Prop::Gamepad => {
+            sc.rect(xf.rect(-7.5, 12.6, 15.0, 4.8), 2.3 * s, dark);
+            sc.poly(fill(ellipse(-5.6, 16.0, 2.0, 2.4, 12)), dark);
+            sc.poly(fill(ellipse(5.6, 16.0, 2.0, 2.4, 12)), dark);
+            let (dx, dy) = xf.p(-4.2, 14.6);
+            sc.circle(dx, dy, 1.0 * s, pal().sclera.fade(0.8));
+            let press = (t * 14.0).sin() > 0.0;
+            let (bx, by) = xf.p(3.4, 14.6);
+            sc.circle(bx, by, 0.95 * s, if press { PINK } else { pal().sclera.fade(0.7) });
+            let (bx2, by2) = xf.p(5.6, 14.2);
+            sc.circle(bx2, by2, 0.95 * s, if press { pal().sclera.fade(0.7) } else { ICE });
+        }
+        Prop::Guitar => {
+            let wood = Color::rgb(198, 122, 62);
+            sc.poly(fill(ellipse(1.0, 14.6, 4.2, 3.4, 14)), wood);
+            sc.poly(fill(ellipse(5.4, 12.6, 2.8, 2.4, 12)), wood);
+            sc.polyline(pp(&[(6.0, 11.8), (13.5, 7.6)]), 1.6 * s, Color::rgb(140, 90, 50));
+            let (hx, hy) = xf.p(1.0, 14.6);
+            sc.circle(hx, hy, 1.2 * s, Color::rgb(58, 38, 24));
+            let sy = 12.2 + k * 4.4;
+            sc.polyline(pp(&[(2.2, sy - 0.8), (2.2, sy + 0.8)]), 1.0 * s, pal().sclera.fade(0.9));
+        }
+        Prop::Mic => {
+            let my = 12.5 - 3.0 * k;
+            sc.polyline(pp(&[(9.5, my + 5.0), (9.5, my + 0.6)]), 1.5 * s, dark);
+            let (mx, myy) = xf.p(9.5, my - 1.0);
+            sc.circle(mx, myy, 2.6 * s, Color::rgb(96, 98, 112));
+            let pts: Vec<(f32, f32)> = (0..=6)
+                .map(|i| {
+                    let a = PI * i as f32 / 6.0;
+                    xf.p(9.5 - 2.6 * a.cos(), my - 1.0 - 0.6 * a.sin())
+                })
+                .collect();
+            sc.polyline(pts, 0.6 * s, line.fade(0.7));
+        }
+        Prop::Dumbbell => {
+            let y = 16.0 - 10.0 * k;
+            sc.polyline(pp(&[(-8.5, y), (8.5, y)]), 1.3 * s, line);
+            for side in [-1.0f32, 1.0] {
+                sc.rect(xf.rect(side * 8.5 - 1.1, y - 2.8, 2.2, 5.6), 0.6 * s, dark);
+                sc.rect(xf.rect(side * 10.9 - 1.1, y - 2.0, 2.2, 4.0), 0.6 * s, dark);
+            }
+        }
+        Prop::Wand => {
+            let tip = (11.0, 4.5 - 3.0 * k);
+            sc.polyline(pp(&[(7.5, 11.5), tip]), 1.1 * s, pal().text.fade(0.9));
+            sc.poly(fill(sparkle(tip.0, tip.1, 1.4 + 1.4 * k)), GOLD);
+        }
+        Prop::Camera => {
+            let cy = 13.5 - 3.5 * k;
+            sc.rect(xf.rect(-5.0, cy - 3.0, 10.0, 6.0), 1.3 * s, dark);
+            sc.rect(xf.rect(-1.8, cy - 4.4, 3.6, 1.6), 0.5 * s, dark);
+            let (lx, ly) = xf.p(0.0, cy);
+            sc.circle(lx, ly, 2.4 * s, Color::rgb(18, 20, 28));
+            sc.circle(lx, ly, 1.1 * s, ICE.fade(0.85));
+        }
+        Prop::Plant => {
+            sc.poly(pp(&[(9.0, 13.4), (15.0, 13.4), (13.9, 17.0), (10.1, 17.0)]), Color::rgb(202, 110, 66));
+            let h = 6.5 * k;
+            if h > 0.5 {
+                sc.polyline(pp(&[(12.0, 13.4), (12.0, 13.4 - h)]), 1.0 * s, Color::rgb(74, 160, 80));
+                for side in [-1.0f32, 1.0] {
+                    sc.poly(fill(ellipse(12.0 + side * 1.7, 13.4 - h * 0.55, 1.6, 0.8, 10)), Color::rgb(74, 160, 80));
+                }
+                if k > 0.8 {
+                    let (fx, fy) = xf.p(12.0, 13.4 - h - 0.8);
+                    sc.circle(fx, fy, 1.3 * s, PINK);
+                }
+            }
+        }
+        Prop::Brush => {
+            let tip = (8.0 + 3.5 * (k * 2.0 - 1.0), 11.5 + 1.2 * (k * TAU).sin());
+            sc.polyline(pp(&[(10.5, 7.5), tip]), 1.3 * s, Color::rgb(170, 120, 70));
+            sc.poly(pp(&[tip, (tip.0 - 1.4, tip.1 + 1.2), (tip.0 + 0.4, tip.1 + 2.0)]), PINK);
+        }
+        Prop::Umbrella => {
+            let w = 11.5 * k;
+            if w > 1.0 {
+                let pts: Vec<(f32, f32)> = (0..=16)
+                    .map(|i| {
+                        let a = PI * i as f32 / 16.0;
+                        xf.p(-w * a.cos(), -15.0 - 5.5 * k * a.sin())
+                    })
+                    .collect();
+                sc.polyline(pts, 1.6 * s, PINK);
+                for i in [0.25, 0.5, 0.75] {
+                    let a = PI * i;
+                    sc.polyline(pp(&[(0.0, -15.0), (-w * a.cos(), -15.0 - 5.5 * k * a.sin())]), 0.7 * s, PINK.fade(0.6));
+                }
+                sc.polyline(pp(&[(0.0, -15.0 - 5.5 * k - 0.5), (0.0, -15.0), (0.0, -5.0), (1.6, -4.0)]), 1.0 * s, line);
+            }
+        }
+        Prop::Balloon => {
+            let r = 1.2 + 3.4 * k;
+            let by = -11.0 - 6.0 * k;
+            sc.polyline(pp(&[(8.0, -7.0), (9.2, -10.0), (8.6, by + r * 0.9)]), 0.7 * s, line);
+            sc.poly(fill(ellipse(8.6, by, r * 0.85, r, 16)), PINK.fade(0.9));
+            let (kx, ky) = xf.p(8.6, by + r);
+            sc.circle(kx, ky, 0.7 * s, PINK);
+        }
+        Prop::Teddy => {
+            let sq = 1.0 - 0.18 * (k * PI).sin();
+            let brown = Color::rgb(160, 110, 70);
+            for (ox, oy, r) in [(-11.6, 8.6, 0.9), (-7.4, 8.6, 0.9)] {
+                sc.poly(fill(ellipse(ox, oy, r, r, 10)), brown);
+            }
+            sc.poly(fill(ellipse(-9.5, 14.2, 3.2 * sq, 2.9, 14)), brown);
+            sc.poly(fill(ellipse(-9.5, 10.0, 2.3, 2.1, 14)), brown);
+            let (nx, ny) = xf.p(-9.5, 10.6);
+            sc.circle(nx, ny, 0.6 * s, dark);
         }
     }
 }
@@ -4109,7 +5701,22 @@ mod tests {
     fn every_style_and_glyph_draws_inside_bounds() {
         let (mut e, w) = settled();
         let bounds = Rect::new(20.0, 0.0, 128.0, 40.0);
-        let reacts = [None, Some(React::Love), Some(React::Sparkle), Some(React::Dizzy), Some(React::Shocked), Some(React::Flash), Some(React::Emote(Glyph::Question)), Some(React::Emote(Glyph::Cross))];
+        let reacts = [
+            None,
+            Some(React::Love),
+            Some(React::Sparkle),
+            Some(React::Dizzy),
+            Some(React::Shocked),
+            Some(React::Flash),
+            Some(React::Emote(Glyph::Question)),
+            Some(React::Emote(Glyph::Cross)),
+            Some(React::Emote(Glyph::Minus)),
+            Some(React::Emote(Glyph::Moon)),
+            Some(React::Emote(Glyph::Bolt)),
+            Some(React::Laptop),
+            Some(React::Hug),
+            Some(React::Umbrella),
+        ];
         for style in EyeStyle::ALL {
             for r in reacts {
                 if let Some(r) = r {
@@ -4541,6 +6148,67 @@ mod tests {
             React::Pout,
             React::Noted,
             React::Poof,
+            React::Laptop,
+            React::Read,
+            React::Phone,
+            React::Coffee,
+            React::Snack,
+            React::Game,
+            React::Guitar,
+            React::Sing,
+            React::Lift,
+            React::Magic,
+            React::Photo,
+            React::Plant,
+            React::Paint,
+            React::Umbrella,
+            React::Balloon,
+            React::Hug,
+            React::SideEye,
+            React::BrowWiggle,
+            React::Squint,
+            React::Doze,
+            React::Meditate,
+            React::Shiver,
+            React::Hot,
+            React::Nap,
+            React::Spy,
+            React::Inspect,
+            React::Spin,
+            React::Moonwalk,
+            React::Beep,
+            React::Wave,
+            React::BubbleGum,
+            React::Kiss,
+            React::Grumble,
+            React::Eavesdrop,
+            React::Idea,
+            React::Facepalm,
+            React::Cringe,
+            React::Cheer,
+            React::March,
+            React::Pogo,
+            React::Ninja,
+            React::ZeroG,
+            React::Splash,
+            React::Catch,
+            React::Hack,
+            React::Juggle,
+            React::Proud,
+            React::PeekABoo,
+            React::Count,
+            React::Wait,
+            React::Hype,
+            React::Sniff,
+            React::Breathe,
+            React::Rub,
+            React::Rage,
+            React::Bobble,
+            React::Binge,
+            React::Stargaze,
+            React::Mirror,
+            React::Bask,
+            React::Toast,
         ];
         let (mut e, w) = settled();
         let bounds = Rect::new(20.0, 0.0, 128.0, 40.0);
