@@ -27,6 +27,9 @@ pub struct IslandState {
     pub wobble: Spring,
     pub wobble_px: f32,
     pub hover: bool,
+    /// Cooldown on the pre-stretch kick so rubbing across the edge
+    /// doesn't re-kick the open spring every pointer event.
+    pub stretch_cd: f32,
     pub mode: IslandMode,
 }
 
@@ -38,6 +41,7 @@ impl IslandState {
             wobble: Spring::wobble(),
             wobble_px: 0.0,
             hover: false,
+            stretch_cd: 0.0,
             mode: IslandMode::Collapsed,
         }
     }
@@ -86,9 +90,10 @@ impl IslandState {
     }
 
     pub fn set_hover(&mut self, hover: bool) {
-        if hover && !self.hover && self.mode == IslandMode::Collapsed {
+        if hover && !self.hover && self.mode == IslandMode::Collapsed && self.stretch_cd <= 0.0 {
             // Proximity pre-stretch: tiny pull-down before click (magnetic feel).
             self.open.velocity += 0.35;
+            self.stretch_cd = 0.6;
         }
         self.hover = hover;
     }
@@ -100,6 +105,7 @@ impl IslandState {
         // Wobble spring always targets 0; velocity kicks make it slosh.
         let b = self.wobble.step(0.0, dt);
         self.wobble_px = (self.wobble.value * 6.0).clamp(-9.0, 12.0);
+        self.stretch_cd = (self.stretch_cd - dt).max(0.0);
         let t = self.open.value;
         match self.mode {
             IslandMode::Glancing if (t - GLANCE_T).abs() < 0.015 && self.open.velocity.abs() < 0.15 => {
