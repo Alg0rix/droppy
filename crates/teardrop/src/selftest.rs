@@ -580,6 +580,28 @@ fn shots() -> Vec<Shot> {
             },
             ..shot("26d-speed-done", 1.0, Page::Speed)
         },
+        shot("26y-page-quick", 1.0, Page::Quick),
+        Shot {
+            setup: |vm, _, _, _| {
+                vm.quick.wifi = Some(false);
+                vm.quick.bluetooth = None;
+                vm.quick.muted = true;
+                vm.quick.mic_muted = Some(true);
+                vm.quick.brightness = None;
+            },
+            ..shot("26y2-quick-offline", 1.0, Page::Quick)
+        },
+        Shot { hover: Some(Action::QsVol), ..shot("26y3-quick-slider-hover", 1.0, Page::Quick) },
+        Shot { setup: |_, _, ui, _| ui.qs_section = super::ui::state::QsSection::Wifi, ..shot("26y4-quick-wifi-list", 1.0, Page::Quick) },
+        Shot {
+            setup: |_, _, ui, _| {
+                ui.qs_section = super::ui::state::QsSection::Wifi;
+                ui.qs_pass_ssid = Some("Neighbor_2.4".into());
+                ui.input = Some(crate::ui::textedit::TextField::new("hunter22"));
+            },
+            ..shot("26y5-quick-wifi-password", 1.0, Page::Quick)
+        },
+        Shot { setup: |_, _, ui, _| ui.qs_section = super::ui::state::QsSection::Bt, ..shot("26y6-quick-bt-list", 1.0, Page::Quick) },
         shot("27-page-settings", 1.0, Page::Settings),
         Shot { hover: Some(Action::MediaPlayPause), ..shot("30-hover-play", 1.0, Page::Music) },
         Shot { hover: Some(Action::Tab(Page::Tasks)), ..shot("31-hover-tab", 1.0, Page::Water) },

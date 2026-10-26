@@ -14,6 +14,8 @@ pub enum Page {
     Today,
     /// Live CPU / GPU / memory / drives / network / battery monitor.
     System,
+    /// Quick settings: radios, mutes, brightness / volume sliders.
+    Quick,
     Speed,
     Usage,
     Voice,
@@ -46,6 +48,7 @@ impl Page {
             Page::Clipboard,
             Page::Today,
             Page::System,
+            Page::Quick,
             Page::Speed,
             Page::Usage,
             Page::Voice,
@@ -65,6 +68,7 @@ impl Page {
             Page::Clipboard => "Clipboard",
             Page::Today => "Today",
             Page::System => "System",
+            Page::Quick => "Quick",
             Page::Speed => "Speed",
             Page::Usage => "Usage",
             Page::Voice => "Voice",

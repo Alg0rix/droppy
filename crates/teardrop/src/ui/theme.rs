@@ -268,6 +268,7 @@ pub fn accent(page: Page) -> Color {
         Page::Clipboard => Color::rgb(251, 191, 36),
         Page::Today => Color::rgb(96, 165, 250),
         Page::System => Color::rgb(56, 189, 248),
+        Page::Quick => Color::rgb(244, 114, 182),
         Page::Speed => Color::rgb(45, 212, 191),
         Page::Usage => Color::rgb(251, 146, 60),
         Page::Voice => Color::rgb(248, 113, 113),

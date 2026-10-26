@@ -188,6 +188,7 @@ pub fn tab_icon(p: Page) -> Icon {
         Page::Ai => Icon::Sparkle,
         Page::Chat => Icon::Chat,
         Page::Windows => Icon::Grid,
+        Page::Quick => Icon::Sliders,
         Page::Settings => Icon::Gear,
     }
 }
@@ -209,6 +210,7 @@ fn tab_label_w(p: Page) -> f32 {
         Page::Windows => 86.0,
         Page::Ai => 64.0,
         Page::Chat => 82.0,
+        Page::Quick => 82.0,
         Page::Settings => 36.0,
     }
 }
@@ -612,11 +614,27 @@ fn glance(c: &mut Ctx, r: Rect, page: Page) {
         Page::Usage => glance_usage(c, r, cy),
         Page::Voice => glance_voice(c, r, cy),
         Page::Windows => glance_windows(c, r, cy),
+        Page::Quick => glance_quick(c, r, cy),
         Page::Chat => glance_chat(c, r, cy),
         Page::Ai | Page::Settings => glance_ai(c, r, cy),
     }
 }
 
+
+/// Quick peek for the Quick page: radios and levels in one line.
+fn glance_quick(c: &mut Ctx, r: Rect, cy: f32) {
+    let acc = accent(Page::Quick);
+    icons::draw(&mut c.s, Icon::Sliders, r.x + 28.0, cy, 17.0, acc);
+    let q = &c.vm.quick;
+    c.text("Quick settings", Rect::new(r.x + 46.0, cy - 13.0, 200.0, 18.0), 14.0, Weight::Semibold, pal().text, Align::Left);
+    let wifi = match q.wifi {
+        Some(true) => q.wifi_ssid.clone().unwrap_or_else(|| "Wi-Fi on".into()),
+        _ => "Wi-Fi off".into(),
+    };
+    let bt = if q.bluetooth == Some(true) { "BT on" } else { "BT off" };
+    let detail = format!("{wifi} · {bt} · {}%", q.volume_pct);
+    c.text(detail, Rect::new(r.x + 46.0, cy + 4.0, r.w - 56.0, 15.0), 11.0, Weight::Medium, pal().text_3, Align::Left);
+}
 
 fn glance_chat(c: &mut Ctx, r: Rect, cy: f32) {
     let acc = accent(Page::Chat);

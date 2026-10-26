@@ -15,7 +15,7 @@ mod inner {
     use crate::ui::eyes::{Eyes, Gauge, React};
     use crate::ui::layout::{build, hit_test, IslandView, CONTENT_TOP};
     use crate::ui::scene::{Color, Fill, Scene};
-    use crate::ui::state::{Action, Hit, SettingKey, UiState};
+    use crate::ui::state::{Action, Hit, QsSection, SettingKey, UiState};
     use crate::ui::{self, icons};
     use crate::viewmodel::{hud_brightness, hud_volume, hud_water_due, hud_water_logged, local_naive, shift_birthday, FocusApp, ViewModel, Weather};
     use crate::{lyrics_service, media_smtc, paths, shelf_drag, startup, store, volume};
@@ -85,6 +85,7 @@ mod inner {
     /// A Bluetooth device connected (btdev worker thread).
     const WM_APP_BT: u32 = 0x8007;
     const WM_APP_MESH: u32 = 0x8008;
+    const WM_APP_RADIO: u32 = 0x8009;
     const HSHELL_WINDOWCREATED: u32 = 1;
     const HSHELL_FLASH: u32 = 0x8006;
     const HSHELL_WINDOWACTIVATED: u32 = 4;
@@ -141,6 +142,7 @@ mod inner {
         static LYR_STABLE: Cell<u8> = Cell::new(0);
         static LAST_VOL: Cell<Option<(u8, bool)>> = Cell::new(None);
         static LAST_BRIGHT: Cell<Option<u8>> = Cell::new(None);
+        static LAST_QS_SCAN: Cell<bool> = Cell::new(false);
         /// Note text when the editor opened, to tell a real edit from a peek.
         static NOTE_BEFORE: RefCell<Option<String>> = RefCell::new(None);
         static HIGH_SURR: Cell<u16> = Cell::new(0);
@@ -992,6 +994,113 @@ mod inner {
                 save = false;
             }
             Action::MixerVol(_) => save = false,
+            Action::QsWifi => {
+                crate::radios::toggle(crate::radios::RadioKind::Wifi);
+                with_eyes(|e| e.react(React::Nod));
+                save = false;
+            }
+            Action::QsBt => {
+                crate::radios::toggle(crate::radios::RadioKind::Bluetooth);
+                with_eyes(|e| e.react(React::Nod));
+                save = false;
+            }
+            Action::QsMute => {
+                let muted = VIEW.with(|v| v.borrow().quick.muted);
+                if volume::set_muted(!muted) {
+                    LAST_VOL.set(Some((VIEW.with(|v| v.borrow().quick.volume_pct), !muted)));
+                    VIEW.with(|v| v.borrow_mut().quick.muted = !muted);
+                    with_eyes(|e| e.react(if muted { React::Nod } else { React::Shake }));
+                }
+                save = false;
+            }
+            Action::QsMicMute => {
+                let cur = VIEW.with(|v| v.borrow().quick.mic_muted).unwrap_or(false);
+                if volume::set_mic_muted(!cur) {
+                    VIEW.with(|v| v.borrow_mut().quick.mic_muted = Some(!cur));
+                    toast(if cur { "Microphone on" } else { "Microphone muted" });
+                }
+                save = false;
+            }
+            // Sliders resolve to a level on press/drag, not here.
+            Action::QsVol | Action::QsBright => save = false,
+            Action::QsLink(l) => {
+                shell_open(hwnd, "open", l.uri(), None);
+                save = false;
+            }
+            Action::QsExpand(sec) => {
+                let opening = UI.with(|u| {
+                    let mut ui = u.borrow_mut();
+                    let opening = ui.qs_section != sec;
+                    ui.qs_section = if opening { sec } else { QsSection::None };
+                    ui.qs_pass_ssid = None;
+                    ui.input = None;
+                    ui.scroll_by(Page::Quick, -999, 0);
+                    opening
+                });
+                match (opening, sec) {
+                    (true, QsSection::Wifi) => crate::radios::scan_wifi(),
+                    (true, QsSection::Bt) => crate::radios::scan_bt(true),
+                    (false, QsSection::Bt) => crate::radios::scan_bt(false),
+                    _ => {}
+                }
+                save = false;
+            }
+            Action::QsWifiNet(i) => {
+                let net = VIEW.with(|v| v.borrow().quick.wifi_nets.get(i as usize).cloned());
+                if let Some(n) = net {
+                    if n.connected {
+                        crate::radios::disconnect_wifi();
+                        toast(&format!("Disconnecting from {}", n.ssid));
+                    } else if n.has_profile || !n.secured {
+                        crate::radios::connect_wifi(&n.ssid, None);
+                        toast(&format!("Connecting to {}", n.ssid));
+                    } else {
+                        // Secured with no saved profile: collect the key inline.
+                        UI.with(|u| {
+                            let mut ui = u.borrow_mut();
+                            ui.qs_pass_ssid = Some(n.ssid.clone());
+                            ui.input = Some(crate::ui::textedit::TextField::default());
+                        });
+                        activate(hwnd);
+                    }
+                }
+                save = false;
+            }
+            Action::QsPassField => {
+                UI.with(|u| {
+                    let mut ui = u.borrow_mut();
+                    if ui.input.is_none() {
+                        ui.input = Some(crate::ui::textedit::TextField::default());
+                    }
+                });
+                activate(hwnd);
+                save = false;
+            }
+            Action::QsWifiConnect => {
+                commit_wifi_pass(hwnd);
+                save = false;
+            }
+            Action::QsBtDev(i) => {
+                let dev = VIEW.with(|v| v.borrow().quick.bt_devs.get(i as usize).cloned());
+                if let Some(d) = dev {
+                    if !d.paired {
+                        crate::radios::pair_bt(&d.id);
+                        toast(&format!("Pairing {}", d.name));
+                    }
+                }
+                save = false;
+            }
+            Action::QsRescan => {
+                match UI.with(|u| u.borrow().qs_section) {
+                    QsSection::Wifi => crate::radios::scan_wifi(),
+                    QsSection::Bt => {
+                        crate::radios::scan_bt(true);
+                        crate::radios::nudge();
+                    }
+                    QsSection::None => crate::radios::nudge(),
+                }
+                save = false;
+            }
             Action::WinSearch => {
                 UI.with(|u| {
                     let mut ui = u.borrow_mut();
@@ -1036,6 +1145,10 @@ mod inner {
                 // Leaving the notes editor closes it (and prunes a blank note).
                 if VIEW.with(|v| v.borrow().page) == Page::Notes && p != Page::Notes {
                     finish_note_edit();
+                }
+                if p == Page::Quick {
+                    // Fresh radio state instead of the up-to-4s-old snapshot.
+                    crate::radios::nudge();
                 }
                 VIEW.with(|v| v.borrow_mut().page = p);
                 ISLAND.with(|s| s.borrow_mut().wobble.velocity += 1.8);
@@ -1462,6 +1575,13 @@ mod inner {
                     SettingKey::WaterReminders => VIEW.with(|v| v.borrow_mut().water.reminders_enabled = on),
                     SettingKey::ClipboardHistory if !on => VIEW.with(|v| v.borrow_mut().clipboard.clear()),
                     SettingKey::WeatherMood if on => env::refresh_weather(),
+                    SettingKey::MeshChat => {
+                        if on {
+                            crate::chat::start("", now_ms());
+                        } else {
+                            crate::chat::stop();
+                        }
+                    }
                     SettingKey::HotkeyIsland | SettingKey::HotkeySearch | SettingKey::HotkeyNote | SettingKey::HotkeyAi => {
                         let taken = apply_hotkeys(hwnd);
                         if on && taken.contains(&k.label()) {
@@ -2198,7 +2318,39 @@ mod inner {
 
     fn poll_volume() {
         if let Some(vs) = volume::try_read() {
+            VIEW.with(|v| {
+                let mut vm = v.borrow_mut();
+                vm.quick.volume_pct = vs.pct;
+                vm.quick.muted = vs.muted;
+            });
             volume_changed(vs.pct, vs.muted);
+        }
+    }
+
+    /// Quick page state: radio snapshot (worker-owned), mic mute, brightness.
+    /// The two direct reads are cheap but still only sampled every 10 s,
+    /// or every tick while the page is up.
+    fn poll_quick(n: u32) {
+        let snap = crate::radios::snapshot();
+        let page = VIEW.with(|v| v.borrow().page);
+        let sec = UI.with(|u| u.borrow().qs_section);
+        VIEW.with(|v| {
+            let mut vm = v.borrow_mut();
+            vm.quick.wifi = snap.wifi;
+            vm.quick.bluetooth = snap.bluetooth;
+            vm.quick.wifi_ssid = snap.ssid;
+            vm.quick.wifi_nets = snap.wifi_nets;
+            vm.quick.bt_devs = snap.bt_devs;
+            if vm.page == Page::Quick || n % 10 == 0 {
+                vm.quick.mic_muted = volume::mic_muted();
+                vm.quick.brightness = crate::brightness::get();
+            }
+        });
+        // Bluetooth inquiry is expensive — run it only while the device list
+        // is on screen.
+        let want_scan = page == Page::Quick && sec == QsSection::Bt;
+        if LAST_QS_SCAN.replace(want_scan) != want_scan {
+            crate::radios::scan_bt(want_scan);
         }
     }
 
@@ -2362,6 +2514,7 @@ mod inner {
         }
         poll_focus_app(hwnd);
         poll_volume();
+        poll_quick(n);
         if VIEW.with(|v| v.borrow().page) == Page::Usage && !USAGE_STARTED.replace(true) {
             crate::usage::refresh();
         } else if USAGE_STARTED.get() && n % 300 == 0 {
@@ -2394,6 +2547,56 @@ mod inner {
 
     fn hit_at(x: f32, y: f32) -> Option<Hit> {
         HITS.with(|h| hit_test(&h.borrow(), x, y))
+    }
+
+    /// Last frame's hit rect for `a` — slider drags reference the track's
+    /// geometry even after the pointer leaves it.
+    fn hit_rect_of(a: Action) -> Option<crate::ui::scene::Rect> {
+        HITS.with(|h| h.borrow().iter().find(|h| h.action == a).map(|h| h.rect))
+    }
+
+    /// Apply a Quick-page slider at window-local `x` (press/drag/release):
+    /// maps the track position to a level and writes the optimistic value
+    /// into the view-model so the knob follows the pointer instantly.
+    fn qs_apply_slider(a: Action, x: f32) {
+        let Some(r) = hit_rect_of(a) else { return };
+        let pct = (teardrop_core::slider_permille(r.x, r.w, x) / 10) as u8;
+        match a {
+            Action::QsVol => {
+                if volume::set_scalar(pct as f32 / 100.0) {
+                    LAST_VOL.set(Some((pct, false)));
+                    VIEW.with(|v| {
+                        let mut vm = v.borrow_mut();
+                        vm.quick.volume_pct = pct;
+                        if pct > 0 {
+                            vm.quick.muted = false;
+                        }
+                    });
+                }
+            }
+            Action::QsBright => {
+                if crate::brightness::set(pct) {
+                    LAST_BRIGHT.set(Some(pct));
+                    VIEW.with(|v| v.borrow_mut().quick.brightness = Some(pct));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Enter / Connect on the Quick page's Wi-Fi password field: send the
+    /// typed key to the radios worker and put the field away.
+    fn commit_wifi_pass(hwnd: HWND) {
+        let (ssid, key) = UI.with(|u| {
+            let mut ui = u.borrow_mut();
+            let key = ui.input.as_ref().map(|f| f.as_str().to_string()).unwrap_or_default();
+            ui.input = None;
+            (ui.qs_pass_ssid.take(), key)
+        });
+        let Some(ssid) = ssid else { return };
+        crate::radios::connect_wifi(&ssid, (!key.is_empty()).then_some(key));
+        toast(&format!("Connecting to {ssid}"));
+        wake(hwnd);
     }
 
     /// A shelf tile becomes an OLE drag once the pointer moves far enough with
@@ -2432,6 +2635,12 @@ mod inner {
         let (x, y) = mouse_xy(lp);
         LAST_MOUSE.set((x, y));
         maybe_start_shelf_drag(hwnd, wp, x, y);
+        // A held Quick slider follows the pointer even off the track.
+        if wp.0 & MK_LBUTTON.0 as usize != 0 {
+            if let Some(a @ (Action::QsVol | Action::QsBright)) = UI.with(|u| u.borrow().pressed) {
+                qs_apply_slider(a, x);
+            }
+        }
         let act = hit_at(x, y).map(|h| h.action);
         UI.with(|u| u.borrow_mut().set_hover(act));
         let over_body = matches!(act, Some(Action::Island) | Some(Action::HudWater));
@@ -2553,6 +2762,10 @@ mod inner {
                 Page::Notes => ui::pages::notes_max_scroll(vm.notes.notes.len()),
                 Page::Clipboard => ui::pages::clip_max_scroll(vm.clipboard.items().len()),
                 Page::Chat => ui::pages::chat_max_scroll(vm.chat.msgs.len()),
+                Page::Quick => {
+                    let (sec, pass) = UI.with(|u| (u.borrow().qs_section, u.borrow().qs_pass_ssid.is_some()));
+                    ui::pages::quick_max_scroll(&vm, sec, pass)
+                }
                 _ => 0,
             }
         });
@@ -2663,6 +2876,9 @@ mod inner {
                     return;
                 } else if page == Page::Chat {
                     chat_commit_input();
+                    return;
+                } else if page == Page::Quick {
+                    commit_wifi_pass(hwnd);
                     return;
                 } else if editing_note {
                     edit_field(page, |f| f.insert("\n", cap));
@@ -3151,6 +3367,10 @@ mod inner {
                     crate::mesh_ble::set_notify(move || unsafe {
                         let _ = PostMessageW(HWND(raw as *mut _), WM_APP_MESH, WPARAM(0), LPARAM(0));
                     });
+                    crate::radios::set_notify(move || unsafe {
+                        let _ = PostMessageW(HWND(raw as *mut _), WM_APP_RADIO, WPARAM(0), LPARAM(0));
+                    });
+                    crate::radios::start();
                 }
                 if SETTINGS.with(|s| s.borrow().mesh_chat) {
                     crate::chat::start("", now_ms());
@@ -3188,9 +3408,19 @@ mod inner {
                 let (x, y) = mouse_xy(lp);
                 let act = hit_at(x, y).map(|h| h.action);
                 PRESS_AT.set(Some((x, y)));
+                // Sliders respond on press, not only on release.
+                if let Some(a @ (Action::QsVol | Action::QsBright)) = act {
+                    qs_apply_slider(a, x);
+                }
                 let is_text_hit = matches!(
                     act,
-                    Some(Action::TaskInput) | Some(Action::AiInput) | Some(Action::AiFocusModel) | Some(Action::AiFocusBaseUrl) | Some(Action::NoteSearchInput) | Some(Action::WinSearch)
+                    Some(Action::TaskInput)
+                        | Some(Action::AiInput)
+                        | Some(Action::AiFocusModel)
+                        | Some(Action::AiFocusBaseUrl)
+                        | Some(Action::NoteSearchInput)
+                        | Some(Action::WinSearch)
+                        | Some(Action::QsPassField)
                 );
                 let page = VIEW.with(|v| v.borrow().page);
                 if !is_text_hit && page == Page::Ai {
@@ -3202,6 +3432,7 @@ mod inner {
                     // Clicking away from the field ends text entry.
                     if !is_text_hit && page != Page::Notes {
                         ui.input = None;
+                        ui.qs_pass_ssid = None;
                     }
                     if act != Some(Action::NoteSearchInput) && ui.note_search.as_ref().is_some_and(|f| f.is_empty()) {
                         ui.note_search = None;
@@ -3467,6 +3698,18 @@ mod inner {
                     with_eyes(|e| e.react(React::Perk));
                     wake(hwnd);
                 }
+                LRESULT(0)
+            }
+            _ if msg == WM_APP_RADIO => {
+                // A radio toggled or arrived off-thread: copy the snapshot in now.
+                let snap = crate::radios::snapshot();
+                VIEW.with(|v| {
+                    let mut vm = v.borrow_mut();
+                    vm.quick.wifi = snap.wifi;
+                    vm.quick.bluetooth = snap.bluetooth;
+                    vm.quick.wifi_ssid = snap.ssid;
+                });
+                wake(hwnd);
                 LRESULT(0)
             }
             _ if msg == WM_APP_MESH => {

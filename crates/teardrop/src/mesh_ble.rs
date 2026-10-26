@@ -25,7 +25,11 @@ pub enum Cmd {
     Read { peer: PeerId, id: String },
     /// New display name (re-announces).
     Nick(String),
+    /// Stop advertising + scanning and end the worker (`start` may run again).
+    Stop,
 }
+
+static UP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 static CMD: Mutex<Option<std::sync::mpsc::Sender<Cmd>>> = Mutex::new(None);
 static EVENTS: Mutex<Vec<Event>> = Mutex::new(Vec::new());
@@ -41,6 +45,17 @@ pub fn set_notify(f: impl Fn() + Send + Sync + 'static) {
 /// Hand a command to the mesh worker. No-op before `start` or after a fatal
 /// radio error.
 pub fn cmd(c: Cmd) {
+    if matches!(c, Cmd::Stop) {
+        // Detach now so an immediate `start` gets a fresh worker.
+        if let Some(tx) = CMD.lock().unwrap().take() {
+            let _ = tx.send(c);
+        }
+        UP.store(false, std::sync::atomic::Ordering::SeqCst);
+        PEERS.lock().unwrap().clear();
+        EVENTS.lock().unwrap().clear();
+        STATUS.lock().unwrap().clear();
+        return;
+    }
     if let Some(tx) = CMD.lock().unwrap().as_ref() {
         let _ = tx.send(c);
     }
@@ -95,7 +110,6 @@ fn notify() {
 /// Start the BLE mesh on a worker thread. `node` carries our identity.
 /// Idempotent: the second call is a no-op.
 pub fn start(node: Node, now_ms: u64) {
-    static UP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     if UP.swap(true, std::sync::atomic::Ordering::SeqCst) {
         return;
     }
@@ -234,8 +248,11 @@ mod imp {
         // These must stay alive for the whole run: drop them and the radio
         // stops serving.
         let mut keep: Vec<windows::core::IInspectable> = Vec::new();
+        let mut provider_h: Option<GattServiceProvider> = None;
+        let mut watcher_h: Option<BluetoothLEAdvertisementWatcher> = None;
         match peripheral(&tx) {
             Ok((provider, ch)) => {
+                provider_h = Some(provider.clone());
                 keep.push(provider.cast::<windows::core::IInspectable>().unwrap());
                 keep.push(ch.cast::<windows::core::IInspectable>().unwrap());
                 set_status("mesh: advertising + scanning");
@@ -245,6 +262,7 @@ mod imp {
         match watcher(&tx) {
             Ok(w) => {
                 let _ = w.Start();
+                watcher_h = Some(w.clone());
                 keep.push(w.cast::<windows::core::IInspectable>().unwrap());
             }
             Err(e) => set_status(format!("mesh: BLE scan failed ({e})")),
@@ -339,6 +357,18 @@ mod imp {
                     ops.extend(o);
                     evs.extend(e);
                 }
+                Some(Msg::Cmd(Cmd::Stop)) => {
+                    if let Some(w) = &watcher_h {
+                        let _ = w.Stop();
+                    }
+                    if let Some(p) = &provider_h {
+                        let _ = p.StopAdvertising();
+                    }
+                    LOCAL_CHAR.with(|c| *c.borrow_mut() = None);
+                    drop(links);
+                    drop(keep);
+                    return;
+                }
                 Some(Msg::Cmd(c)) => match c {
                     Cmd::Public(text) => {
                         let (o, e) = node.send_public(&text, now());
@@ -352,6 +382,7 @@ mod imp {
                     }
                     Cmd::Read { peer, id } => ops.extend(node.mark_read(peer, &id, now())),
                     Cmd::Nick(n) => node.set_nick(n, now()),
+                    Cmd::Stop => {}
                 },
                 None => {}
             }

@@ -264,6 +264,32 @@ pub enum Action {
     AiCopyReply(u16),
     /// Undo an AI-performed action `(msg_idx, action_idx)`.
     AiUndoAction(u16, u8),
+    /// Quick page: toggle the Wi-Fi radio.
+    QsWifi,
+    /// Quick page: toggle the Bluetooth radio.
+    QsBt,
+    /// Quick page: toggle master output mute.
+    QsMute,
+    /// Quick page: toggle microphone mute.
+    QsMicMute,
+    /// Quick page: volume slider track (click/drag position -> level).
+    QsVol,
+    /// Quick page: brightness slider track (click/drag position -> level).
+    QsBright,
+    /// Quick page: open a Windows settings deep link.
+    QsLink(QsLink),
+    /// Quick page: open/close the radio's device list under the tiles.
+    QsExpand(QsSection),
+    /// Quick page: click a Wi-Fi network row (join / disconnect / ask key).
+    QsWifiNet(u16),
+    /// Quick page: click a Bluetooth device row (pair).
+    QsBtDev(u16),
+    /// Quick page: the Wi-Fi password field (text entry).
+    QsPassField,
+    /// Quick page: the Connect pill next to the password field.
+    QsWifiConnect,
+    /// Quick page: rescan networks / devices.
+    QsRescan,
     /// Chat sidebar row: 0 = mesh room, n = peer index + 1.
     ChatSelect(u16),
     /// Focus the chat message input.
@@ -275,6 +301,43 @@ pub enum Action {
     Quit,
 }
 
+/// Which Quick-tile list is expanded under the tiles row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum QsSection {
+    #[default]
+    None,
+    Wifi,
+    Bt,
+}
+
+/// A `ms-settings:` deep link opened from a Quick tile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum QsLink {
+    Wifi,
+    Bluetooth,
+    NightLight,
+    Airplane,
+    BatterySaver,
+    Display,
+    Sound,
+    Settings,
+}
+
+impl QsLink {
+    pub fn uri(self) -> &'static str {
+        match self {
+            QsLink::Wifi => "ms-settings:network-wifi",
+            QsLink::Bluetooth => "ms-settings:bluetooth",
+            QsLink::NightLight => "ms-settings:nightlight",
+            QsLink::Airplane => "ms-settings:network-airplanemode",
+            QsLink::BatterySaver => "ms-settings:batterysaver",
+            QsLink::Display => "ms-settings:display",
+            QsLink::Sound => "ms-settings:sound",
+            QsLink::Settings => "ms-settings:",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Hit {
     pub rect: Rect,
@@ -284,7 +347,7 @@ pub struct Hit {
 }
 
 /// Per-page animation slots (every tab plus Settings, with headroom).
-pub const PAGE_SLOTS: usize = 16;
+pub const PAGE_SLOTS: usize = 17;
 
 pub fn page_index(p: Page) -> usize {
     Page::all().iter().position(|&x| x == p).unwrap_or(Page::all().len())
@@ -372,6 +435,10 @@ pub struct UiState {
     /// Recent microphone levels for the recorder's waveform (oldest first).
     pub voice_bars: [f32; 40],
     voice_acc: f32,
+    /// Quick page: expanded device list under the tiles.
+    pub qs_section: QsSection,
+    /// SSID the Wi-Fi password field (`input`) is collecting a key for.
+    pub qs_pass_ssid: Option<String>,
 }
 
 impl UiState {
@@ -425,6 +492,8 @@ impl UiState {
             absorb_zone: 0,
             voice_bars: [0.0; 40],
             voice_acc: 0.0,
+            qs_section: QsSection::None,
+            qs_pass_ssid: None,
         }
     }
 
@@ -587,6 +656,7 @@ impl UiState {
             Page::Clipboard => 480.0,
             Page::Today => 520.0,
             Page::System => 480.0,
+            Page::Quick => 460.0,
             Page::Speed => 440.0,
             Page::Usage => 480.0,
             Page::Voice => 420.0,
@@ -611,6 +681,7 @@ impl UiState {
             Page::Clipboard => (480.0, 270.0),
             Page::Today => (620.0, 310.0),
             Page::System => (720.0, 400.0),
+            Page::Quick => (500.0, 340.0),
             Page::Speed => (420.0, 270.0),
             Page::Usage => (480.0, 270.0),
             Page::Voice => (420.0, 260.0),
@@ -695,6 +766,8 @@ impl UiState {
             self.page_dir = if page_index(vm.page) >= page_index(self.prev_page) { 1.0 } else { -1.0 };
             self.input = None;
             self.note_edit = None;
+            self.qs_section = QsSection::None;
+            self.qs_pass_ssid = None;
         }
         if self.page_t < 1.0 {
             self.page_t = (self.page_t + dt * 5.5).min(1.0);

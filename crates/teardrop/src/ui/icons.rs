@@ -46,6 +46,20 @@ pub enum Icon {
     Chip,
     /// Speech bubble — the mesh Chat page.
     Chat,
+    /// Radio waves over a dot — Wi-Fi.
+    Wifi,
+    /// The Bluetooth rune.
+    Bt,
+    /// Three fader tracks — the Quick settings tab.
+    Sliders,
+    /// Crescent — night light.
+    Moon,
+    /// Top-down aeroplane — airplane mode.
+    Plane,
+    /// Diagonal arrow leaving a corner — opens a system settings page.
+    External,
+    /// Padlock — password fields.
+    Lock,
 }
 
 /// Draw `icon` centred at (cx, cy) inside a `size`px box.
@@ -254,6 +268,68 @@ pub fn draw(s: &mut Scene, icon: Icon, cx: f32, cy: f32, size: f32, c: Color) {
             s.polyline(vec![p(5.4, 11.2), p(5.4, 14.2), p(8.6, 11.4)], sw, c);
             s.line(p(5.0, 5.8).0, p(5.0, 5.8).1, p(11.0, 5.8).0, p(11.0, 5.8).1, sw * 0.8, c);
             s.line(p(5.0, 8.4).0, p(5.0, 8.4).1, p(9.4, 8.4).0, p(9.4, 8.4).1, sw * 0.8, c);
+        }
+        Icon::Wifi => {
+            let (bx, by) = p(8.0, 12.4);
+            s.circle(bx, by, 1.4 * u, c);
+            for r in [3.6, 6.2, 8.8] {
+                s.ring(bx, by, r * u, sw, 0.875, 1.125, c);
+            }
+        }
+        Icon::Bt => {
+            s.polyline(vec![p(4.4, 4.4), p(11.6, 11.6), p(8.0, 15.2), p(8.0, 0.8), p(11.6, 4.4), p(4.4, 11.6)], sw, c);
+        }
+        Icon::Sliders => {
+            for (y, kx) in [(4.0, 10.5), (8.0, 5.5), (12.0, 9.5)] {
+                let (a0, a1) = (p(1.6, y), p(14.4, y));
+                s.line(a0.0, a0.1, a1.0, a1.1, sw, c);
+                let (kx, ky) = p(kx, y);
+                s.circle(kx, ky, 1.9 * u, c);
+            }
+        }
+        Icon::Moon => {
+            // Crescent: outer disc arc + inner (cut-out) disc arc.
+            let n = 20;
+            let mut pts = Vec::with_capacity(2 * n + 2);
+            for i in 0..=n {
+                let a = (55.7f32 + 248.6 * i as f32 / n as f32).to_radians();
+                pts.push(p(8.5 + 5.8 * a.cos(), 8.0 + 5.8 * a.sin()));
+            }
+            for i in 0..=n {
+                let a = (86.8f32 + 186.4 * i as f32 / n as f32).to_radians();
+                pts.push(p(11.5 + 4.8 * a.cos(), 8.0 + 4.8 * a.sin()));
+            }
+            s.poly(pts, c);
+        }
+        Icon::Plane => {
+            s.poly(
+                vec![
+                    p(8.0, 1.4),
+                    p(9.3, 5.4),
+                    p(15.0, 9.6),
+                    p(15.0, 11.2),
+                    p(9.4, 10.2),
+                    p(11.5, 14.3),
+                    p(8.0, 12.8),
+                    p(4.5, 14.3),
+                    p(6.6, 10.2),
+                    p(1.0, 11.2),
+                    p(1.0, 9.6),
+                    p(6.7, 5.4),
+                ],
+                c,
+            );
+        }
+        Icon::External => {
+            let (a0, a1) = (p(5.5, 10.5), p(10.8, 5.2));
+            s.line(a0.0, a0.1, a1.0, a1.1, sw, c);
+            s.polyline(vec![p(5.5, 5.0), p(10.8, 5.0), p(10.8, 10.3)], sw, c);
+        }
+        Icon::Lock => {
+            s.ring(cx, cy - 2.4 * u, 3.0 * u, sw, 0.5, 1.5, c);
+            s.stroke(rect(4.2, 6.6, 7.6, 7.4), 1.8 * u, sw, c);
+            let (k0, k1) = (p(8.0, 9.2), p(8.0, 11.4));
+            s.line(k0.0, k0.1, k1.0, k1.1, sw * 1.2, c);
         }
     }
 }

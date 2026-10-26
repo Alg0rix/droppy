@@ -75,6 +75,12 @@ Each page is `core` state + a thin Windows sampler:
 - Clipboard: `clipboard::ClipboardRing` in-memory only; skips items flagged
   `ExcludeClipboardContentFromMonitorProcessing`; click a row to copy it back.
 - Today: month calendar + `system::SystemSnapshot` (CPU/mem/disk/battery).
+- Quick: `quick::QuickState` — Wi-Fi/Bluetooth tiles drive WinRT
+  `Devices::Radios` on a worker (`radios.rs`, MTA, also reads the connected
+  SSID); mic/output mute via Core Audio endpoints; the sliders press and
+  drag onto `volume::set_scalar` / `brightness::set` (LCD `IOCTL_VIDEO_*`
+  first, DDC/CI monitors as fallback); shortcut tiles open `ms-settings:`
+  links for what has no public toggle.
 - Settings: gear in the header (toggles, water goal, idle look; eye style,
   mood ring, opt-in weather and birthday when the look is Eyes).
 

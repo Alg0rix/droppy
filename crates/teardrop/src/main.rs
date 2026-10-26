@@ -55,6 +55,8 @@ mod sysmon;
 #[cfg(windows)]
 mod btdev;
 mod mesh_ble;
+mod radios;
+mod brightness;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

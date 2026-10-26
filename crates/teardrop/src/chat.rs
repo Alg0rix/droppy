@@ -173,6 +173,22 @@ pub fn start(nick_hint: &str, now_ms: u64) {
     crate::mesh_ble::start(node, now_ms);
 }
 
+/// Shut the radio down (setting turned off). `start` can bring it back.
+pub fn stop() {
+    if !STARTED.swap(false, Ordering::SeqCst) {
+        return;
+    }
+    crate::mesh_ble::cmd(crate::mesh_ble::Cmd::Stop);
+    with(|r| {
+        r.peers.clear();
+        r.links = 0;
+        r.sel = None;
+        r.radio_on = false;
+    });
+    *ALERT.lock().unwrap() = None;
+    REVISION.fetch_add(1, Ordering::SeqCst);
+}
+
 /// Apply drained mesh events to the runtime. Called when the radio thread
 /// wakes the UI (WM_APP_MESH) and once per second from the service tick so
 /// peer freshness ages out even when the mesh is quiet.

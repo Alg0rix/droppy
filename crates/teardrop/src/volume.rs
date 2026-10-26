@@ -25,26 +25,93 @@ pub fn label(v: VolumeState) -> (&'static str, String) {
     }
 }
 
+/// `IAudioEndpointVolume` of the default endpoint: render (output) or
+/// capture (microphone).
 #[cfg(windows)]
-pub fn try_read() -> Option<VolumeState> {
-    use windows::Win32::Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
+fn endpoint(capture: bool) -> Option<windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume> {
+    use windows::Win32::Media::Audio::{eCapture, eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
     use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
     use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 
     unsafe {
         let enumerator: IMMDeviceEnumerator =
             CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
-        let device = enumerator.GetDefaultAudioEndpoint(eRender, eConsole).ok()?;
+        let device = enumerator.GetDefaultAudioEndpoint(if capture { eCapture } else { eRender }, eConsole).ok()?;
         let volume: IAudioEndpointVolume = device.Activate(CLSCTX_ALL, None).ok()?;
+        Some(volume)
+    }
+}
+
+#[cfg(windows)]
+pub fn try_read() -> Option<VolumeState> {
+    let volume = endpoint(false)?;
+    unsafe {
         let scalar = volume.GetMasterVolumeLevelScalar().ok()?;
         let muted = volume.GetMute().ok()?.as_bool();
         Some(VolumeState { pct: scalar_to_pct(scalar), muted })
     }
 }
 
+/// Set the master output level (0..1); unmutes when raised above zero.
+#[cfg(windows)]
+pub fn set_scalar(v: f32) -> bool {
+    let Some(vol) = endpoint(false) else { return false };
+    unsafe {
+        let ok = vol.SetMasterVolumeLevelScalar(v.clamp(0.0, 1.0), std::ptr::null()).is_ok();
+        if ok && v > 0.0 {
+            let _ = vol.SetMute(false, std::ptr::null());
+        }
+        ok
+    }
+}
+
+/// Mute/unmute the master output.
+#[cfg(windows)]
+pub fn set_muted(muted: bool) -> bool {
+    let Some(vol) = endpoint(false) else { return false };
+    unsafe { vol.SetMute(muted, std::ptr::null()).is_ok() }
+}
+
+/// Microphone mute state of the default capture endpoint (`None` = no mic).
+#[cfg(windows)]
+pub fn mic_muted() -> Option<bool> {
+    let vol = endpoint(true)?;
+    unsafe { vol.GetMute().ok().map(|b| b.as_bool()) }
+}
+
+/// Mute/unmute the microphone.
+#[cfg(windows)]
+pub fn set_mic_muted(muted: bool) -> bool {
+    let Some(vol) = endpoint(true) else { return false };
+    unsafe { vol.SetMute(muted, std::ptr::null()).is_ok() }
+}
+
 #[cfg(not(windows))]
 pub fn try_read() -> Option<VolumeState> {
     None
+}
+
+#[cfg(not(windows))]
+pub fn set_scalar(v: f32) -> bool {
+    let _ = v;
+    false
+}
+
+#[cfg(not(windows))]
+pub fn set_muted(muted: bool) -> bool {
+    let _ = muted;
+    false
+}
+
+#[cfg(not(windows))]
+pub fn mic_muted() -> Option<bool> {
+    None
+}
+
+#[cfg(not(windows))]
+pub fn set_mic_muted(muted: bool) -> bool {
+    let _ = muted;
+    false
 }
 
 /// Output peak level 0..1 of the default render endpoint (what is playing

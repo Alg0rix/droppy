@@ -39,6 +39,8 @@ pub struct ViewModel {
     pub audio: Vec<crate::mixer::AudioSession>,
     /// Live system monitor readings (System page).
     pub sys: teardrop_core::SysView,
+    /// Quick settings: radios, mutes, brightness / volume (Quick page).
+    pub quick: teardrop_core::QuickState,
     /// BLE mesh chat (Chat page).
     pub chat: crate::chat::ChatView,
 }
@@ -186,6 +188,31 @@ impl ViewModel {
             windows: Vec::new(),
             audio: Vec::new(),
             sys: Default::default(),
+            quick: teardrop_core::QuickState {
+                wifi: Some(true),
+                wifi_ssid: Some("CoffeeShop-5G".into()),
+                bluetooth: Some(true),
+                volume_pct: 64,
+                muted: false,
+                mic_muted: Some(false),
+                brightness: Some(72),
+                wifi_nets: vec![
+                    teardrop_core::WifiNet { ssid: "CoffeeShop-5G".into(), quality: 86, secured: true, connected: true, has_profile: true },
+                    teardrop_core::WifiNet { ssid: "HomeNet".into(), quality: 72, secured: true, connected: false, has_profile: true },
+                    teardrop_core::WifiNet { ssid: "Neighbor_2.4".into(), quality: 54, secured: true, connected: false, has_profile: false },
+                    teardrop_core::WifiNet { ssid: "Cafe Guest".into(), quality: 41, secured: false, connected: false, has_profile: false },
+                    teardrop_core::WifiNet { ssid: "PrinterDirect-A4".into(), quality: 28, secured: true, connected: false, has_profile: false },
+                    teardrop_core::WifiNet { ssid: "Train WiFi".into(), quality: 18, secured: true, connected: false, has_profile: false },
+                    teardrop_core::WifiNet { ssid: "Hotel Lobby".into(), quality: 12, secured: false, connected: false, has_profile: false },
+                ],
+                bt_devs: vec![
+                    teardrop_core::BtDev { id: "bt://a1".into(), name: "Sound Buds".into(), paired: true, connected: true },
+                    teardrop_core::BtDev { id: "bt://b2".into(), name: "Keychron K3 Pro".into(), paired: true, connected: false },
+                    teardrop_core::BtDev { id: "bt://c3".into(), name: "MX Master 3S".into(), paired: true, connected: false },
+                    teardrop_core::BtDev { id: "bt://d4".into(), name: "Galaxy Watch6".into(), paired: false, connected: false },
+                    teardrop_core::BtDev { id: "bt://e5".into(), name: "JBL Flip 6".into(), paired: false, connected: false },
+                ],
+            },
             calendar: Default::default(),
             calendar_feeds: 0,
             ai: crate::ai::AiView {
@@ -245,6 +272,7 @@ impl ViewModel {
             windows: Vec::new(),
             audio: Vec::new(),
             sys: Default::default(),
+            quick: teardrop_core::QuickState { volume_pct: 40, ..Default::default() },
             calendar: Default::default(),
             calendar_feeds: 0,
             ai: Default::default(),
