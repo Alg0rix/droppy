@@ -149,6 +149,7 @@ mod inner {
         static SHELL_MSG: Cell<u32> = Cell::new(0);
         static HOVER_ARM: Cell<(f32, f32)> = Cell::new((-1.0, -1.0));
         static HIDE_AT: Cell<Option<u64>> = Cell::new(None);
+        static SHOW_AT: Cell<Option<u64>> = Cell::new(None);
         /// Last focus-eyes state written to the log (only changes are logged).
         static FOCUS_LOG: RefCell<String> = RefCell::new(String::new());
     }
@@ -565,8 +566,11 @@ mod inner {
 
     fn apply_fullscreen_hide(hwnd: HWND) -> bool {
         if !SETTINGS.with(|s| s.borrow().hide_in_fullscreen) {
+            SHOW_AT.set(None);
             if HIDDEN.get() {
                 HIDDEN.set(false);
+                render(hwnd);
+                let _ = unsafe { ShowWindow(hwnd, SW_SHOWNOACTIVATE) };
             }
             return false;
         }
@@ -592,6 +596,7 @@ mod inner {
                 fr.left <= m.left && fr.top <= m.top && fr.right >= m.right && fr.bottom >= m.bottom
             })();
             if hide {
+                SHOW_AT.set(None);
                 if !HIDDEN.get() {
                     // The eyes glance down at the game before ducking out.
                     let now = now_ms();
@@ -609,11 +614,24 @@ mod inner {
                     HIDDEN.set(true);
                     let _ = ShowWindow(hwnd, SW_HIDE);
                 }
-            } else if HIDE_AT.take().is_some() || HIDDEN.get() {
-                HIDDEN.set(false);
-                // Paint a fresh frame first so the stale one never flashes up.
-                render(hwnd);
-                let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            } else {
+                // Unhide only after the foreground has been non-fullscreen
+                // for a beat, so a flickering foreground can't blink us.
+                let pending = HIDDEN.get() || HIDE_AT.get().is_some();
+                let now = now_ms();
+                match SHOW_AT.get() {
+                    None if pending => SHOW_AT.set(Some(now + 700)),
+                    Some(at) if now >= at && pending => {
+                        SHOW_AT.set(None);
+                        HIDE_AT.set(None);
+                        HIDDEN.set(false);
+                        // Paint a fresh frame first so the stale one never flashes up.
+                        render(hwnd);
+                        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+                    }
+                    Some(_) if !pending => SHOW_AT.set(None),
+                    _ => {}
+                }
             }
             hide
         }

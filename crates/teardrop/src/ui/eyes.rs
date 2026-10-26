@@ -888,6 +888,29 @@ impl React {
             Emote(_) => 1.6,
         }
     }
+
+    /// A natural continuation some skits lead into, queued when they end.
+    fn follow_up(self) -> Option<React> {
+        Some(match self {
+            React::Fishing | React::Bowling | React::Darts | React::Archery | React::Golf => React::Proud,
+            React::Phone | React::Binge | React::Fidget => React::Dizzy,
+            React::Lift
+            | React::Workout
+            | React::Jog
+            | React::JumpRope
+            | React::Box
+            | React::Sumo
+            | React::Surf
+            | React::Ski
+            | React::Dribble => React::Hot,
+            React::Karate | React::Fencing | React::TaDa | React::CardTrick | React::Magic => React::Bow,
+            React::Coffee => React::Perk,
+            React::Snack | React::Pizza | React::Popcorn | React::Marshmallow | React::BubbleGum => React::Satisfied,
+            React::Doze => React::Nap,
+            React::Celebrate | React::Cheer | React::Kiss | React::Hug => React::Emote(Glyph::Heart),
+            _ => return None,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2053,10 +2076,11 @@ impl Eyes {
         self.listen_lvl += (lvl - self.listen_lvl) * (1.0 - (-12.0 * dt).exp());
         self.edges(s);
         self.mood = self.pick_mood(s);
-        // A loud state taking over cuts a long skit short.
+        // A real activity taking over cuts a long skit short — but not
+        // pointer play (purring, delight), which flaps with the pointer.
         let loud = matches!(
             self.mood,
-            Mood::Dance | Mood::Headbang | Mood::Vibe | Mood::Delight | Mood::Typing | Mood::Work(_) | Mood::Listening | Mood::Thinking | Mood::Eager | Mood::Chase | Mood::Purr
+            Mood::Dance | Mood::Headbang | Mood::Vibe | Mood::Typing | Mood::Work(_) | Mood::Listening | Mood::Thinking
         );
         if loud && self.react.is_some_and(|(r, st)| r.duration() > 2.4 && t - st > 0.5) {
             self.react = None;
@@ -2077,6 +2101,11 @@ impl Eyes {
         if let Some((r, st)) = self.react {
             if t - st >= r.duration() {
                 self.react = None;
+                // Some skits leave an aftertaste: a catch makes it proud,
+                // a doomscroll leaves it dizzy, a cheer leaves it glowing.
+                if let Some(next) = r.follow_up() {
+                    self.queue.push_back((next, t));
+                }
             }
         }
         let gauging = self.live_gauge().is_some();
@@ -2522,7 +2551,7 @@ impl Eyes {
     /// get coffee, nights get stargazing, rain gets the umbrella, and
     /// whatever just played is off the table for a while.
     fn bit(&mut self, s: &Senses) -> React {
-        let watching = self.hover_s > 0.5 || self.stare_s > 0.5 || self.near_s > 1.0;
+        let watching = (self.hover_s > 0.5 || self.stare_s > 0.5 || self.near_s > 1.0) && !self.petting();
         let mut total = 0u32;
         for &r in BITS {
             if !self.recent.contains(&r) {
@@ -2647,9 +2676,11 @@ impl Eyes {
                 self.next_bit = self.t + self.range(7.0, 13.0);
             }
             _ => {
-                // Skits play more when someone is watching, less mid-typing.
-                let watching = self.hover_s > 0.5 || self.stare_s > 0.5 || self.near_s > 1.0;
-                let gate = if watching { 0.3 } else if self.keys.len() >= 8 { 0.05 } else { 0.15 };
+                // Skits play more when someone is watching, less mid-typing;
+                // petting is play, not watching — the face shouldn't start a
+                // routine while you're rubbing it.
+                let watching = (self.hover_s > 0.5 || self.stare_s > 0.5 || self.near_s > 1.0) && !self.petting();
+                let gate = if watching { 0.3 } else if self.keys.len() >= 8 || self.petting() { 0.04 } else { 0.15 };
                 let r = if r < gate {
                     let b = self.bit(s);
                     self.start(b);
@@ -4777,13 +4808,21 @@ impl Eyes {
             }
             React::Catch => {
                 if e < 2.1 {
-                    // Tracking the firefly wherever it loops.
-                    if let Some(f) = self.parts.iter().find(|p| p.kind == Kind::Fly) {
-                        let lx = (f.x / s.area.0.max(1.0)).clamp(-1.0, 1.0);
-                        let ly = (f.y / s.area.1.max(1.0)).clamp(-1.0, 1.0);
-                        *look = Some((lx, ly * 0.8));
-                        lv.dx = lx * 1.5;
-                    }
+                    // Tracking the firefly wherever it loops — or your
+                    // pointer, if you wave it while it's playing.
+                    let t = s.mouse.map_or_else(
+                        || {
+                            self.parts
+                                .iter()
+                                .find(|p| p.kind == Kind::Fly)
+                                .map(|f| (f.x / s.area.0.max(1.0), f.y / s.area.1.max(1.0)))
+                                .unwrap_or((0.0, 0.0))
+                        },
+                        |(mx, my)| (mx / s.area.0.max(1.0), my / s.area.1.max(1.0)),
+                    );
+                    let (lx, ly) = (t.0.clamp(-1.0, 1.0), t.1.clamp(-1.0, 1.0));
+                    *look = Some((lx, ly * 0.8));
+                    lv.dx = lx * 1.5;
                     p.open = 1.0;
                     p.pupil = 0.8;
                     p.brow = 1.2;
@@ -4791,6 +4830,8 @@ impl Eyes {
                     p.happy = 1.0;
                     p.open = 0.85;
                     p.blush = 0.4;
+                    // Caught it: face lit by the glow.
+                    x.glow = Some(Color::rgb(150, 255, 120).fade(0.25));
                     *look = Some((0.5, 0.5));
                 }
             }
@@ -6128,7 +6169,20 @@ impl Eyes {
         let p = &self.pose;
         let lv = &self.live;
         let j = &self.jig;
-        let xf = Xf::new(pt.cx, pt.cy, pt.scale, p.dx + lv.dx, p.dy + lv.dy + j.y, p.rot + lv.rot + j.rot, p.squash + lv.squash + j.sq);
+        // Keep the face inside the pill: skits may slide it around, but it
+        // should never fully leave the window (that reads as the island
+        // blinking off, not as a dance move).
+        let lx = (pt.bounds.w / 2.0 / pt.scale - 14.0).max(4.0);
+        let ly = (pt.bounds.h / 2.0 / pt.scale - 14.0).max(4.0);
+        let xf = Xf::new(
+            pt.cx,
+            pt.cy,
+            pt.scale,
+            (p.dx + lv.dx).clamp(-lx, lx),
+            (p.dy + lv.dy + j.y).clamp(-ly, ly),
+            p.rot + lv.rot + j.rot,
+            p.squash + lv.squash + j.sq,
+        );
         let tint = pt.tint.or(self.work.and_then(|w| w.tint).map(|[r, g, b]| Color::rgb(r, g, b))).or(self.ring);
         for side in [-1.0f32, 1.0] {
             self.eye(sc, &xf, side, pt.style, tint, pt.accent);
@@ -6596,6 +6650,11 @@ fn bit_weight(r: React, s: &Senses, watching: bool) -> u32 {
     let snow = s.env.weather == Weather::Snow;
     let friday_eve = s.local.weekday() == Weekday::Fri && h >= 17;
     let w: u32 = match r {
+        // Skits that hide the face only play to a watching audience —
+        // unprompted they just look like the island blinking.
+        React::Ninja | React::HideSeek | React::Photobomb => {
+            if watching { 2 } else { 0 }
+        }
         React::Coffee | React::News | React::Letter => {
             if morning { 6 } else { 1 }
         }
@@ -6639,6 +6698,13 @@ fn bit_weight(r: React, s: &Senses, watching: bool) -> u32 {
             if friday_eve { 5 } else { 2 }
         }
         _ => 3,
+    };
+    // Seasonal nudges: spooky season, deep winter, high summer.
+    let w = match s.local.month() {
+        10 if matches!(r, React::Ninja | React::Glitch | React::Storm | React::Lantern | React::Magic | React::Scheme) => w.max(4),
+        12 if matches!(r, React::WarmHands | React::Fireplace | React::Shiver | React::Sing | React::Kiss) => w.max(4),
+        6..=8 if matches!(r, React::Surf | React::Swim | React::Kite | React::Bask) => w.max(4),
+        _ => w,
     };
     if !watching && r.duration() > 2.6 { w.min(1) } else { w }
 }

@@ -743,6 +743,62 @@ fn shots() -> Vec<Shot> {
             ..shot("58d-eyes-magic", 0.0, Page::Music)
         },
         Shot {
+            setup: |vm, set, ui, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                ui.eyes.react(React::Drum);
+            },
+            ticks: 90,
+            ..shot("58e-eyes-drum", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, ui, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                ui.eyes.react(React::Kite);
+            },
+            ticks: 90,
+            ..shot("58f-eyes-kite", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, ui, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                ui.eyes.react(React::Pizza);
+            },
+            ticks: 50,
+            ..shot("58g-eyes-pizza", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, ui, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                ui.eyes.react(React::Umbrella);
+            },
+            ticks: 70,
+            ..shot("58h-eyes-umbrella", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, ui, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                ui.eyes.react(React::Flip);
+            },
+            ticks: 45,
+            ..shot("58i-eyes-flip", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, ui, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                ui.eyes.react(React::Fishing);
+            },
+            ticks: 140,
+            ..shot("58j-eyes-fishing", 0.0, Page::Music)
+        },
+        Shot {
+            setup: |vm, set, ui, _| {
+                eyes(vm, set, EyeStyle::Round, false);
+                ui.eyes.react(React::Jenga);
+            },
+            ticks: 130,
+            ..shot("58k-eyes-jenga", 0.0, Page::Music)
+        },
+        Shot {
             setup: |vm, set, _, _| {
                 eyes(vm, set, EyeStyle::Round, false);
                 set.mood_ring = true;
