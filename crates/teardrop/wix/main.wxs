@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Droppy MSI, built by cargo-wix (`cargo wix -p teardrop`).
+     Mirrors the Inno one-click installer: per-user install into
+     %LOCALAPPDATA%\Programs\Droppy, a Start Menu shortcut, and the
+     running app is closed before files are replaced — here via
+     Restart Manager (util:CloseApplication) instead of a hand-rolled
+     mutex check. The pre-rename Teardrop folder is removed on install. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="Droppy" Language="1033" Version="$(var.Version)" Manufacturer="Droppy"
+           UpgradeCode="{9B78C214-E481-4C59-A125-9FD324A48581}" Scope="perUser">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Droppy is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Ask the island to close politely (it saves state on WM_CLOSE),
+         and only force-kill if it ignores the message. -->
+    <util:CloseApplication Id="CloseDroppy" CloseMessage="yes" EndSessionMessage="yes"
+                           TerminateProcess="1" Timeout="20" Target="droppy.exe" RebootPrompt="no" />
+    <util:CloseApplication Id="CloseTeardrop" CloseMessage="yes" EndSessionMessage="yes"
+                           TerminateProcess="1" Timeout="20" Target="teardrop.exe" RebootPrompt="no" />
+
+    <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" Before="InstallInitialize" Sequence="execute" />
+    <SetProperty Id="OLDDROPPYDIR" Value="[LocalAppDataFolder]Programs\Teardrop" Before="InstallInitialize" Sequence="execute" />
+
+    <Feature Id="Droppy" Title="Droppy" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Droppy" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="ProductComponents">
+      <ComponentRef Id="DroppyExe" />
+      <ComponentRef Id="Cleanup" />
+    </ComponentGroup>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="DroppyExe" Guid="{7F4C2A19-8D3B-4E5A-9C1F-2B6D8E0A5F31}">
+        <File Id="droppy.exe" Source="$(var.CargoTargetBinDir)\droppy.exe" KeyPath="yes" />
+        <Shortcut Id="StartMenuDroppy" Directory="ProgramMenuFolder" Name="Droppy"
+                  Target="[INSTALLFOLDER]droppy.exe" WorkingDirectory="INSTALLFOLDER" />
+      </Component>
+      <Component Id="Cleanup" Guid="{3A9E1B7C-5F2D-4C8A-B6E0-9D4F1A7C3B52}">
+        <RegistryValue Root="HKCU" Key="Software\Droppy" Name="CleanupOldDir" Type="integer" Value="1" KeyPath="yes" />
+        <util:RemoveFolderEx On="install" Property="OLDDROPPYDIR" Id="RemoveOldTeardrop" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>
