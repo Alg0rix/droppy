@@ -102,15 +102,29 @@ function CloseHandle(hObject: THandle): BOOL;
   external 'CloseHandle@kernel32.dll stdcall';
 
 // The app holds this mutex for its whole lifetime (the single-instance
-// guard), so it existing means a droppy.exe (or the old teardrop.exe) is still running.
+// guard), so it existing *probably* means droppy is up. But a stale handle
+// can outlive the process (a helper that opened it, slow OS reaping after
+// /F), so the image list is the ground truth: taskkill exit 128 = gone.
 function TeardropRunning(): Boolean;
 var
   M: THandle;
+  ResultCode: Integer;
 begin
   M := OpenMutexW($00100000, False, 'Local\TeardropIslandMutex');
-  Result := M <> 0;
-  if Result then
-    CloseHandle(M);
+  if M = 0 then
+  begin
+    Result := False;
+    exit;
+  end;
+  CloseHandle(M);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM {#AppExe} /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if ResultCode = 0 then
+  begin
+    Result := True;
+    exit;
+  end;
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM {#OldAppExe} /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := ResultCode = 0;
 end;
 
 procedure StopTeardrop();
