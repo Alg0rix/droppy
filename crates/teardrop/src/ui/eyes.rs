@@ -1373,6 +1373,8 @@ pub struct Eyes {
     react: Option<(React, f32)>,
     react_mark: bool,
     queue: VecDeque<(React, f32)>,
+    /// Recently played idle skits, so `bits` never repeats itself.
+    recent: VecDeque<React>,
     parts: Vec<Particle>,
     timers: [f32; 16],
     beat: Beat,
@@ -1453,6 +1455,7 @@ impl Eyes {
             react: None,
             react_mark: false,
             queue: VecDeque::new(),
+            recent: VecDeque::new(),
             parts: Vec::new(),
             timers: [0.0; 16],
             beat: Beat::new(),
@@ -2050,6 +2053,14 @@ impl Eyes {
         self.listen_lvl += (lvl - self.listen_lvl) * (1.0 - (-12.0 * dt).exp());
         self.edges(s);
         self.mood = self.pick_mood(s);
+        // A loud state taking over cuts a long skit short.
+        let loud = matches!(
+            self.mood,
+            Mood::Dance | Mood::Headbang | Mood::Vibe | Mood::Delight | Mood::Typing | Mood::Work(_) | Mood::Listening | Mood::Thinking | Mood::Eager | Mood::Chase | Mood::Purr
+        );
+        if loud && self.react.is_some_and(|(r, st)| r.duration() > 2.4 && t - st > 0.5) {
+            self.react = None;
+        }
         let work = match self.mood {
             Mood::Work(_) => s.app,
             _ => None,
@@ -2507,9 +2518,37 @@ impl Eyes {
         }
     }
 
-    /// A random idle skit.
-    fn bit(&mut self) -> React {
-        BITS[(self.rand() * BITS.len() as f32) as usize % BITS.len()]
+    /// A random idle skit, weighted by the world and with memory: mornings
+    /// get coffee, nights get stargazing, rain gets the umbrella, and
+    /// whatever just played is off the table for a while.
+    fn bit(&mut self, s: &Senses) -> React {
+        let watching = self.hover_s > 0.5 || self.stare_s > 0.5 || self.near_s > 1.0;
+        let mut total = 0u32;
+        for &r in BITS {
+            if !self.recent.contains(&r) {
+                total += bit_weight(r, s, watching);
+            }
+        }
+        let mut pick = BITS[BITS.len() - 1];
+        if total > 0 {
+            let mut roll = (self.rand() * total as f32) as u32;
+            for &r in BITS {
+                if self.recent.contains(&r) {
+                    continue;
+                }
+                let w = bit_weight(r, s, watching);
+                if roll < w {
+                    pick = r;
+                    break;
+                }
+                roll = roll.saturating_sub(w);
+            }
+        }
+        self.recent.push_back(pick);
+        while self.recent.len() > 10 {
+            self.recent.pop_front();
+        }
+        pick
     }
 
     /// Little unprompted bits of personality while nothing else happens.
@@ -2563,7 +2602,7 @@ impl Eyes {
             }
             Bored => {
                 if r < 0.14 {
-                    let b = self.bit();
+                    let b = self.bit(s);
                     self.start(b);
                 } else if r < 0.38 {
                     self.start(React::EyeRoll);
@@ -2597,25 +2636,27 @@ impl Eyes {
                 } else if r < 0.6 {
                     React::Coffee
                 } else {
-                    self.bit()
+                    self.bit(s)
                 };
                 self.start(pick);
                 self.next_bit = self.t + self.range(6.0, 12.0);
             }
             Sunny => {
-                let pick = if r < 0.35 { React::Bask } else { self.bit() };
+                let pick = if r < 0.35 { React::Bask } else { self.bit(s) };
                 self.start(pick);
                 self.next_bit = self.t + self.range(7.0, 13.0);
             }
             _ => {
-                // About one bit in seven is a full skit instead of a quick gag.
-                let r = if r < 0.15 {
-                    let b = self.bit();
+                // Skits play more when someone is watching, less mid-typing.
+                let watching = self.hover_s > 0.5 || self.stare_s > 0.5 || self.near_s > 1.0;
+                let gate = if watching { 0.3 } else if self.keys.len() >= 8 { 0.05 } else { 0.15 };
+                let r = if r < gate {
+                    let b = self.bit(s);
                     self.start(b);
                     self.next_bit = self.t + self.range(9.0, 16.0);
                     return;
                 } else {
-                    (r - 0.15) / 0.85
+                    (r - gate) / (1.0 - gate)
                 };
                 let pick = match (r * 100.0) as u32 {
                     0..=7 => React::Wink,
@@ -6543,6 +6584,65 @@ fn types(c: AppCategory) -> bool {
     matches!(c, Coding | Terminal | Writing | Spreadsheet | Data | Chat | Email)
 }
 
+/// How fitting an idle skit is right now: time of day, weather and the
+/// week shift the odds, and long routines rarely play to an empty room.
+fn bit_weight(r: React, s: &Senses, watching: bool) -> u32 {
+    let h = s.local.hour();
+    let night = !(6..20).contains(&h);
+    let morning = (5..11).contains(&h);
+    let noon = (11..14).contains(&h);
+    let late = h >= 22 || h < 5;
+    let rain = matches!(s.env.weather, Weather::Rain | Weather::Storm);
+    let snow = s.env.weather == Weather::Snow;
+    let friday_eve = s.local.weekday() == Weekday::Fri && h >= 17;
+    let w: u32 = match r {
+        React::Coffee | React::News | React::Letter => {
+            if morning { 6 } else { 1 }
+        }
+        React::Jog | React::Workout | React::JumpRope => {
+            if morning { 4 } else { 2 }
+        }
+        React::Stargaze | React::Aurora | React::Meteor | React::Lantern => {
+            if night { 7 } else { 0 }
+        }
+        React::Fireplace | React::Hammock | React::Daydream => {
+            if late { 5 } else { 2 }
+        }
+        React::Nap | React::Doze => {
+            if late { 5 } else { 1 }
+        }
+        React::Umbrella => {
+            if rain { 7 } else { 0 }
+        }
+        React::Shiver | React::WarmHands => {
+            if snow { 6 } else if rain { 3 } else { 0 }
+        }
+        React::Kite
+        | React::Surf
+        | React::Skate
+        | React::Ski
+        | React::Fishing
+        | React::Cloudwatch
+        | React::Juggle
+        | React::Dribble
+        | React::Row
+        | React::Darts
+        | React::Archery
+        | React::Golf
+        | React::Bowling => {
+            if night { 1 } else { 4 }
+        }
+        React::Pizza | React::Snack | React::Popcorn => {
+            if noon { 5 } else { 2 }
+        }
+        React::Sing | React::Guitar | React::Cheer | React::Drum | React::Kiss => {
+            if friday_eve { 5 } else { 2 }
+        }
+        _ => 3,
+    };
+    if !watching && r.duration() > 2.6 { w.min(1) } else { w }
+}
+
 /// Colour of a work theme's symbols.
 fn work_color(c: AppCategory) -> Color {
     use AppCategory::*;
@@ -7173,6 +7273,22 @@ mod tests {
         assert!(b.real);
         assert!(b.count - start >= 7, "beats {}", b.count - start);
         assert!((b.period - 0.5).abs() < 0.12, "period {}", b.period);
+    }
+
+    #[test]
+    fn bits_remember_and_follow_the_weather() {
+        let (mut e, w) = settled();
+        let mut seen = Vec::new();
+        for _ in 0..12 {
+            let b = e.bit(&w.senses());
+            assert!(!seen.contains(&b), "{b:?} repeated too soon");
+            seen.push(b);
+        }
+        // The umbrella only comes out in the rain.
+        let mut w2 = World::new();
+        w2.env.weather = Weather::Rain;
+        assert!(bit_weight(React::Umbrella, &w2.senses(), false) > 0);
+        assert_eq!(bit_weight(React::Umbrella, &w.senses(), false), 0);
     }
 
     #[test]
