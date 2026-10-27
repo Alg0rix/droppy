@@ -28,9 +28,6 @@ pub(super) fn save_model_cache(provider: AiProvider, models: &[String]) {
     let mut cache = read_model_cache();
     cache.insert(provider_key(provider), models.to_vec());
     if let Ok(json) = serde_json::to_string_pretty(&cache) {
-        let tmp = models_cache_path().with_extension("tmp");
-        if std::fs::write(&tmp, json).is_ok() {
-            let _ = std::fs::rename(&tmp, models_cache_path());
-        }
+        let _ = crate::store::write_atomic(&models_cache_path(), json.as_bytes());
     }
 }

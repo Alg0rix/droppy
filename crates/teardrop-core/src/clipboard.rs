@@ -25,7 +25,7 @@ impl ClipboardRing {
         true
     }
 
-    /// Drop one entry (e.g. a calendar link that was copied to be pasted into Teardrop).
+    /// Drop one entry (e.g. a calendar link that was copied to be pasted into Droppy).
     pub fn remove(&mut self, text: &str) {
         let t = text.trim();
         self.items.retain(|s| s != t);

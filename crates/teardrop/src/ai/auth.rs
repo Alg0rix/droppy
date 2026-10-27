@@ -70,7 +70,7 @@ fn form_urlencode(pairs: &[(&str, &str)]) -> String {
 
 /// Keep the ChatGPT tokens in step with the Codex CLI (`~/.codex/auth.json`).
 ///
-/// Adopts the CLI's pair when Teardrop has none, when the CLI's access token
+/// Adopts the CLI's pair when Droppy has none, when the CLI's access token
 /// lasts longer (it refreshed after us), or when ours is expiring while the
 /// CLI's is still good. Without this the app can stay pinned to a refresh
 /// token the CLI already rotated, and every catalog sync fails silently.

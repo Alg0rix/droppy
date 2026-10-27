@@ -59,6 +59,17 @@ mod winreg;
 mod winsearch;
 
 fn main() {
+    // Release builds abort on panic and the app has no console: keep a copy of
+    // every panic in droppy.log, then defer to the default handler.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let dir = paths::cache_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        let name = std::thread::current().name().unwrap_or("<unnamed>").to_string();
+        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+        store::log_line(&dir, &format!("{ts} panic in thread '{name}': {info}"));
+        default_hook(info);
+    }));
     let args: Vec<String> = std::env::args().collect();
     if args.len() >= 2 {
         #[cfg(windows)]

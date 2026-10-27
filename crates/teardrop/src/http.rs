@@ -39,74 +39,90 @@ pub fn split_url(url: &str) -> Option<(bool, &str, u16, &str)> {
     Some((https, host, port, path))
 }
 
-/// GET `url` (redirects followed) and return up to `limit` bytes of a 200
-/// response. `Err(status)` carries the HTTP status, or 0 for a transport error.
+/// A WinINet handle that closes itself. WinINet wants parents closed after
+/// children; locals drop in reverse declaration order (hreq, hconn, hinet),
+/// which keeps that true.
 #[cfg(windows)]
-pub fn get(url: &str, headers: &[(&str, &str)], limit: usize) -> Result<Vec<u8>, u32> {
+struct Handle(*const core::ffi::c_void);
+
+#[cfg(windows)]
+impl Handle {
+    fn is_null(&self) -> bool {
+        self.0.is_null()
+    }
+}
+
+#[cfg(windows)]
+impl Drop for Handle {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe {
+                let _ = windows::Win32::Networking::WinInet::InternetCloseHandle(self.0);
+            }
+        }
+    }
+}
+
+/// One request: `verb` on `url` with `body` (empty slice = no body), reading up
+/// to `limit` response bytes when `read_when(status)` is true. Per-stage
+/// errors are the short labels callers turn into their own error shapes.
+#[cfg(windows)]
+fn request(verb: &str, url: &str, headers: &[(&str, &str)], body: &[u8], recv_ms: u32, limit: usize, read_when: impl Fn(u32) -> bool) -> Result<(u32, Vec<u8>), &'static str> {
     use windows::core::PCWSTR;
     use windows::Win32::Networking::WinInet::*;
-    let Some((https, host, port, path)) = split_url(url) else {
-        return Err(0);
-    };
+    let (https, host, port, path) = split_url(url).ok_or("Invalid URL")?;
     unsafe {
         let agent: Vec<u16> = concat!("droppy/", env!("CARGO_PKG_VERSION"), "\0").encode_utf16().collect();
-        let hinet = InternetOpenW(PCWSTR::from_raw(agent.as_ptr()), 0, None, None, 0);
+        let hinet = Handle(InternetOpenW(PCWSTR::from_raw(agent.as_ptr()), 0, None, None, 0));
         if hinet.is_null() {
-            return Err(0);
+            return Err("WinINet init failed");
         }
         let connect_timeout: u32 = 15_000;
-        let recv_timeout: u32 = 30_000;
-        let _ = InternetSetOptionW(Some(hinet as *const _), 2, Some(&connect_timeout as *const u32 as *const _), 4);
-        let _ = InternetSetOptionW(Some(hinet as *const _), 5, Some(&recv_timeout as *const u32 as *const _), 4);
-        let _ = InternetSetOptionW(Some(hinet as *const _), 6, Some(&recv_timeout as *const u32 as *const _), 4);
+        let _ = InternetSetOptionW(Some(hinet.0), INTERNET_OPTION_CONNECT_TIMEOUT, Some(&connect_timeout as *const u32 as *const _), 4);
+        let _ = InternetSetOptionW(Some(hinet.0), INTERNET_OPTION_SEND_TIMEOUT, Some(&recv_ms as *const u32 as *const _), 4);
+        let _ = InternetSetOptionW(Some(hinet.0), INTERNET_OPTION_RECEIVE_TIMEOUT, Some(&recv_ms as *const u32 as *const _), 4);
 
         let whost: Vec<u16> = host.encode_utf16().chain(std::iter::once(0)).collect();
-        let hconn = InternetConnectW(hinet as *const _, PCWSTR::from_raw(whost.as_ptr()), port, PCWSTR::null(), PCWSTR::null(), INTERNET_SERVICE_HTTP, 0, 0);
+        let hconn = Handle(InternetConnectW(hinet.0, PCWSTR::from_raw(whost.as_ptr()), port, PCWSTR::null(), PCWSTR::null(), INTERNET_SERVICE_HTTP, 0, 0));
         if hconn.is_null() {
-            let _ = InternetCloseHandle(hinet as *const _);
-            return Err(0);
+            return Err("Could not connect to server");
         }
 
-        let verb: Vec<u16> = "GET\0".encode_utf16().collect();
+        let wverb: Vec<u16> = verb.encode_utf16().chain(std::iter::once(0)).collect();
         let wpath: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
-        // INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_NO_UI
-        let mut flags: u32 = 0x8000_0000 | 0x0400_0000 | 0x0008_0000 | 0x0000_0200;
+        let mut flags: u32 = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_NO_UI;
         if https {
-            flags |= 0x0080_0000; // INTERNET_FLAG_SECURE
+            flags |= INTERNET_FLAG_SECURE;
         }
-        let hreq = HttpOpenRequestW(hconn as *const _, PCWSTR::from_raw(verb.as_ptr()), PCWSTR::from_raw(wpath.as_ptr()), PCWSTR::null(), PCWSTR::null(), None, flags, 0);
+        let hreq = Handle(HttpOpenRequestW(hconn.0, PCWSTR::from_raw(wverb.as_ptr()), PCWSTR::from_raw(wpath.as_ptr()), PCWSTR::null(), PCWSTR::null(), None, flags, 0));
         if hreq.is_null() {
-            let _ = InternetCloseHandle(hconn as *const _);
-            let _ = InternetCloseHandle(hinet as *const _);
-            return Err(0);
+            return Err("Could not open request");
         }
 
         let hdr_str: String = headers.iter().map(|(k, v)| format!("{k}: {v}\r\n")).collect();
         let hdr: Vec<u16> = hdr_str.encode_utf16().collect();
         // Never pass an empty slice: WinINet falls back to reading it as a
         // NUL-terminated string and walks off the end of the buffer.
-        let sent = HttpSendRequestW(hreq as *const _, if hdr.is_empty() { None } else { Some(&hdr) }, None, 0);
+        let sent =
+            HttpSendRequestW(hreq.0, if hdr.is_empty() { None } else { Some(&hdr) }, if body.is_empty() { None } else { Some(body.as_ptr() as *const _) }, body.len() as u32);
         if sent.is_err() {
-            let _ = InternetCloseHandle(hreq as *const _);
-            let _ = InternetCloseHandle(hconn as *const _);
-            let _ = InternetCloseHandle(hinet as *const _);
-            return Err(0);
+            return Err("Network request failed");
         }
 
         let mut st = [0u16; 8];
         let mut len = (st.len() * 2) as u32;
-        let status = if HttpQueryInfoW(hreq as *const _, HTTP_QUERY_STATUS_CODE, Some(st.as_mut_ptr() as *mut _), &mut len, None).is_ok() {
+        let status = if HttpQueryInfoW(hreq.0, HTTP_QUERY_STATUS_CODE, Some(st.as_mut_ptr() as *mut _), &mut len, None).is_ok() {
             String::from_utf16_lossy(&st[..(len as usize / 2)]).trim().parse::<u32>().unwrap_or(0)
         } else {
             0
         };
 
         let mut out = Vec::new();
-        if status == 200 {
+        if read_when(status) {
             let mut buf = vec![0u8; 64 * 1024];
             loop {
                 let mut read = 0u32;
-                if InternetReadFile(hreq as *const _, buf.as_mut_ptr() as *mut _, buf.len() as u32, &mut read).is_err() || read == 0 {
+                if InternetReadFile(hreq.0, buf.as_mut_ptr() as *mut _, buf.len() as u32, &mut read).is_err() || read == 0 {
                     break;
                 }
                 out.extend_from_slice(&buf[..read as usize]);
@@ -116,15 +132,18 @@ pub fn get(url: &str, headers: &[(&str, &str)], limit: usize) -> Result<Vec<u8>,
                 }
             }
         }
+        Ok((status, out))
+    }
+}
 
-        let _ = InternetCloseHandle(hreq as *const _);
-        let _ = InternetCloseHandle(hconn as *const _);
-        let _ = InternetCloseHandle(hinet as *const _);
-        if status == 200 {
-            Ok(out)
-        } else {
-            Err(status)
-        }
+/// GET `url` (redirects followed) and return up to `limit` bytes of a 200
+/// response. `Err(status)` carries the HTTP status, or 0 for a transport error.
+#[cfg(windows)]
+pub fn get(url: &str, headers: &[(&str, &str)], limit: usize) -> Result<Vec<u8>, u32> {
+    match request("GET", url, headers, &[], 30_000, limit, |s| s == 200) {
+        Ok((200, out)) => Ok(out),
+        Ok((status, _)) => Err(status),
+        Err(_) => Err(0),
     }
 }
 
@@ -137,91 +156,13 @@ pub fn get(_url: &str, _headers: &[(&str, &str)], _limit: usize) -> Result<Vec<u
 /// On non-2xx or transport failure, returns `Err((status, body_snippet))`.
 #[cfg(windows)]
 pub fn post(url: &str, headers: &[(&str, &str)], body: &[u8], limit: usize) -> Result<Vec<u8>, (u32, String)> {
-    use windows::core::PCWSTR;
-    use windows::Win32::Networking::WinInet::*;
-    let Some((https, host, port, path)) = split_url(url) else {
-        return Err((0, "Invalid URL".into()));
-    };
-    unsafe {
-        let agent: Vec<u16> = concat!("droppy/", env!("CARGO_PKG_VERSION"), "\0").encode_utf16().collect();
-        let hinet = InternetOpenW(PCWSTR::from_raw(agent.as_ptr()), 0, None, None, 0);
-        if hinet.is_null() {
-            return Err((0, "WinINet init failed".into()));
-        }
-        let connect_timeout: u32 = 15_000;
-        let recv_timeout: u32 = 90_000;
-        let _ = InternetSetOptionW(Some(hinet as *const _), 2, Some(&connect_timeout as *const u32 as *const _), 4);
-        let _ = InternetSetOptionW(Some(hinet as *const _), 5, Some(&recv_timeout as *const u32 as *const _), 4);
-        let _ = InternetSetOptionW(Some(hinet as *const _), 6, Some(&recv_timeout as *const u32 as *const _), 4);
-
-        let whost: Vec<u16> = host.encode_utf16().chain(std::iter::once(0)).collect();
-        let hconn = InternetConnectW(hinet as *const _, PCWSTR::from_raw(whost.as_ptr()), port, PCWSTR::null(), PCWSTR::null(), INTERNET_SERVICE_HTTP, 0, 0);
-        if hconn.is_null() {
-            let _ = InternetCloseHandle(hinet as *const _);
-            return Err((0, "Could not connect to server".into()));
-        }
-
-        let verb: Vec<u16> = "POST\0".encode_utf16().collect();
-        let wpath: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
-        // INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_NO_UI
-        let mut flags: u32 = 0x8000_0000 | 0x0400_0000 | 0x0008_0000 | 0x0000_0200;
-        if https {
-            flags |= 0x0080_0000; // INTERNET_FLAG_SECURE
-        }
-        let hreq = HttpOpenRequestW(hconn as *const _, PCWSTR::from_raw(verb.as_ptr()), PCWSTR::from_raw(wpath.as_ptr()), PCWSTR::null(), PCWSTR::null(), None, flags, 0);
-        if hreq.is_null() {
-            let _ = InternetCloseHandle(hconn as *const _);
-            let _ = InternetCloseHandle(hinet as *const _);
-            return Err((0, "Could not open request".into()));
-        }
-
-        let hdr_str: String = headers.iter().map(|(k, v)| format!("{k}: {v}\r\n")).collect();
-        let hdr: Vec<u16> = hdr_str.encode_utf16().collect();
-        let sent = HttpSendRequestW(
-            hreq as *const _,
-            if hdr.is_empty() { None } else { Some(&hdr) },
-            if body.is_empty() { None } else { Some(body.as_ptr() as *const _) },
-            body.len() as u32,
-        );
-        if sent.is_err() {
-            let _ = InternetCloseHandle(hreq as *const _);
-            let _ = InternetCloseHandle(hconn as *const _);
-            let _ = InternetCloseHandle(hinet as *const _);
-            return Err((0, "Network request failed".into()));
-        }
-
-        let mut st = [0u16; 8];
-        let mut len = (st.len() * 2) as u32;
-        let status = if HttpQueryInfoW(hreq as *const _, HTTP_QUERY_STATUS_CODE, Some(st.as_mut_ptr() as *mut _), &mut len, None).is_ok() {
-            String::from_utf16_lossy(&st[..(len as usize / 2)]).trim().parse::<u32>().unwrap_or(0)
-        } else {
-            0
-        };
-
-        let mut out = Vec::new();
-        let mut buf = vec![0u8; 64 * 1024];
-        loop {
-            let mut read = 0u32;
-            if InternetReadFile(hreq as *const _, buf.as_mut_ptr() as *mut _, buf.len() as u32, &mut read).is_err() || read == 0 {
-                break;
-            }
-            out.extend_from_slice(&buf[..read as usize]);
-            if out.len() > limit {
-                out.truncate(limit);
-                break;
-            }
-        }
-
-        let _ = InternetCloseHandle(hreq as *const _);
-        let _ = InternetCloseHandle(hconn as *const _);
-        let _ = InternetCloseHandle(hinet as *const _);
-
-        if (200..=299).contains(&status) {
-            Ok(out)
-        } else {
+    match request("POST", url, headers, body, 90_000, limit, |_| true) {
+        Ok((status, out)) if (200..=299).contains(&status) => Ok(out),
+        Ok((status, out)) => {
             let snippet = String::from_utf8_lossy(&out).chars().take(240).collect();
             Err((status, snippet))
         }
+        Err(msg) => Err((0, msg.into())),
     }
 }
 

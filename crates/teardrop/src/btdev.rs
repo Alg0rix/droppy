@@ -4,7 +4,7 @@
 //! A small thread polls the set of connected Bluetooth devices (classic and
 //! LE, via the WinRT device enumeration the Settings app uses) every few
 //! seconds. The first poll only records a baseline, so devices that are
-//! already connected when Teardrop starts never pop a card. The battery
+//! already connected when Droppy starts never pop a card. The battery
 //! percentage is read from the device's PnP properties (the value Windows
 //! shows next to a paired headset) and may simply be absent.
 

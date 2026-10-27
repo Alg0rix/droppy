@@ -138,7 +138,7 @@ fn save_identity(id: &Identity, nick: &str) {
         nick: nick.to_string(),
     };
     if let Ok(json) = serde_json::to_string_pretty(&st) {
-        let _ = std::fs::write(id_path(), json);
+        let _ = crate::store::write_atomic(&id_path(), json.as_bytes());
     }
 }
 
@@ -390,7 +390,7 @@ pub fn set_nick(nick: &str) {
         if let Ok(mut st) = serde_json::from_str::<StoredId>(&raw) {
             st.nick = n;
             if let Ok(json) = serde_json::to_string_pretty(&st) {
-                let _ = std::fs::write(&p, json);
+                let _ = crate::store::write_atomic(&p, json.as_bytes());
             }
         }
     }

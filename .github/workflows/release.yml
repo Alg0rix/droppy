@@ -48,6 +48,14 @@ jobs:
           $ver = $tag.TrimStart('v')
           Get-FileHash "dist/droppy-setup-$ver.exe", "dist/droppy-$ver.msi", "dist/droppy-$tag.exe", "dist/droppy-$tag-portable.zip" -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Set-Content dist/SHA256SUMS.txt
+      - name: Sign the checksums
+        shell: pwsh
+        env:
+          DROPPY_SIGNING_KEY: ${{ secrets.DROPPY_SIGNING_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:DROPPY_SIGNING_KEY)) { throw "DROPPY_SIGNING_KEY secret is not set" }
+          cargo run -p teardrop-core --release --example release_sign -- sign dist/SHA256SUMS.txt
+          if ($LASTEXITCODE -ne 0) { throw "release_sign failed" }
       - name: Attach to the release
         shell: pwsh
         env:
@@ -55,4 +63,4 @@ jobs:
         run: |
           $tag = "${{ github.event.release.tag_name }}"
           $ver = $tag.TrimStart('v')
-          gh release upload $tag "dist/droppy-setup-$ver.exe" "dist/droppy-$ver.msi" "dist/droppy-$tag.exe" "dist/droppy-$tag-portable.zip" dist/SHA256SUMS.txt --clobber
+          gh release upload $tag "dist/droppy-setup-$ver.exe" "dist/droppy-$ver.msi" "dist/droppy-$tag.exe" "dist/droppy-$tag-portable.zip" dist/SHA256SUMS.txt dist/SHA256SUMS.txt.sig --clobber

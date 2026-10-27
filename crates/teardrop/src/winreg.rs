@@ -22,7 +22,7 @@ pub struct WindowInfo {
     pub title: String,
 }
 
-/// All visible windows except Teardrop's own, newest first per the Z order.
+/// All visible windows except Droppy's own, newest first per the Z order.
 pub fn enumerate(own_hwnd: isize) -> Vec<WindowInfo> {
     let mut out: Vec<WindowInfo> = Vec::new();
     unsafe {

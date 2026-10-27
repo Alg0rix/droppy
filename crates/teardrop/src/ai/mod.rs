@@ -1,4 +1,4 @@
-//! AI Chat: multi-provider assistant with day context, reversible Teardrop
+//! AI Chat: multi-provider assistant with day context, reversible Droppy
 //! actions, durable user memory, and encrypted credentials.
 //!
 //! Supported providers:
@@ -15,7 +15,7 @@
 //!
 //! Security rules:
 //! * API keys and OAuth tokens are encrypted at rest with Windows DPAPI
-//!   (`CryptProtectData` / `CryptUnprotectData`) in `%APPDATA%\Teardrop\ai-secrets.json`.
+//!   (`CryptProtectData` / `CryptUnprotectData`) in `%APPDATA%\Droppy\ai-secrets.json`.
 //! * Secrets are never copied into `ViewModel`, `AiView`, logs, or error strings.
 
 use serde::{Deserialize, Serialize};
@@ -77,7 +77,7 @@ pub enum Role {
     Assistant,
 }
 
-/// Reversible mutation performed by the assistant on Teardrop state.
+/// Reversible mutation performed by the assistant on Droppy state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UndoOp {

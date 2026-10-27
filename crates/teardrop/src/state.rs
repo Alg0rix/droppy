@@ -1,4 +1,4 @@
-//! Teardrop island window state: hover, open amount, HUD priority.
+//! Droppy island window state: hover, open amount, HUD priority.
 //!
 //! Pure-view-state wrapper over `teardrop-core` springs + droplet geometry.
 //! The Win32 layer in `window.rs` only forwards input events here and asks

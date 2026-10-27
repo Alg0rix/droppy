@@ -15,6 +15,7 @@ pub mod notes;
 pub mod pages;
 pub mod pomodoro;
 pub mod quick;
+pub mod release;
 pub mod search;
 pub mod settings;
 pub mod shelf;

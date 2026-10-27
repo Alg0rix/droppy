@@ -589,7 +589,7 @@ pub fn refresh(urls: Vec<String>) {
         }
         events.sort_by_key(|e| (e.start, e.end));
         if failure.is_none() || !events.is_empty() {
-            let _ = std::fs::write(cache_file(), serde_json::to_string(&events).unwrap_or_default());
+            let _ = crate::store::write_atomic(&cache_file(), serde_json::to_string(&events).unwrap_or_default().as_bytes());
         }
         publish(|v| match &failure {
             // Keep the cached events when a refresh fails; just say so.

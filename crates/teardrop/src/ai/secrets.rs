@@ -144,10 +144,7 @@ pub(super) fn load_secrets() -> SecretStore {
 
 pub(super) fn save_secrets(sec: &SecretStore) {
     if let Ok(json) = serde_json::to_string_pretty(sec) {
-        let tmp = secrets_path().with_extension("tmp");
-        if std::fs::write(&tmp, json).is_ok() {
-            let _ = std::fs::rename(&tmp, secrets_path());
-        }
+        let _ = crate::store::write_atomic(&secrets_path(), json.as_bytes());
     }
 }
 
@@ -165,9 +162,6 @@ pub(super) fn load_chat_store() -> ChatStore {
 
 pub(super) fn save_chat_store(store: &ChatStore) {
     if let Ok(json) = serde_json::to_string_pretty(store) {
-        let tmp = chats_path().with_extension("tmp");
-        if std::fs::write(&tmp, json).is_ok() {
-            let _ = std::fs::rename(&tmp, chats_path());
-        }
+        let _ = crate::store::write_atomic(&chats_path(), json.as_bytes());
     }
 }

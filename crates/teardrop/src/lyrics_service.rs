@@ -1,6 +1,6 @@
 //! Synced-lyrics service: LRCLIB fetch + disk cache + position lookup.
 //!
-//! Cache: `%LOCALAPPDATA%\Teardrop\lyrics\<artist> — <title>.lrc` (sanitized).
+//! Cache: `%LOCALAPPDATA%\Droppy\lyrics\<artist> — <title>.lrc` (sanitized).
 //! Fetch: `https://lrclib.net/api/get?artist_name=&track_name=&album_name=`
 //! via WinINet (no extra HTTP deps, keeps the binary small). All network
 //! failures are silent — the island just shows no lyrics.
@@ -185,7 +185,7 @@ pub fn save_cache(cache_dir: &std::path::Path, artist: &str, title: &str, lrc: &
     if let Some(parent) = p.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let _ = std::fs::write(p, lrc);
+    let _ = crate::store::write_atomic(&p, lrc.as_bytes());
 }
 
 #[cfg(windows)]

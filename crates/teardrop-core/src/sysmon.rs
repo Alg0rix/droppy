@@ -176,7 +176,7 @@ pub struct NetStats {
     pub up_bps: f32,
     pub down_hist: Series,
     pub up_hist: Series,
-    /// Bytes moved since Teardrop started sampling.
+    /// Bytes moved since Droppy started sampling.
     pub session_down: u64,
     pub session_up: u64,
 }

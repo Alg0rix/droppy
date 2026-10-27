@@ -94,9 +94,6 @@ Each page is `core` state + a thin Windows sampler:
 - **React**: short one-offs queued by events (`Eyes::react`). Window events
   (lock, shell flash, WerFault window, Downloads watcher, clipboard image,
   volume, water, drops, pokes) queue them; they play once the face is visible.
-- **React**: short one-offs queued by events (`Eyes::react`). Window events
-  (lock, shell flash, WerFault window, Downloads watcher, clipboard image,
-  volume, water, drops, pokes) queue them; they play once the face is visible.
   Idle ones come from `bits()`: a mood-weighted table plus `BITS`, a pool of
   ~100 gags and skits (typing on a laptop, reading a book, sipping coffee,
   juggling, a magic trick...) that fire unprompted while nothing is going on.
@@ -160,6 +157,20 @@ headset battery, water reminder with one-click action.
   `ai-secrets.json` (DPAPI ciphertext only) and `ai-models.json` (last synced
   model catalog per provider; safe to delete, it re-syncs on launch).
 - `%LOCALAPPDATA%\Droppy\`: `droppy.log`, `lyrics\` cache — safe to delete.
+
+## Releases & updates
+
+`update.rs` checks `GET /repos/{REPO}/releases/latest` in the background and
+compares the tag with the running version. On "Update" it downloads the
+installer plus `SHA256SUMS.txt` — but only trusts the checksum file after
+verifying `SHA256SUMS.txt.sig`: an ed25519 signature over its exact bytes.
+
+- The public key is baked into `update::UPDATE_PUBKEY` (empty = installs refuse).
+- The private seed lives only in the `DROPPY_SIGNING_KEY` Actions secret; the
+  release workflow signs `dist/SHA256SUMS.txt` before upload.
+- One-time setup: `cargo run -p teardrop-core --example release_sign -- keygen
+  secret.key`, put the printed key in `UPDATE_PUBKEY`, store the file contents
+  as the `DROPPY_SIGNING_KEY` secret, then delete `secret.key`.
 
 ## Testing without clicking around
 
