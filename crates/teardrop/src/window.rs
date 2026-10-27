@@ -13,7 +13,7 @@ mod inner {
     use crate::services_system::sys::{sample_all, CpuTracker};
     use crate::state::{IslandMode, IslandState};
     use crate::ui::eyes::{Eyes, Gauge, React};
-    use crate::ui::layout::{build, hit_test, IslandView, CONTENT_TOP};
+    use crate::ui::layout::{build, hit_test, CONTENT_TOP};
     use crate::ui::scene::{Color, Fill, Scene};
     use crate::ui::state::{Action, Hit, QsSection, SettingKey, UiState};
     use crate::ui::{self, icons};
@@ -175,7 +175,7 @@ mod inner {
     }
 
     fn open_amount() -> f32 {
-        ISLAND.with(|s| s.borrow().open.value)
+        ISLAND.with(|s| s.borrow().open())
     }
 
     // ------------------------------------------------------------ timers
@@ -216,12 +216,14 @@ mod inner {
         let ms = now.timestamp_millis() as u64;
         let scale = SCALE.get();
 
-        // Pointer in window-local logical px (drives the eyes).
+        // Pointer in window-local logical px (drives the eyes). The eyes
+        // compute in un-shifted coords, so undo the pill-mode top gap.
         let (wx, wy) = WIN_POS.get();
+        let gap = SETTINGS.with(|s| s.borrow().top_gap());
         let mouse = unsafe {
             let mut p = POINT::default();
             if GetCursorPos(&mut p).is_ok() {
-                Some(((p.x - wx) as f32 / scale, (p.y - wy) as f32 / scale))
+                Some(((p.x - wx) as f32 / scale, (p.y - wy) as f32 / scale - gap))
             } else {
                 None
             }
@@ -239,7 +241,7 @@ mod inner {
 
         // System page: tell the sampler what is on screen, pull in new samples.
         {
-            let open = ISLAND.with(|s| s.borrow().open.value);
+            let open = ISLAND.with(|s| s.borrow().open());
             let on = VIEW.with(|v| v.borrow().page) == Page::System && open > 0.05;
             let tab = UI.with(|u| u.borrow().sys_tab);
             crate::sysmon::set_active(on.then_some(tab));
@@ -261,7 +263,7 @@ mod inner {
                 st.geom.glance_w = ui.glance_w;
                 st.geom.glance_h = ui.glance_h;
             });
-            let view = IslandView { geom: st.geom, open: st.open.value, wobble_px: st.wobble_px };
+            let view = st.view();
             VIEW.with(|v| {
                 let mut vm = v.borrow_mut();
                 vm.now = now;
@@ -285,7 +287,7 @@ mod inner {
                     max_ch = max_ch.max(ch);
                 }
                 let cap_w = ((max_cw + 2.0 * ui::theme::PAD + 32.0) * scale).ceil() as i32;
-                let cap_h = ((max_ch + ui::theme::PAD + 40.0) * scale).ceil() as i32;
+                let cap_h = ((max_ch + ui::theme::PAD + 40.0 + teardrop_core::PILL_GAP_MAX as f32) * scale).ceil() as i32;
                 *p = Presenter::new(cap_w, cap_h);
                 if let Some(pr) = p.as_ref() {
                     let (_d, cache) = paths::ensure_dirs();
@@ -1181,7 +1183,6 @@ mod inner {
                     crate::radios::nudge();
                 }
                 VIEW.with(|v| v.borrow_mut().page = p);
-                ISLAND.with(|s| s.borrow_mut().wobble.velocity += 1.8);
             }
             Action::CalStep(d) => {
                 UI.with(|u| u.borrow_mut().cal_offset += d as i32);
@@ -1638,6 +1639,17 @@ mod inner {
             Action::IslandTheme(t) => {
                 SETTINGS.with(|s| s.borrow_mut().theme = t);
                 with_eyes(|e| e.react(React::Sparkle));
+            }
+            Action::IslandStyle(st) => {
+                SETTINGS.with(|s| s.borrow_mut().island_style = st);
+                with_eyes(|e| e.react(React::Sparkle));
+            }
+            Action::PillGap(d) => {
+                SETTINGS.with(|s| {
+                    let mut st = s.borrow_mut();
+                    st.pill_gap = (st.pill_gap as i32 + d as i32 * teardrop_core::PILL_GAP_STEP as i32).clamp(0, teardrop_core::PILL_GAP_MAX as i32) as u32;
+                });
+                with_eyes(|e| e.react(if d > 0 { React::Nod } else { React::Shake }));
             }
             Action::Birthday => {
                 let has_bday = SETTINGS.with(|s| {
@@ -2735,7 +2747,7 @@ mod inner {
         }
         let (_, y) = LAST_MOUSE.get();
         let page = VIEW.with(|v| v.borrow().page);
-        let in_content = y >= CONTENT_TOP;
+        let in_content = y >= CONTENT_TOP + SETTINGS.with(|s| s.borrow().top_gap());
         if hit_at(LAST_MOUSE.get().0, y).map(|h| h.action) == Some(Action::FocusAppTheme) {
             step_app_theme(hwnd, dir > 0);
             save_all();
@@ -2751,6 +2763,10 @@ mod inner {
             });
             save_all();
             wake(hwnd);
+            return;
+        }
+        if matches!(hit_at(LAST_MOUSE.get().0, y).map(|h| h.action), Some(Action::PillGap(_))) {
+            perform(hwnd, Action::PillGap(-dir as i8));
             return;
         }
         if page == Page::Today && in_content && LAST_MOUSE.get().0 < 20.0 + 20.0 + 214.0 + 20.0 {

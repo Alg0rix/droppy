@@ -368,6 +368,30 @@ impl Scene {
     pub fn pop_clip(&mut self) {
         self.cmds.push(Cmd::PopClip);
     }
+
+    /// Move every emitted command down by `dy` (pill-mode top gap). Text
+    /// runs and edits hold only indices/styles, so the `r` shift covers them.
+    pub fn shift_y(&mut self, dy: f32) {
+        for cmd in self.cmds.iter_mut() {
+            match cmd {
+                Cmd::Body { pts, .. } | Cmd::Poly { pts, .. } | Cmd::Polyline { pts, .. } => {
+                    pts.iter_mut().for_each(|p| p.1 += dy)
+                }
+                Cmd::Rect { r, .. }
+                | Cmd::Stroke { r, .. }
+                | Cmd::Text { r, .. }
+                | Cmd::Runs { r, .. }
+                | Cmd::Image { r, .. }
+                | Cmd::Clip(r) => r.y += dy,
+                Cmd::Circle { cy, .. } | Cmd::Ring { cy, .. } => *cy += dy,
+                Cmd::Line { y1, y2, .. } => {
+                    *y1 += dy;
+                    *y2 += dy;
+                }
+                Cmd::PopClip => {}
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -395,5 +419,43 @@ mod tests {
         s.rect(Rect::new(0.0, 0.0, 4.0, 4.0), 1.0, Color::rgb(1, 2, 3));
         s.text("x", Rect::new(0.0, 0.0, 4.0, 4.0), 12.0, Weight::Regular, Color::rgb(1, 2, 3), Align::Left);
         assert!(s.cmds.is_empty());
+    }
+
+    #[test]
+    fn shift_y_moves_everything_down() {
+        let mut s = Scene::new();
+        s.body(vec![(10.0, 0.0), (20.0, 5.0)], Fill::Solid(Color::rgb(1, 2, 3)), Color::rgb(1, 2, 3), 0.5, Color::rgb(1, 2, 3));
+        s.rect(Rect::new(0.0, 0.0, 4.0, 4.0), 1.0, Color::rgb(1, 2, 3));
+        s.circle(5.0, 5.0, 2.0, Color::rgb(1, 2, 3));
+        s.line(0.0, 1.0, 4.0, 3.0, 1.0, Color::rgb(1, 2, 3));
+        s.text("x", Rect::new(0.0, 2.0, 4.0, 4.0), 12.0, Weight::Regular, Color::rgb(1, 2, 3), Align::Left);
+        s.clip(Rect::new(0.0, 0.0, 8.0, 8.0));
+        s.pop_clip();
+        s.shift_y(7.0);
+        match &s.cmds[0] {
+            Cmd::Body { pts, .. } => assert!(pts.iter().all(|p| p.1 >= 7.0)),
+            other => panic!("unexpected {other:?}"),
+        }
+        match &s.cmds[1] {
+            Cmd::Rect { r, .. } => assert_eq!(r.y, 7.0),
+            other => panic!("unexpected {other:?}"),
+        }
+        match &s.cmds[2] {
+            Cmd::Circle { cy, .. } => assert_eq!(*cy, 12.0),
+            other => panic!("unexpected {other:?}"),
+        }
+        match &s.cmds[3] {
+            Cmd::Line { y1, y2, .. } => assert_eq!((*y1, *y2), (8.0, 10.0)),
+            other => panic!("unexpected {other:?}"),
+        }
+        match &s.cmds[4] {
+            Cmd::Text { r, .. } => assert_eq!(r.y, 9.0),
+            other => panic!("unexpected {other:?}"),
+        }
+        match &s.cmds[5] {
+            Cmd::Clip(r) => assert_eq!(r.y, 7.0),
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(matches!(s.cmds[6], Cmd::PopClip));
     }
 }

@@ -8,7 +8,7 @@ use super::textedit::TextField;
 use super::theme::*;
 use crate::viewmodel::{local_naive, mmss, one_line, SpeedPhase, ViewModel};
 use chrono::{Datelike, NaiveDate};
-use teardrop_core::{apps, format_note_date, AiProvider, AppCategory, EyeStyle, IdleLook, IslandTheme, NoteDateFilter, Page, Phase, Playback};
+use teardrop_core::{apps, format_note_date, AiProvider, AppCategory, DropletGeom, EyeStyle, IdleLook, IslandStyle, IslandTheme, NoteDateFilter, Page, Phase, Playback};
 
 pub fn draw(c: &mut Ctx, page: Page, a: Rect) {
     match page {
@@ -2651,6 +2651,21 @@ fn settings(c: &mut Ctx, a: Rect) {
         c.pill(Rect::new(lx + i as f32 * (hk_w + 6.0), hy + 20.0, hk_w, 24.0), Action::Toggle(*k), k.label(), on.then_some(acc_on()), 10.0);
     }
 
+    // Island style: glued to the screen edge or floating as a pill.
+    let iy = hy + 56.0;
+    c.text("Island style", Rect::new(lx, iy, 90.0, 24.0), 12.0, Weight::Medium, pal().text_2, Align::Left);
+    if c.set.island_style == IslandStyle::Pill {
+        c.text("Gap", Rect::new(lx + col_w - 140.0, iy + 4.0, 26.0, 16.0), 10.5, Weight::Regular, pal().text_3, Align::Right);
+        c.icon_btn(Rect::new(lx + col_w - 110.0, iy, 24.0, 24.0), Action::PillGap(-1), Icon::Minus, 11.0, pal().text_2);
+        c.text(format!("{} px", c.set.pill_gap), Rect::new(lx + col_w - 84.0, iy + 2.0, 56.0, 24.0), 11.5, Weight::Semibold, pal().text, Align::Center);
+        c.icon_btn(Rect::new(lx + col_w - 26.0, iy, 24.0, 24.0), Action::PillGap(1), Icon::Plus, 11.0, pal().text_2);
+    }
+    let ty2 = iy + 30.0;
+    let tw = (col_w - 8.0) / 2.0;
+    let th = 80.0;
+    style_tile(c, Rect::new(lx, ty2, tw, th), IslandStyle::Anchored, c.set.island_style == IslandStyle::Anchored, c.set.pill_gap as f32);
+    style_tile(c, Rect::new(lx + tw + 8.0, ty2, tw, th), IslandStyle::Pill, c.set.island_style == IslandStyle::Pill, c.set.pill_gap as f32);
+
     // RIGHT COLUMN: Top buttons + Appearance & Mascot
     c.pill(Rect::new(rx + col_w - 60.0, a.y, 60.0, 24.0), Action::Quit, "Quit", None, 11.0);
     update_pill(c, Rect::new(rx, a.y, col_w - 68.0, 24.0));
@@ -2767,6 +2782,60 @@ fn segmented(c: &mut Ctx, seg: Rect, items: &[(Action, &str, bool)], size: f32) 
 
 fn acc_on() -> Color {
     pal().green
+}
+
+/// One "Island style" pick tile: a mini screen showing where the island sits.
+fn style_tile(c: &mut Ctx, r: Rect, style: IslandStyle, on: bool, gap: f32) {
+    let act = Action::IslandStyle(style);
+    c.s.rect(r, 12.0, c.surface_fill(act));
+    if on {
+        c.s.stroke(r, 12.0, 1.6, acc_on());
+    }
+
+    // Mini screen with a bezel along its top edge.
+    let scr = Rect::new(r.x + 10.0, r.y + 10.0, r.w - 20.0, r.h - 34.0);
+    c.s.rect(scr, 6.0, pal().surface_press);
+    c.s.line(scr.x + 4.0, scr.y + 1.0, scr.right() - 4.0, scr.y + 1.0, 2.0, pal().text_3.fade(0.6));
+
+    let iw = scr.w * 0.44;
+    let ih = 14.0;
+    let icx = scr.cx();
+    let fill = Fill::VGrad(pal().body_top, pal().body_bottom);
+    match style {
+        IslandStyle::Anchored => {
+            // Flat top flush with the screen edge, rounded bottom corners.
+            let g = DropletGeom { card_radius: 7.0, ..Default::default() };
+            let pts = g.outline(icx, scr.y, iw, ih, false);
+            c.s.poly(pts.clone(), fill);
+            c.s.polyline(pts, 1.0, pal().rim);
+        }
+        IslandStyle::Pill => {
+            let dy = if on { (gap / teardrop_core::PILL_GAP_MAX as f32 * 10.0).clamp(3.0, 10.0) } else { 6.0 };
+            let pr = Rect::new(icx - iw / 2.0, scr.y + dy, iw, ih);
+            c.s.rect(pr, 7.0, fill);
+            c.s.stroke(pr, 7.0, 1.0, pal().rim);
+            // Gap marker: a 1px line with 3px end ticks.
+            let mc = if on { acc_on() } else { pal().text_3 };
+            let mx = pr.right() + 6.0;
+            c.s.line(mx, scr.y + 1.0, mx, pr.y, 1.0, mc);
+            c.s.line(mx - 1.5, scr.y + 1.0, mx + 1.5, scr.y + 1.0, 1.0, mc);
+            c.s.line(mx - 1.5, pr.y, mx + 1.5, pr.y, 1.0, mc);
+        }
+    }
+
+    let label = match style {
+        IslandStyle::Anchored => "Anchored",
+        IslandStyle::Pill => "Pill",
+    };
+    c.text(
+        label,
+        Rect::new(r.x, scr.bottom() + 4.0, r.w, 16.0),
+        11.5,
+        if on { Weight::Semibold } else { Weight::Regular },
+        if on { pal().text } else { pal().text_2 },
+        Align::Center,
+    );
+    c.hit(r, act);
 }
 
 

@@ -10,7 +10,7 @@ use super::scene::Rect;
 use super::theme::PAD;
 use crate::viewmodel::{local_naive, ViewModel};
 use std::collections::HashMap;
-use teardrop_core::{AiProvider, EyeStyle, IdleLook, IslandTheme, NoteDateFilter, Page, Settings, Spring};
+use teardrop_core::{AiProvider, EyeStyle, IdleLook, IslandStyle, IslandTheme, NoteDateFilter, Page, Settings, Spring};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SettingKey {
@@ -187,6 +187,10 @@ pub enum Action {
     EyeStyle(EyeStyle),
     /// Pick an island body theme (Settings swatch row).
     IslandTheme(IslandTheme),
+    /// Pick anchored vs floating pill (Settings illustration tiles).
+    IslandStyle(IslandStyle),
+    /// Step the pill mode's top gap (Settings stepper).
+    PillGap(i8),
     /// Set the birthday to today, or clear it (wheel nudges the day).
     Birthday,
     GoalStep(i8),
@@ -688,7 +692,7 @@ impl UiState {
             Page::Ai => (640.0, 400.0),
             Page::Chat => (620.0, 330.0),
             Page::Windows => (500.0, 300.0),
-            Page::Settings => (680.0, 390.0),
+            Page::Settings => (680.0, 470.0),
         }
     }
 

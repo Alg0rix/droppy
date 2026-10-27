@@ -26,7 +26,7 @@ pub mod water;
 
 pub use apps::{AppCategory, AppTheme, EyeTheme};
 pub use clipboard::ClipboardRing;
-pub use droplet::{DropletGeom, OutlinePt};
+pub use droplet::DropletGeom;
 pub use hud::{Hud, HudKind};
 pub use lyrics::{line_at, line_progress, parse_lrc, LyricLine};
 pub use media::{Playback, Track};
@@ -34,7 +34,7 @@ pub use notes::{format_note_date, fuzzy_score, preview_of, title_of, Note, NoteD
 pub use pages::Page;
 pub use pomodoro::{Phase, Pomodoro};
 pub use quick::{slider_permille, BtDev, QuickState, WifiNet};
-pub use settings::{AiProvider, EyeStyle, IdleLook, IslandTheme, Settings};
+pub use settings::{AiProvider, EyeStyle, IdleLook, IslandStyle, IslandTheme, Settings, PILL_GAP_MAX, PILL_GAP_STEP};
 pub use shelf::{Shelf, ShelfItem};
 pub use spring::Spring;
 pub use system::SystemSnapshot;

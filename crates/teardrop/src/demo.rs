@@ -6,7 +6,7 @@
 
 use super::render_d2d::d2d::render_offscreen;
 use super::state::IslandState;
-use super::ui::layout::{build, IslandView};
+use super::ui::layout::build;
 use super::ui::state::{Action, UiState};
 use super::viewmodel::{hud_volume, hud_water_due, ViewModel};
 use chrono::{Duration, Utc};
@@ -171,7 +171,7 @@ pub fn run(dir: &str) -> i32 {
         ui.tick(dt, &vm, &set, now_ms);
         isl.geom.pill_w = ui.compact_w;
         isl.geom.pill_h = ui.compact_h;
-        let view = IslandView { geom: isl.geom, open: isl.open.value, wobble_px: isl.wobble_px };
+        let view = isl.view();
         let frame = build(&vm, &set, &ui, &view, now_ms);
         let Some((pw, ph, bgra)) = render_offscreen(&frame.scene, (frame.w, frame.h), scale) else {
             eprintln!("demo: render failed at frame {f}");

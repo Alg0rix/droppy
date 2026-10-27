@@ -98,6 +98,17 @@ impl IslandTheme {
     }
 }
 
+/// Where the island sits: glued to the screen top, or floating below it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IslandStyle {
+    /// Flat top edge pinned to the screen top.
+    #[default]
+    Anchored,
+    /// Free-floating capsule with a configurable gap to the screen top.
+    Pill,
+}
+
 /// Which AI Chat provider is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -209,6 +220,12 @@ pub struct Settings {
     /// Island body theme (palette + glass sheen).
     #[serde(default)]
     pub theme: IslandTheme,
+    /// Glued to the screen top, or floating below it as a pill.
+    #[serde(default)]
+    pub island_style: IslandStyle,
+    /// Pill mode: gap between the island and the screen top, logical px.
+    #[serde(default = "default_pill_gap")]
+    pub pill_gap: u32,
     /// Eye colour drifts with CPU load, time of day and water intake.
     #[serde(default = "yes")]
     pub mood_ring: bool,
@@ -266,8 +283,16 @@ pub struct Settings {
     pub ai_ollama_model: String,
 }
 
+/// Pill mode: upper bound for `pill_gap` (logical px).
+pub const PILL_GAP_MAX: u32 = 40;
+/// Pill mode: `pill_gap` stepper increment (logical px).
+pub const PILL_GAP_STEP: u32 = 2;
+
 fn yes() -> bool {
     true
+}
+fn default_pill_gap() -> u32 {
+    10
 }
 fn default_chatgpt_model() -> String {
     AiProvider::ChatGpt.default_model().into()
@@ -295,6 +320,14 @@ fn default_ollama_model() -> String {
 }
 
 impl Settings {
+    /// Gap between the island and the screen top (0 when anchored).
+    pub fn top_gap(&self) -> f32 {
+        match self.island_style {
+            IslandStyle::Anchored => 0.0,
+            IslandStyle::Pill => self.pill_gap.min(PILL_GAP_MAX) as f32,
+        }
+    }
+
     pub fn active_ai_model(&self) -> &str {
         let s = match self.ai_provider {
             AiProvider::ChatGpt => &self.ai_chatgpt_model,
@@ -380,6 +413,8 @@ impl Default for Settings {
             open_on_hover: false,
             eye_style: EyeStyle::Round,
             theme: IslandTheme::Onyx,
+            island_style: IslandStyle::Anchored,
+            pill_gap: default_pill_gap(),
             mood_ring: true,
             weather_mood: true,
             birthday: None,
@@ -413,6 +448,7 @@ mod tests {
         let old = r#"{"idle_look":"eyes","lyrics_enabled":true,"water_reminders":true,"clipboard_history":true,"sounds":false,"hide_in_fullscreen":true,"start_with_windows":false,"goal_ml":2000}"#;
         let s: Settings = serde_json::from_str(old).unwrap();
         assert_eq!(s.eye_style, EyeStyle::Round);
+        assert!(s.island_style == IslandStyle::Anchored && s.pill_gap == 10);
         assert!(s.hotkey_island && s.hotkey_search && s.hotkey_note && s.hotkey_ai, "hotkeys default on");
         assert!(s.weather_mood && s.mood_ring && !s.open_on_hover && s.focus_app_eyes && s.birthday.is_none());
         assert_eq!(s.ai_provider, AiProvider::ChatGpt);

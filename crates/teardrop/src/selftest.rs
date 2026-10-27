@@ -7,6 +7,7 @@
 //! `TEARDROP_SELFTEST_DPI=144` renders at 150%; default is 192 (2x) so
 //! screenshots are crisp.
 
+use super::state::{IslandMode, IslandState};
 use super::ui::eyes::{Gauge, Glyph, React};
 use super::ui::layout::{build, IslandView};
 use super::ui::state::{Action, UiState};
@@ -92,7 +93,6 @@ fn composite(w: u32, h: u32, bgra: &[u8]) -> Vec<u8> {
 struct Shot {
     name: &'static str,
     open: f32,
-    wobble: f32,
     page: Page,
     hover: Option<Action>,
     setup: fn(&mut ViewModel, &mut Settings, &mut UiState, u64),
@@ -103,7 +103,7 @@ struct Shot {
 fn nothing(_: &mut ViewModel, _: &mut Settings, _: &mut UiState, _: u64) {}
 
 fn shot(name: &'static str, open: f32, page: Page) -> Shot {
-    Shot { name, open, wobble: 0.0, page, hover: None, setup: nothing, ticks: 180 }
+    Shot { name, open, page, hover: None, setup: nothing, ticks: 180 }
 }
 
 /// A believable machine for the System page frames: hybrid 12-core CPU, a
@@ -277,8 +277,8 @@ fn shots() -> Vec<Shot> {
             },
             ..shot("08-collapsed-focus", 0.0, Page::Music)
         },
-        Shot { wobble: 1.5, ..shot("10-morph-hover-peek", 0.08, Page::Music) },
-        Shot { wobble: -2.0, ..shot("11-morph-necking", 0.45, Page::Music) },
+        shot("10-morph-hover-peek", 0.08, Page::Music),
+        shot("11-morph-necking", 0.45, Page::Music),
         shot("14-glance-music", 0.5, Page::Music),
         Shot {
             setup: |vm, _, _, _| {
@@ -296,8 +296,8 @@ fn shots() -> Vec<Shot> {
             },
             ..shot("16-glance-idle", 0.5, Page::Water)
         },
-        Shot { wobble: 3.0, ..shot("12-morph-bulb", 0.7, Page::Music) },
-        Shot { wobble: 4.0, ..shot("13-morph-settling", 0.92, Page::Music) },
+        shot("12-morph-bulb", 0.7, Page::Music),
+        shot("13-morph-settling", 0.92, Page::Music),
         Shot {
             setup: |vm, _, _, _| {
                 vm.lyric_lines = teardrop_core::parse_lrc("[00:58.00]Ripples keep the shape of you\n[01:02.00]Surface tension holding true\n[01:09.00]Fall into the blue\n");
@@ -908,7 +908,7 @@ pub fn run(dir: &str) -> i32 {
         let (cw, ch) = UiState::card_target(s.page);
         g.card_w = cw;
         g.card_h = ch;
-        let view = IslandView { geom: g, open: s.open, wobble_px: s.wobble };
+        let view = IslandView::at(g, s.open);
         let frame = build(&vm, &set, &ui, &view, now_ms);
         if s.open >= 1.0 {
             for h in &frame.hits {
@@ -950,23 +950,17 @@ pub fn run(dir: &str) -> i32 {
     if (geom.width(1.0) - geom.card_w).abs() > 0.5 {
         failures.push("open width off".into());
     }
-    if geom.neck(0.45) >= 0.75 {
-        failures.push("neck did not pinch".into());
-    }
-
-    // Timing check: island spring must settle < 600ms simulated.
-    let mut sp = teardrop_core::Spring::island();
+    // Timing check: a direct open must settle in < 600ms simulated.
+    let mut isl = IslandState::new();
+    isl.toggle();
     let mut steps = 0;
-    loop {
+    while isl.mode != IslandMode::Open && steps <= 144 {
+        isl.tick(1.0 / 240.0);
         steps += 1;
-        let moving = sp.step(1.0, 1.0 / 120.0);
-        if !moving || steps > 240 {
-            break;
-        }
     }
-    let settle_ms = steps as f32 * 1000.0 / 120.0;
-    if settle_ms > 600.0 {
-        failures.push(format!("spring settle {settle_ms:.0}ms > 600ms"));
+    let settle_ms = steps as f32 * 1000.0 / 240.0;
+    if isl.mode != IslandMode::Open || settle_ms > 600.0 {
+        failures.push(format!("open settle {settle_ms:.0}ms > 600ms"));
     }
 
     // Interactions on the view-model.

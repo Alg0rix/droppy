@@ -8,14 +8,34 @@ use super::scene::{Align, Color, Fill, Rect, Scene, Weight};
 use super::state::{Action, Hit, UiState};
 use super::theme::*;
 use crate::viewmodel::{local_naive, mmss, one_line, ViewModel};
-use teardrop_core::{DropletGeom, HudKind, IdleLook, Page, Playback, Settings};
+use teardrop_core::{DropletGeom, HudKind, IdleLook, IslandStyle, Page, Playback, Settings};
 
-/// Morph input from the island spring.
+/// Morph input from the island springs: live size + content-layer alphas.
 #[derive(Debug, Clone, Copy)]
 pub struct IslandView {
     pub geom: DropletGeom,
+    /// Derived morph progress 0..1 (shadow strength, HUD checks).
     pub open: f32,
-    pub wobble_px: f32,
+    pub w: f32,
+    pub h: f32,
+    pub compact_a: f32,
+    pub glance_a: f32,
+    pub card_a: f32,
+}
+
+impl IslandView {
+    /// Static frame at morph position `open` (tests, selftest, demo stills).
+    pub fn at(geom: DropletGeom, open: f32) -> Self {
+        Self {
+            geom,
+            open,
+            w: geom.width(open),
+            h: geom.height(open),
+            compact_a: 1.0 - smooth(open / 0.28),
+            glance_a: 1.0 - smooth(((open - 0.5).abs() - 0.04) / 0.14),
+            card_a: smooth((open - 0.80) / 0.18),
+        }
+    }
 }
 
 pub struct Frame {
@@ -1103,22 +1123,23 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
     set_theme(set.theme);
     let g = &isl.geom;
     let open = isl.open;
-    let bw = g.width(open);
-    let bh = g.height(open, isl.wobble_px);
+    let (bw, bh) = (isl.w, isl.h);
     let w = bw + PAD * 2.0;
     let h = bh + PAD;
     let cx = w / 2.0;
     let body = Rect::new(cx - bw / 2.0, 0.0, bw, bh);
+    // Ease-out on the content layers so fades decelerate into place.
+    let eo = |a: f32| 1.0 - (1.0 - a).powi(3);
 
     let mut c = Ctx { s: Scene::new(), hits: Vec::new(), vm, set, ui, now_ms, live: true };
 
-    let pts: Vec<(f32, f32)> = g.outline(cx, 0.0, open, isl.wobble_px, 120).into_iter().map(|p| (p.x, p.y)).collect();
+    let pts: Vec<(f32, f32)> = g.outline(cx, 0.0, bw, bh, set.island_style == IslandStyle::Pill);
     c.s.body(pts, Fill::VGrad(pal().body_top, pal().body_bottom), pal().rim, (0.45 + 0.55 * smooth(open)) * pal().shadow, pal().sheen);
 
     // Collapsed activity.
-    let ca = 1.0 - smooth(open / 0.28);
+    let ca = eo(isl.compact_a);
     collapsed(&mut c, body, ca);
-    if open < 0.56 {
+    if isl.card_a < 0.5 {
         let a = match vm.live_hud(now_ms) {
             Some(h) if h.kind == HudKind::Water && h.action_label.is_some() => Action::HudWater,
             Some(h) if h.kind == HudKind::Meeting && h.action_label.is_some() => Action::MeetingJoin,
@@ -1127,23 +1148,24 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
         c.hit(body, a);
     }
 
-    // Glance pill: the middle stop of the morph (~open 0.5). Its content
-    // fades in as the collapsed content fades out and hands off to the card.
-    let ga = smooth(open / 0.36) * (1.0 - smooth((open - 0.56) / 0.22));
+    // Glance pill: the middle stop of the morph. Its content fades in as the
+    // collapsed content fades out and hands off to the card.
+    let ga = eo(isl.glance_a);
     if ga > 0.01 {
         c.s.clip(Rect::new(body.x + 1.0, 0.0, body.w - 2.0, body.h));
         // Quick actions are only live once the pill is resting at the glance.
         let ease = ui.page_ease();
         let eb = ui.page_ease_back();
         let sliding = ui.page_t < 1.0;
+        let dy = -5.0 * (1.0 - ga);
         if sliding {
             c.live = false;
-            c.s.set_transform(-ui.page_dir * 26.0 * eb, -(ease * 5.0), ga * (1.0 - ease));
+            c.s.set_transform(-ui.page_dir * 26.0 * eb, -(ease * 5.0) + dy, ga * (1.0 - ease));
             glance(&mut c, body, ui.prev_page);
         }
-        c.live = (open - 0.5).abs() < 0.08 && !sliding;
+        c.live = isl.glance_a > 0.9 && !sliding;
         let (dx, a) = if sliding { (ui.page_dir * 26.0 * (1.0 - eb), ga * ease.min(1.0)) } else { (0.0, ga) };
-        c.s.set_transform(dx, if sliding { (1.0 - ease) * 5.0 } else { 0.0 }, a);
+        c.s.set_transform(dx, if sliding { (1.0 - ease) * 5.0 + dy } else { dy }, a);
         glance(&mut c, body, vm.page);
         c.s.reset_transform();
         c.live = true;
@@ -1151,12 +1173,12 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
     }
 
     // Open card.
-    let oa = smooth((open - 0.80) / 0.18);
+    let oa = eo(isl.card_a);
     if oa > 0.01 {
         let card_x = cx - g.card_w / 2.0;
         c.s.clip(Rect::new(body.x + 1.0, 0.0, body.w - 2.0, body.h - 1.0));
-        c.s.set_transform(0.0, 0.0, oa);
-        c.live = oa > 0.9;
+        c.s.set_transform(0.0, -8.0 * (1.0 - oa), oa);
+        c.live = isl.card_a > 0.9;
         if is_blob_page(vm.page) {
             blob_nav(&mut c, card_x, g);
         } else {
@@ -1167,14 +1189,15 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
         let area_of = |p: Page| if is_blob_page(p) { blob_content_rect(card_x, g) } else { content_rect(card_x, g) };
         let ease = ui.page_ease();
         let sliding = ui.page_t < 1.0;
+        let dy = -8.0 * (1.0 - oa);
         if sliding {
             c.live = false;
-            c.s.set_transform(-ui.page_dir * 26.0 * ui.page_ease_back(), -(ease * 5.0), oa * (1.0 - ease));
+            c.s.set_transform(-ui.page_dir * 26.0 * ui.page_ease_back(), -(ease * 5.0) + dy, oa * (1.0 - ease));
             pages::draw(&mut c, ui.prev_page, area_of(ui.prev_page));
         }
-        c.live = oa > 0.9 && !sliding;
+        c.live = isl.card_a > 0.9 && !sliding;
         let (dx, a) = if sliding { (ui.page_dir * 26.0 * (1.0 - ui.page_ease_back()), oa * ease.min(1.0)) } else { (0.0, oa) };
-        c.s.set_transform(dx, if sliding { (1.0 - ease) * 5.0 } else { 0.0 }, a);
+        c.s.set_transform(dx, if sliding { (1.0 - ease) * 5.0 + dy } else { dy }, a);
         pages::draw(&mut c, vm.page, area_of(vm.page));
         c.s.reset_transform();
 
@@ -1191,7 +1214,15 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
         c.s.pop_clip();
     }
 
-    Frame { scene: c.s, hits: c.hits, w, h }
+    // Pill mode floats the whole island `gap` px below the screen edge.
+    let gap = set.top_gap();
+    if gap > 0.0 {
+        c.s.shift_y(gap);
+        for hit in c.hits.iter_mut() {
+            hit.rect.y += gap;
+        }
+    }
+    Frame { scene: c.s, hits: c.hits, w, h: h + gap }
 }
 
 pub fn hit_test(hits: &[Hit], x: f32, y: f32) -> Option<Hit> {
@@ -1215,7 +1246,17 @@ mod tests {
         for _ in 0..120 {
             ui.tick(1.0 / 60.0, &vm, &set, now_ms);
         }
-        let isl = IslandView { geom: DropletGeom::default(), open, wobble_px: 0.0 };
+        // Mirror window.rs: the morph geometry follows the animated sizes.
+        let geom = DropletGeom {
+            pill_w: ui.compact_w,
+            pill_h: ui.compact_h,
+            glance_w: ui.glance_w,
+            glance_h: ui.glance_h,
+            card_w: ui.card_w,
+            card_h: ui.card_h,
+            ..DropletGeom::default()
+        };
+        let isl = IslandView::at(geom, open);
         build(&vm, &set, &ui, &isl, now_ms)
     }
 
@@ -1227,6 +1268,24 @@ mod tests {
             assert!(f.hits.iter().any(|h| matches!(h.action, Action::Tab(_))), "{p:?} has no tabs");
             assert!(f.hits.iter().any(|h| h.action == Action::Gear));
         }
+    }
+
+    #[test]
+    fn pill_style_floats_the_frame() {
+        let now = Utc::now();
+        let vm = ViewModel::demo(now);
+        let now_ms = now.timestamp_millis() as u64;
+        let mut set = Settings::default();
+        let ui = UiState::new(Page::Music);
+        let isl = IslandView::at(DropletGeom::default(), 0.0);
+        let anchored = build(&vm, &set, &ui, &isl, now_ms);
+        set.island_style = IslandStyle::Pill;
+        set.pill_gap = 20;
+        let pill = build(&vm, &set, &ui, &isl, now_ms);
+        let ya = anchored.hits.iter().find(|h| h.action == Action::Island).unwrap().rect.y;
+        let yp = pill.hits.iter().find(|h| h.action == Action::Island).unwrap().rect.y;
+        assert_eq!((ya, yp), (0.0, 20.0));
+        assert!((pill.h - anchored.h - 20.0).abs() < 0.01);
     }
 
     #[test]
