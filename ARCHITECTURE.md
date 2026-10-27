@@ -34,7 +34,7 @@ Native Rust, no web view, no runtime. Zero CPU while nothing is moving.
 - `ui/scene.rs`: retained draw list (rects, rings, polys, text, clip) with a
   builder-level translate + opacity so pages slide/fade as a unit. Pure data,
   unit-tested on any OS.
-- `ui/layout.rs` + `ui/pages.rs`: header tabs (sliding accent pill), collapsed
+- `ui/layout.rs` + `ui/pages/`: header tabs (sliding accent pill), collapsed
   activities (music, focus ring, HUDs, eyes), one layout fn per page.
 - `ui/state.rs`: hover glow, press, toggle knobs, page slide, compact width,
   track-change peek, water level, all eased with frame-rate independent smoothing.
@@ -86,7 +86,7 @@ Each page is `core` state + a thin Windows sampler:
 
 ## Eyes
 
-`ui/eyes.rs` is a small expression engine, pure like the rest of `ui`:
+`ui/eyes/` is a small expression engine, pure like the rest of `ui`:
 
 - **Mood**: lasting state re-picked every frame from `Senses` (music + beat,
   idle time, pointer, clock/calendar, battery, CPU, disk, network, mic/camera,
@@ -136,12 +136,12 @@ Each page is `core` state + a thin Windows sampler:
   above them only while a Focus block runs.
   `teardrop_core::apps` classifies it: an exe table, whole-word title hints
   (longest phrase wins) for browsers and app hosts, then the user's
-  `app_themes` / `eye_themes` overrides from `settings.json`. `window.rs`
+  `app_themes` / `eye_themes` overrides from `settings.json`. `window/`
   samples the foreground window once a second and on every activation
   (only while the eyes are the idle look); just the exe name is kept in
   `Ambient.app`.
   New app: one string in `apps::EXES` or `TITLE_HINTS`. New theme: an
-  `AppCategory` arm plus a pose and a particle line in `eyes.rs`.
+  `AppCategory` arm plus a pose and a particle line in `ui/eyes/`.
 
 Signals come from `ViewModel.env` (`Ambient`), filled by `services_env.rs`
 (idle via `GetLastInputInfo`, consent-store registry for mic/camera,
