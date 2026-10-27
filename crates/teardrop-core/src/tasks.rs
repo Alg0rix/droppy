@@ -27,7 +27,9 @@ impl TaskList {
         if let Some(t) = self.tasks.iter_mut().find(|t| t.id == id) {
             t.done = !t.done;
             true
-        } else { false }
+        } else {
+            false
+        }
     }
 
     pub fn remove(&mut self, id: &str) -> bool {

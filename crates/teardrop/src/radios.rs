@@ -41,7 +41,10 @@ enum Cmd {
     /// Kick a WLAN scan so the next read has fresh networks.
     ScanWifi,
     /// Join a network; `key` = Some(password) for secured, no-profile nets.
-    ConnectWifi { ssid: String, key: Option<String> },
+    ConnectWifi {
+        ssid: String,
+        key: Option<String>,
+    },
     DisconnectWifi,
     /// Include unpaired devices in the device reads (inquiry is costly).
     ScanBt(bool),
@@ -130,11 +133,10 @@ mod imp {
     use windows::Networking::Connectivity::NetworkInformation;
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::NetworkManagement::WiFi::{
-        dot11_BSS_type_infrastructure, wlan_connection_mode_profile, wlan_connection_mode_temporary_profile, WlanCloseHandle, WlanConnect,
-        WlanDisconnect, WlanEnumInterfaces, WlanFreeMemory, WlanGetAvailableNetworkList, WlanOpenHandle, WlanScan, WLAN_AVAILABLE_NETWORK_LIST,
-        WLAN_AVAILABLE_NETWORK_CONNECTED, WLAN_AVAILABLE_NETWORK_HAS_PROFILE, WLAN_CONNECTION_PARAMETERS, WLAN_INTERFACE_INFO_LIST,
-        DOT11_AUTH_ALGORITHM, DOT11_AUTH_ALGO_80211_OPEN, DOT11_AUTH_ALGO_80211_SHARED_KEY, DOT11_AUTH_ALGO_RSNA_PSK, DOT11_AUTH_ALGO_WPA3,
-        DOT11_AUTH_ALGO_WPA3_SAE, DOT11_AUTH_ALGO_WPA_PSK,
+        dot11_BSS_type_infrastructure, wlan_connection_mode_profile, wlan_connection_mode_temporary_profile, WlanCloseHandle, WlanConnect, WlanDisconnect, WlanEnumInterfaces,
+        WlanFreeMemory, WlanGetAvailableNetworkList, WlanOpenHandle, WlanScan, DOT11_AUTH_ALGORITHM, DOT11_AUTH_ALGO_80211_OPEN, DOT11_AUTH_ALGO_80211_SHARED_KEY,
+        DOT11_AUTH_ALGO_RSNA_PSK, DOT11_AUTH_ALGO_WPA3, DOT11_AUTH_ALGO_WPA3_SAE, DOT11_AUTH_ALGO_WPA_PSK, WLAN_AVAILABLE_NETWORK_CONNECTED, WLAN_AVAILABLE_NETWORK_HAS_PROFILE,
+        WLAN_AVAILABLE_NETWORK_LIST, WLAN_CONNECTION_PARAMETERS, WLAN_INTERFACE_INFO_LIST,
     };
     use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
 
@@ -316,12 +318,7 @@ mod imp {
     fn profile_xml(ssid: &str, auth: &str, enc: &str, key: Option<&str>) -> String {
         let e = xml_escape(ssid);
         let shared = key
-            .map(|k| {
-                format!(
-                    "<sharedKey><keyType>passPhrase</keyType><protected>false</protected><keyMaterial>{}</keyMaterial></sharedKey>",
-                    xml_escape(k)
-                )
-            })
+            .map(|k| format!("<sharedKey><keyType>passPhrase</keyType><protected>false</protected><keyMaterial>{}</keyMaterial></sharedKey>", xml_escape(k)))
             .unwrap_or_default();
         format!(
             "<?xml version=\"1.0\"?><WLANProfile xmlns=\"http://www.microsoft.com/networking/WLAN/profile/v1\"><name>{e}</name><SSIDConfig><SSID><name>{e}</name></SSID></SSIDConfig><connectionType>ESS</connectionType><connectionMode>manual</connectionMode><MSM><security><authEncryption><authentication>{auth}</authentication><encryption>{enc}</encryption><useOneX>false</useOneX></authEncryption>{shared}</security></MSM></WLANProfile>"

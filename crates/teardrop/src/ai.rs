@@ -49,24 +49,9 @@ pub const STARTER_PROMPTS: [(&str, &str); 4] = [
 /// Curated fallback, kept in sync with the live `/codex/models` catalog
 /// (visible entries, priority order). The live probe is authoritative; this
 /// only covers the fresh install / offline case.
-pub const CODEX_DEFAULT_MODELS: &[&str] = &[
-    "gpt-6.1-sol",
-    "gpt-6-astra",
-    "gpt-6-sol",
-    "gpt-6-luna",
-    "gpt-5.6-sol",
-    "gpt-5.6-terra",
-    "gpt-5.6-luna",
-];
+pub const CODEX_DEFAULT_MODELS: &[&str] = &["gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"];
 
-pub const OPENCODE_DEFAULT_MODELS: &[&str] = &[
-    "gpt-5.4",
-    "claude-sonnet-4-6",
-    "deepseek-r1",
-    "gemini-2.5-pro",
-    "qwen3-coder",
-    "glm-5",
-];
+pub const OPENCODE_DEFAULT_MODELS: &[&str] = &["gpt-5.4", "claude-sonnet-4-6", "deepseek-r1", "gemini-2.5-pro", "qwen3-coder", "glm-5"];
 
 /// Starter suggestions shown when a chat is empty.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -190,7 +175,11 @@ fn water_arg_ml(arg: &str) -> u32 {
         n.trim().parse::<f32>().unwrap_or(teardrop_core::GLASS_ML as f32)
     } else {
         let n = a.trim_end_matches("glasses").trim_end_matches("glass").trim().parse::<f32>().unwrap_or(1.0);
-        if n > 24.0 { n } else { n * teardrop_core::GLASS_ML as f32 }
+        if n > 24.0 {
+            n
+        } else {
+            n * teardrop_core::GLASS_ML as f32
+        }
     };
     (ml.round() as u32).clamp(50, 2000)
 }
@@ -288,7 +277,7 @@ pub fn encrypt_secret(plain: &str) -> String {
     }
     #[cfg(windows)]
     unsafe {
-        use windows::Win32::Foundation::{HLOCAL, LocalFree};
+        use windows::Win32::Foundation::{LocalFree, HLOCAL};
         let bytes = plain.as_bytes();
         let mut in_blob = DataBlob { cb_data: bytes.len() as u32, pb_data: bytes.as_ptr() as *mut u8 };
         let mut out_blob = DataBlob { cb_data: 0, pb_data: std::ptr::null_mut() };
@@ -314,7 +303,7 @@ pub fn decrypt_secret(stored: &str) -> String {
         let Some(mut cipher) = hex_decode(hex) else { return String::new() };
         #[cfg(windows)]
         unsafe {
-            use windows::Win32::Foundation::{HLOCAL, LocalFree};
+            use windows::Win32::Foundation::{LocalFree, HLOCAL};
             let in_blob = DataBlob { cb_data: cipher.len() as u32, pb_data: cipher.as_mut_ptr() };
             let mut out_blob = DataBlob { cb_data: 0, pb_data: std::ptr::null_mut() };
             let ok = CryptUnprotectData(&in_blob, std::ptr::null_mut(), std::ptr::null(), std::ptr::null_mut(), std::ptr::null_mut(), 0x1, &mut out_blob);
@@ -348,10 +337,7 @@ fn secrets_path() -> PathBuf {
 }
 
 fn load_secrets() -> SecretStore {
-    std::fs::read_to_string(secrets_path())
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+    std::fs::read_to_string(secrets_path()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
 }
 
 fn save_secrets(sec: &SecretStore) {
@@ -364,18 +350,10 @@ fn save_secrets(sec: &SecretStore) {
 }
 
 fn load_chat_store() -> ChatStore {
-    let mut store: ChatStore = std::fs::read_to_string(chats_path())
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default();
+    let mut store: ChatStore = std::fs::read_to_string(chats_path()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
     if store.conversations.is_empty() {
         let id = now_millis();
-        store.conversations.push(Conversation {
-            id,
-            title: "New chat".into(),
-            updated_at: (id / 1000) as i64,
-            messages: Vec::new(),
-        });
+        store.conversations.push(Conversation { id, title: "New chat".into(), updated_at: (id / 1000) as i64, messages: Vec::new() });
         store.active_id = id;
     } else if !store.conversations.iter().any(|c| c.id == store.active_id) {
         store.active_id = store.conversations[0].id;
@@ -403,26 +381,15 @@ fn models_cache_path() -> PathBuf {
 /// Stable key for `AiProvider` in the cache file (matches the settings JSON:
 /// `chat_gpt`, `open_code_go`, ...).
 fn provider_key(provider: AiProvider) -> String {
-    serde_json::to_value(provider)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_string))
-        .unwrap_or_else(|| provider.label().to_string())
+    serde_json::to_value(provider).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_else(|| provider.label().to_string())
 }
 
 fn read_model_cache() -> BTreeMap<String, Vec<String>> {
-    std::fs::read_to_string(models_cache_path())
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+    std::fs::read_to_string(models_cache_path()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
 }
 
 fn load_model_cache(provider: AiProvider) -> Vec<String> {
-    read_model_cache()
-        .remove(&provider_key(provider))
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|m| !m.trim().is_empty())
-        .collect()
+    read_model_cache().remove(&provider_key(provider)).unwrap_or_default().into_iter().filter(|m| !m.trim().is_empty()).collect()
 }
 
 fn save_model_cache(provider: AiProvider, models: &[String]) {
@@ -489,20 +456,13 @@ fn decode_jwt_payload(jwt: &str) -> Option<Value> {
 
 /// Extract Unix expiry seconds (`exp` claim) from a JWT access token.
 pub fn extract_jwt_expiry(token: &str) -> i64 {
-    decode_jwt_payload(token)
-        .and_then(|v| v.get("exp").and_then(|e| e.as_i64().or_else(|| e.as_f64().map(|f| f as i64))))
-        .unwrap_or(0)
+    decode_jwt_payload(token).and_then(|v| v.get("exp").and_then(|e| e.as_i64().or_else(|| e.as_f64().map(|f| f as i64)))).unwrap_or(0)
 }
 
 /// Extract `chatgpt_account_id` from `claims["https://api.openai.com/auth"]["chatgpt_account_id"]`.
 pub fn extract_chatgpt_account_id(token: &str) -> String {
     decode_jwt_payload(token)
-        .and_then(|v| {
-            v.get("https://api.openai.com/auth")
-                .and_then(|a| a.get("chatgpt_account_id"))
-                .and_then(|id| id.as_str())
-                .map(str::to_string)
-        })
+        .and_then(|v| v.get("https://api.openai.com/auth").and_then(|a| a.get("chatgpt_account_id")).and_then(|id| id.as_str()).map(str::to_string))
         .unwrap_or_default()
 }
 
@@ -520,11 +480,7 @@ fn form_urlencode(pairs: &[(&str, &str)]) -> String {
         }
         out
     };
-    pairs
-        .iter()
-        .map(|(k, v)| format!("{}={}", encode(k), encode(v)))
-        .collect::<Vec<_>>()
-        .join("&")
+    pairs.iter().map(|(k, v)| format!("{}={}", encode(k), encode(v))).collect::<Vec<_>>().join("&")
 }
 
 // --------------------------------------------------- Protocol & SSE Parsers
@@ -545,11 +501,7 @@ pub fn opencode_model_protocol(model: &str) -> OpenCodeProtocol {
     let m = m.strip_prefix("opencode-go/").unwrap_or(&m);
     if m.starts_with("gpt-") || m.starts_with("grok-") || m.starts_with("muse-spark") {
         OpenCodeProtocol::Responses
-    } else if m.starts_with("claude-")
-        || m.starts_with("union-alpha")
-        || m.starts_with("minimax-")
-        || m.starts_with("qwen")
-    {
+    } else if m.starts_with("claude-") || m.starts_with("union-alpha") || m.starts_with("minimax-") || m.starts_with("qwen") {
         OpenCodeProtocol::Messages
     } else {
         OpenCodeProtocol::Chat
@@ -651,11 +603,7 @@ pub fn parse_responses_sse_or_json(raw: &str) -> Result<String, String> {
                 }
             }
             "error" | "response.failed" => {
-                let msg = ev
-                    .pointer("/error/message")
-                    .or_else(|| ev.pointer("/response/error/message"))
-                    .and_then(|m| m.as_str())
-                    .unwrap_or("Responses API error");
+                let msg = ev.pointer("/error/message").or_else(|| ev.pointer("/response/error/message")).and_then(|m| m.as_str()).unwrap_or("Responses API error");
                 return Err(msg.to_string());
             }
             _ => {}
@@ -702,11 +650,7 @@ pub fn parse_openai_chat_response(raw: &str) -> Result<String, String> {
             return Ok(s.to_string());
         }
         if let Some(arr) = content.as_array() {
-            let joined: String = arr
-                .iter()
-                .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
-                .collect::<Vec<_>>()
-                .join("");
+            let joined: String = arr.iter().filter_map(|p| p.get("text").and_then(|t| t.as_str())).collect::<Vec<_>>().join("");
             if !joined.is_empty() {
                 return Ok(joined);
             }
@@ -791,12 +735,7 @@ pub fn parse_openai_models_list(raw: &str) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(arr) = v.get("data").or_else(|| v.get("models")).and_then(|d| d.as_array()) {
         for item in arr {
-            let id = item
-                .get("id")
-                .or_else(|| item.get("name"))
-                .and_then(|s| s.as_str())
-                .map(str::trim)
-                .unwrap_or("");
+            let id = item.get("id").or_else(|| item.get("name")).and_then(|s| s.as_str()).map(str::trim).unwrap_or("");
             if !id.is_empty() && !out.iter().any(|x| x == id) {
                 out.push(id.to_string());
             }
@@ -842,13 +781,7 @@ pub fn extract_directives(raw: &str) -> (String, Vec<ParsedDirective>) {
         }
     }
     clean.push_str(rest);
-    let cleaned = clean
-        .lines()
-        .map(str::trim_end)
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_string();
+    let cleaned = clean.lines().map(str::trim_end).collect::<Vec<_>>().join("\n").trim().to_string();
     (cleaned, directives)
 }
 
@@ -909,13 +842,7 @@ fn with_runtime<R>(f: impl FnOnce(&mut Runtime) -> R) -> R {
         let mut secrets = load_secrets();
         // If ChatGPT tokens aren't stored yet, check if Codex CLI (`~/.codex/auth.json`) has them.
         try_import_codex_cli_tokens(&mut secrets);
-        let mut rt = Runtime {
-            store,
-            secrets,
-            view: AiView::default(),
-            models_provider: None,
-            pending_directives: Vec::new(),
-        };
+        let mut rt = Runtime { store, secrets, view: AiView::default(), models_provider: None, pending_directives: Vec::new() };
         rt.rebuild_view(AiProvider::ChatGpt);
         rt
     });
@@ -929,12 +856,7 @@ impl Runtime {
         if !self.store.conversations.iter().any(|c| c.id == self.store.active_id) {
             if self.store.conversations.is_empty() {
                 let id = now_millis();
-                self.store.conversations.push(Conversation {
-                    id,
-                    title: "New chat".into(),
-                    updated_at: (id / 1000) as i64,
-                    messages: Vec::new(),
-                });
+                self.store.conversations.push(Conversation { id, title: "New chat".into(), updated_at: (id / 1000) as i64, messages: Vec::new() });
             }
             self.store.active_id = self.store.conversations[0].id;
         }
@@ -959,26 +881,13 @@ impl Runtime {
         self.view.title = conv.title;
         self.view.messages = conv.messages;
         self.view.memories_count = self.store.memories.len();
-        self.view.history = self
-            .store
-            .conversations
-            .iter()
-            .map(|c| ChatSummary {
-                id: c.id,
-                title: c.title.clone(),
-                msg_count: c.messages.len(),
-            })
-            .collect();
+        self.view.history = self.store.conversations.iter().map(|c| ChatSummary { id: c.id, title: c.title.clone(), msg_count: c.messages.len() }).collect();
         self.view.chatgpt_signed_in = !decrypt_secret(&self.secrets.chatgpt_access_token).is_empty();
         self.view.configured = self.has_stored_key(provider);
         if self.models_provider != Some(provider) {
             self.models_provider = Some(provider);
             let cached = load_model_cache(provider);
-            self.view.available_models = if cached.is_empty() {
-                default_models_for(provider)
-            } else {
-                cached
-            };
+            self.view.available_models = if cached.is_empty() { default_models_for(provider) } else { cached };
         }
     }
 }
@@ -987,28 +896,10 @@ pub fn default_models_for(provider: AiProvider) -> Vec<String> {
     match provider {
         AiProvider::ChatGpt => CODEX_DEFAULT_MODELS.iter().map(|s| (*s).to_string()).collect(),
         AiProvider::OpenCodeGo => OPENCODE_DEFAULT_MODELS.iter().map(|s| (*s).to_string()).collect(),
-        AiProvider::OpenAiCompat => vec![
-            "gpt-4o-mini".into(),
-            "gpt-4.1-mini".into(),
-            "gpt-4o".into(),
-            "deepseek-chat".into(),
-        ],
-        AiProvider::Gemini => vec![
-            "gemini-3.5-flash-lite".into(),
-            "gemini-2.5-flash".into(),
-            "gemini-2.5-pro".into(),
-        ],
-        AiProvider::Claude => vec![
-            "claude-opus-5-5".into(),
-            "claude-sonnet-4-6".into(),
-            "claude-haiku-4-5".into(),
-        ],
-        AiProvider::Ollama => vec![
-            "llama3.2".into(),
-            "qwen2.5-coder".into(),
-            "deepseek-r1".into(),
-            "mistral".into(),
-        ],
+        AiProvider::OpenAiCompat => vec!["gpt-4o-mini".into(), "gpt-4.1-mini".into(), "gpt-4o".into(), "deepseek-chat".into()],
+        AiProvider::Gemini => vec!["gemini-3.5-flash-lite".into(), "gemini-2.5-flash".into(), "gemini-2.5-pro".into()],
+        AiProvider::Claude => vec!["claude-opus-5-5".into(), "claude-sonnet-4-6".into(), "claude-haiku-4-5".into()],
+        AiProvider::Ollama => vec!["llama3.2".into(), "qwen2.5-coder".into(), "deepseek-r1".into(), "mistral".into()],
     }
 }
 
@@ -1019,9 +910,8 @@ pub fn default_models_for(provider: AiProvider) -> Vec<String> {
 /// CLI's is still good. Without this the app can stay pinned to a refresh
 /// token the CLI already rotated, and every catalog sync fails silently.
 fn try_import_codex_cli_tokens(sec: &mut SecretStore) {
-    let home = std::env::var_os("CODEX_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(|h| PathBuf::from(h).join(".codex")));
+    let home =
+        std::env::var_os("CODEX_HOME").map(PathBuf::from).or_else(|| std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(|h| PathBuf::from(h).join(".codex")));
     let Some(auth_path) = home.map(|d| d.join("auth.json")).filter(|p| p.exists()) else {
         return;
     };
@@ -1036,9 +926,7 @@ fn try_import_codex_cli_tokens(sec: &mut SecretStore) {
     let imported_exp = extract_jwt_expiry(access);
     let stored_exp = sec.chatgpt_expires_at;
     let now = now_secs();
-    let take = decrypt_secret(&sec.chatgpt_access_token).is_empty()
-        || imported_exp > stored_exp + 30
-        || (stored_exp > 0 && stored_exp - now <= 120 && imported_exp > now);
+    let take = decrypt_secret(&sec.chatgpt_access_token).is_empty() || imported_exp > stored_exp + 30 || (stored_exp > 0 && stored_exp - now <= 120 && imported_exp > now);
     if !take {
         return;
     }
@@ -1047,12 +935,7 @@ fn try_import_codex_cli_tokens(sec: &mut SecretStore) {
         sec.chatgpt_refresh_token = encrypt_secret(refresh);
     }
     sec.chatgpt_expires_at = imported_exp;
-    let acct = tokens
-        .get("account_id")
-        .and_then(|s| s.as_str())
-        .map(str::to_string)
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| extract_chatgpt_account_id(access));
+    let acct = tokens.get("account_id").and_then(|s| s.as_str()).map(str::to_string).filter(|s| !s.is_empty()).unwrap_or_else(|| extract_chatgpt_account_id(access));
     sec.chatgpt_account_id = acct;
     save_secrets(sec);
 }
@@ -1122,15 +1005,7 @@ pub fn new_chat(provider: AiProvider) {
             rt.store.active_id = existing.id;
         } else {
             let id = now_millis();
-            rt.store.conversations.insert(
-                0,
-                Conversation {
-                    id,
-                    title: "New chat".into(),
-                    updated_at: now_secs(),
-                    messages: Vec::new(),
-                },
-            );
+            rt.store.conversations.insert(0, Conversation { id, title: "New chat".into(), updated_at: now_secs(), messages: Vec::new() });
             if rt.store.conversations.len() > MAX_CHATS {
                 rt.store.conversations.truncate(MAX_CHATS);
             }
@@ -1163,12 +1038,7 @@ pub fn delete_chat(id: u64, provider: AiProvider) {
         rt.store.conversations.retain(|c| c.id != id);
         if rt.store.conversations.is_empty() {
             let new_id = now_millis();
-            rt.store.conversations.push(Conversation {
-                id: new_id,
-                title: "New chat".into(),
-                updated_at: now_secs(),
-                messages: Vec::new(),
-            });
+            rt.store.conversations.push(Conversation { id: new_id, title: "New chat".into(), updated_at: now_secs(), messages: Vec::new() });
             rt.store.active_id = new_id;
         } else if !rt.store.conversations.iter().any(|c| c.id == rt.store.active_id) {
             rt.store.active_id = rt.store.conversations[0].id;
@@ -1192,11 +1062,7 @@ pub fn save_api_key(provider: AiProvider, raw_key: &str) {
         }
         save_secrets(&rt.secrets);
         rt.view.error.clear();
-        rt.view.status_note = if trimmed.is_empty() {
-            "API key cleared".into()
-        } else {
-            format!("{} key saved (DPAPI encrypted)", provider.label())
-        };
+        rt.view.status_note = if trimmed.is_empty() { "API key cleared".into() } else { format!("{} key saved (DPAPI encrypted)", provider.label()) };
         rt.rebuild_view(provider);
     });
 }
@@ -1243,12 +1109,7 @@ pub fn start_chatgpt_login() {
     std::thread::spawn(|| {
         let usercode_url = format!("{CHATGPT_ISSUER}/api/accounts/deviceauth/usercode");
         let body = json!({ "client_id": CHATGPT_CLIENT_ID }).to_string();
-        let resp = crate::http::post(
-            &usercode_url,
-            &[("Content-Type", "application/json"), ("Accept", "application/json")],
-            body.as_bytes(),
-            64 * 1024,
-        );
+        let resp = crate::http::post(&usercode_url, &[("Content-Type", "application/json"), ("Accept", "application/json")], body.as_bytes(), 64 * 1024);
         let Ok(bytes) = resp else {
             LOGIN_BUSY.store(false, Ordering::SeqCst);
             with_runtime(|rt| {
@@ -1265,22 +1126,9 @@ pub fn start_chatgpt_login() {
             });
             return;
         };
-        let user_code = v
-            .get("user_code")
-            .or_else(|| v.get("usercode"))
-            .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string();
-        let device_auth_id = v
-            .get("device_auth_id")
-            .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string();
-        let interval: u64 = v
-            .get("interval")
-            .and_then(|i| i.as_u64().or_else(|| i.as_str().and_then(|s| s.parse().ok())))
-            .unwrap_or(5)
-            .max(3);
+        let user_code = v.get("user_code").or_else(|| v.get("usercode")).and_then(|s| s.as_str()).unwrap_or("").to_string();
+        let device_auth_id = v.get("device_auth_id").and_then(|s| s.as_str()).unwrap_or("").to_string();
+        let interval: u64 = v.get("interval").and_then(|i| i.as_u64().or_else(|| i.as_str().and_then(|s| s.parse().ok()))).unwrap_or(5).max(3);
 
         if user_code.is_empty() || device_auth_id.is_empty() {
             LOGIN_BUSY.store(false, Ordering::SeqCst);
@@ -1315,12 +1163,7 @@ pub fn start_chatgpt_login() {
                 "user_code": user_code,
             })
             .to_string();
-            match crate::http::post(
-                &poll_url,
-                &[("Content-Type", "application/json"), ("Accept", "application/json")],
-                poll_body.as_bytes(),
-                64 * 1024,
-            ) {
+            match crate::http::post(&poll_url, &[("Content-Type", "application/json"), ("Accept", "application/json")], poll_body.as_bytes(), 64 * 1024) {
                 Ok(poll_bytes) => {
                     let Ok(pv) = serde_json::from_slice::<Value>(&poll_bytes) else { continue };
                     let auth_code = pv.get("authorization_code").and_then(|s| s.as_str()).unwrap_or("");
@@ -1335,12 +1178,7 @@ pub fn start_chatgpt_login() {
                         ("client_id", CHATGPT_CLIENT_ID),
                         ("code_verifier", verifier),
                     ]);
-                    match crate::http::post(
-                        &token_url,
-                        &[("Content-Type", "application/x-www-form-urlencoded"), ("Accept", "application/json")],
-                        form.as_bytes(),
-                        64 * 1024,
-                    ) {
+                    match crate::http::post(&token_url, &[("Content-Type", "application/x-www-form-urlencoded"), ("Accept", "application/json")], form.as_bytes(), 64 * 1024) {
                         Ok(tok_bytes) => {
                             if let Ok(tv) = serde_json::from_slice::<Value>(&tok_bytes) {
                                 let access = tv.get("access_token").and_then(|s| s.as_str()).unwrap_or("");
@@ -1413,14 +1251,7 @@ pub fn open_browser(url: &str) {
     unsafe {
         let op: Vec<u16> = "open\0".encode_utf16().collect();
         let wurl: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
-        let _ = ShellExecuteW(
-            None,
-            PCWSTR::from_raw(op.as_ptr()),
-            PCWSTR::from_raw(wurl.as_ptr()),
-            PCWSTR::null(),
-            PCWSTR::null(),
-            SW_SHOWNORMAL,
-        );
+        let _ = ShellExecuteW(None, PCWSTR::from_raw(op.as_ptr()), PCWSTR::from_raw(wurl.as_ptr()), PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL);
     }
 }
 
@@ -1440,17 +1271,8 @@ fn ensure_fresh_chatgpt_token(sec: &mut SecretStore) -> Result<(String, String),
         let refresh = decrypt_secret(&sec.chatgpt_refresh_token);
         if !refresh.is_empty() {
             let token_url = format!("{CHATGPT_ISSUER}/oauth/token");
-            let form = form_urlencode(&[
-                ("grant_type", "refresh_token"),
-                ("refresh_token", &refresh),
-                ("client_id", CHATGPT_CLIENT_ID),
-            ]);
-            if let Ok(bytes) = crate::http::post(
-                &token_url,
-                &[("Content-Type", "application/x-www-form-urlencoded"), ("Accept", "application/json")],
-                form.as_bytes(),
-                64 * 1024,
-            ) {
+            let form = form_urlencode(&[("grant_type", "refresh_token"), ("refresh_token", &refresh), ("client_id", CHATGPT_CLIENT_ID)]);
+            if let Ok(bytes) = crate::http::post(&token_url, &[("Content-Type", "application/x-www-form-urlencoded"), ("Accept", "application/json")], form.as_bytes(), 64 * 1024) {
                 if let Ok(v) = serde_json::from_slice::<Value>(&bytes) {
                     if let Some(new_acc) = v.get("access_token").and_then(|s| s.as_str()).filter(|s| !s.is_empty()) {
                         access = new_acc.to_string();
@@ -1469,11 +1291,7 @@ fn ensure_fresh_chatgpt_token(sec: &mut SecretStore) -> Result<(String, String),
             }
         }
     }
-    let acct = if sec.chatgpt_account_id.is_empty() {
-        extract_chatgpt_account_id(&access)
-    } else {
-        sec.chatgpt_account_id.clone()
-    };
+    let acct = if sec.chatgpt_account_id.is_empty() { extract_chatgpt_account_id(&access) } else { sec.chatgpt_account_id.clone() };
     Ok((access, acct))
 }
 
@@ -1509,11 +1327,7 @@ pub fn refresh_models(provider: AiProvider, base_url: String) {
                             models
                         }
                         Err(status) => {
-                            failure = Some(if status == 0 {
-                                "network error".to_string()
-                            } else {
-                                format!("HTTP {status}")
-                            });
+                            failure = Some(if status == 0 { "network error".to_string() } else { format!("HTTP {status}") });
                             Vec::new()
                         }
                     }
@@ -1527,10 +1341,7 @@ pub fn refresh_models(provider: AiProvider, base_url: String) {
                 let key = decrypt_secret(&sec.opencode_key);
                 let url = format!("{OPENCODE_GO_BASE_URL}/models");
                 let auth = format!("Bearer {key}");
-                let mut hdrs = vec![
-                    ("Accept", "application/json"),
-                    ("x-opencode-session", "teardrop-models"),
-                ];
+                let mut hdrs = vec![("Accept", "application/json"), ("x-opencode-session", "teardrop-models")];
                 if !key.is_empty() {
                     hdrs.push(("Authorization", auth.as_str()));
                 }
@@ -1574,11 +1385,7 @@ pub fn refresh_models(provider: AiProvider, base_url: String) {
                 if rt.models_provider != Some(provider) || rt.view.available_models.is_empty() {
                     let cached = load_model_cache(provider);
                     rt.models_provider = Some(provider);
-                    rt.view.available_models = if cached.is_empty() {
-                        default_models_for(provider)
-                    } else {
-                        cached
-                    };
+                    rt.view.available_models = if cached.is_empty() { default_models_for(provider) } else { cached };
                 }
                 rt.view.status_note = match failure {
                     Some(why) => format!("Sync failed ({why}) \u{2014} showing last known catalog"),
@@ -1617,12 +1424,7 @@ pub fn send_prompt(prompt: String, settings: Settings, day_context: Option<Strin
             conv.title = prompt.chars().take(36).collect();
         }
         conv.updated_at = now_secs();
-        conv.messages.push(ChatMessage {
-            role: Role::User,
-            text: prompt.clone(),
-            actions: Vec::new(),
-            timestamp: now_secs(),
-        });
+        conv.messages.push(ChatMessage { role: Role::User, text: prompt.clone(), actions: Vec::new(), timestamp: now_secs() });
         let conv_id = conv.id;
         let history = conv.messages.clone();
         let memories = rt.store.memories.clone();
@@ -1639,21 +1441,12 @@ pub fn send_prompt(prompt: String, settings: Settings, day_context: Option<Strin
         match result {
             Ok(raw_reply) => {
                 let (clean_text, directives) = extract_directives(&raw_reply);
-                let display_text = if clean_text.is_empty() {
-                    "Done!".to_string()
-                } else {
-                    clean_text
-                };
+                let display_text = if clean_text.is_empty() { "Done!".to_string() } else { clean_text };
                 with_runtime(|rt| {
                     rt.view.busy = false;
                     if let Some(conv) = rt.store.conversations.iter_mut().find(|c| c.id == conv_id) {
                         let msg_idx = conv.messages.len();
-                        conv.messages.push(ChatMessage {
-                            role: Role::Assistant,
-                            text: display_text,
-                            actions: Vec::new(),
-                            timestamp: now_secs(),
-                        });
+                        conv.messages.push(ChatMessage { role: Role::Assistant, text: display_text, actions: Vec::new(), timestamp: now_secs() });
                         conv.updated_at = now_secs();
                         if !directives.is_empty() {
                             rt.pending_directives.push((conv_id, msg_idx, directives));
@@ -1675,15 +1468,7 @@ pub fn send_prompt(prompt: String, settings: Settings, day_context: Option<Strin
     });
 }
 
-fn call_provider(
-    provider: AiProvider,
-    model: &str,
-    base_url: &str,
-    sec: &mut SecretStore,
-    conv_id: u64,
-    sys_prompt: &str,
-    history: &[ChatMessage],
-) -> Result<String, String> {
+fn call_provider(provider: AiProvider, model: &str, base_url: &str, sec: &mut SecretStore, conv_id: u64, sys_prompt: &str, history: &[ChatMessage]) -> Result<String, String> {
     // Keep up to the last 16 messages for context window efficiency.
     let start = history.len().saturating_sub(16);
     let recent = &history[start..];
@@ -1691,16 +1476,7 @@ fn call_provider(
     match provider {
         AiProvider::ChatGpt => {
             let (token, acct) = ensure_fresh_chatgpt_token(sec)?;
-            call_responses_endpoint(
-                &format!("{CODEX_BASE_URL}/responses"),
-                &token,
-                Some(&acct),
-                model,
-                sys_prompt,
-                recent,
-                &format!("teardrop-{conv_id}"),
-                false,
-            )
+            call_responses_endpoint(&format!("{CODEX_BASE_URL}/responses"), &token, Some(&acct), model, sys_prompt, recent, &format!("teardrop-{conv_id}"), false)
         }
         AiProvider::OpenCodeGo => {
             let key = decrypt_secret(&sec.opencode_key);
@@ -1709,32 +1485,9 @@ fn call_provider(
             }
             let session = format!("teardrop-{conv_id}");
             match opencode_model_protocol(model) {
-                OpenCodeProtocol::Responses => call_responses_endpoint(
-                    &format!("{OPENCODE_GO_BASE_URL}/responses"),
-                    &key,
-                    None,
-                    model,
-                    sys_prompt,
-                    recent,
-                    &session,
-                    true,
-                ),
-                OpenCodeProtocol::Messages => call_anthropic_endpoint(
-                    &format!("{OPENCODE_GO_BASE_URL}/messages"),
-                    &key,
-                    model,
-                    sys_prompt,
-                    recent,
-                    Some(&session),
-                ),
-                OpenCodeProtocol::Chat => call_openai_chat_endpoint(
-                    &format!("{OPENCODE_GO_BASE_URL}/chat/completions"),
-                    &key,
-                    model,
-                    sys_prompt,
-                    recent,
-                    Some(&session),
-                ),
+                OpenCodeProtocol::Responses => call_responses_endpoint(&format!("{OPENCODE_GO_BASE_URL}/responses"), &key, None, model, sys_prompt, recent, &session, true),
+                OpenCodeProtocol::Messages => call_anthropic_endpoint(&format!("{OPENCODE_GO_BASE_URL}/messages"), &key, model, sys_prompt, recent, Some(&session)),
+                OpenCodeProtocol::Chat => call_openai_chat_endpoint(&format!("{OPENCODE_GO_BASE_URL}/chat/completions"), &key, model, sys_prompt, recent, Some(&session)),
             }
         }
         AiProvider::OpenAiCompat => {
@@ -1743,14 +1496,7 @@ fn call_provider(
             if base.contains("api.openai.com") && key.is_empty() {
                 return Err("OpenAI API key not set \u{2014} click Setup \u{2192} Paste Key".into());
             }
-            call_openai_chat_endpoint(
-                &format!("{base}/chat/completions"),
-                &key,
-                model,
-                sys_prompt,
-                recent,
-                None,
-            )
+            call_openai_chat_endpoint(&format!("{base}/chat/completions"), &key, model, sys_prompt, recent, None)
         }
         AiProvider::Gemini => {
             let key = decrypt_secret(&sec.gemini_key);
@@ -1764,14 +1510,7 @@ fn call_provider(
             if key.is_empty() {
                 return Err("Claude API key not set \u{2014} click Setup \u{2192} Paste Key".into());
             }
-            call_anthropic_endpoint(
-                "https://api.anthropic.com/v1/messages",
-                &key,
-                model,
-                sys_prompt,
-                recent,
-                None,
-            )
+            call_anthropic_endpoint("https://api.anthropic.com/v1/messages", &key, model, sys_prompt, recent, None)
         }
         AiProvider::Ollama => {
             let base = base_url.trim().trim_end_matches('/');
@@ -1810,11 +1549,7 @@ fn call_responses_endpoint(
     .to_string();
 
     let auth = format!("Bearer {bearer}");
-    let mut headers = vec![
-        ("Authorization", auth.as_str()),
-        ("Content-Type", "application/json"),
-        ("Accept", "text/event-stream"),
-    ];
+    let mut headers = vec![("Authorization", auth.as_str()), ("Content-Type", "application/json"), ("Accept", "text/event-stream")];
     if let Some(acct) = account_id.filter(|a| !a.is_empty()) {
         headers.push(("ChatGPT-Account-Id", acct));
     }
@@ -1830,14 +1565,7 @@ fn call_responses_endpoint(
     }
 }
 
-fn call_openai_chat_endpoint(
-    url: &str,
-    api_key: &str,
-    model: &str,
-    sys_prompt: &str,
-    messages: &[ChatMessage],
-    opencode_session: Option<&str>,
-) -> Result<String, String> {
+fn call_openai_chat_endpoint(url: &str, api_key: &str, model: &str, sys_prompt: &str, messages: &[ChatMessage], opencode_session: Option<&str>) -> Result<String, String> {
     let mut wire = Vec::with_capacity(messages.len() + 1);
     wire.push(json!({ "role": "system", "content": sys_prompt }));
     for m in messages {
@@ -1854,10 +1582,7 @@ fn call_openai_chat_endpoint(
     .to_string();
 
     let auth = format!("Bearer {api_key}");
-    let mut headers = vec![
-        ("Content-Type", "application/json"),
-        ("Accept", "application/json"),
-    ];
+    let mut headers = vec![("Content-Type", "application/json"), ("Accept", "application/json")];
     if !api_key.is_empty() {
         headers.push(("Authorization", auth.as_str()));
     }
@@ -1871,14 +1596,7 @@ fn call_openai_chat_endpoint(
     }
 }
 
-fn call_anthropic_endpoint(
-    url: &str,
-    api_key: &str,
-    model: &str,
-    sys_prompt: &str,
-    messages: &[ChatMessage],
-    opencode_session: Option<&str>,
-) -> Result<String, String> {
+fn call_anthropic_endpoint(url: &str, api_key: &str, model: &str, sys_prompt: &str, messages: &[ChatMessage], opencode_session: Option<&str>) -> Result<String, String> {
     let wire: Vec<Value> = messages
         .iter()
         .map(|m| {
@@ -1897,12 +1615,7 @@ fn call_anthropic_endpoint(
     .to_string();
 
     let auth = format!("Bearer {api_key}");
-    let mut headers = vec![
-        ("Content-Type", "application/json"),
-        ("Accept", "application/json"),
-        ("anthropic-version", "2023-06-01"),
-        ("x-api-key", api_key),
-    ];
+    let mut headers = vec![("Content-Type", "application/json"), ("Accept", "application/json"), ("anthropic-version", "2023-06-01"), ("x-api-key", api_key)];
     if let Some(sess) = opencode_session {
         headers.push(("Authorization", auth.as_str()));
         headers.push(("x-opencode-session", sess));
@@ -1914,12 +1627,7 @@ fn call_anthropic_endpoint(
     }
 }
 
-fn call_gemini_endpoint(
-    api_key: &str,
-    model: &str,
-    sys_prompt: &str,
-    messages: &[ChatMessage],
-) -> Result<String, String> {
+fn call_gemini_endpoint(api_key: &str, model: &str, sys_prompt: &str, messages: &[ChatMessage]) -> Result<String, String> {
     let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent");
     let contents: Vec<Value> = messages
         .iter()
@@ -1936,23 +1644,14 @@ fn call_gemini_endpoint(
     })
     .to_string();
 
-    let headers = [
-        ("Content-Type", "application/json"),
-        ("Accept", "application/json"),
-        ("x-goog-api-key", api_key),
-    ];
+    let headers = [("Content-Type", "application/json"), ("Accept", "application/json"), ("x-goog-api-key", api_key)];
     match crate::http::post(&url, &headers, payload.as_bytes(), 2 * 1024 * 1024) {
         Ok(bytes) => parse_gemini_response(&String::from_utf8_lossy(&bytes)),
         Err((status, snippet)) => Err(friendly_http_error("Gemini", status, &snippet)),
     }
 }
 
-fn call_ollama_endpoint(
-    base_url: &str,
-    model: &str,
-    sys_prompt: &str,
-    messages: &[ChatMessage],
-) -> Result<String, String> {
+fn call_ollama_endpoint(base_url: &str, model: &str, sys_prompt: &str, messages: &[ChatMessage]) -> Result<String, String> {
     let url = format!("{base_url}/api/chat");
     let mut wire = Vec::with_capacity(messages.len() + 1);
     wire.push(json!({ "role": "system", "content": sys_prompt }));
@@ -1982,12 +1681,7 @@ fn friendly_http_error(label: &str, status: u32, snippet: &str) -> String {
         return format!("{label}: network error \u{2014} check connection or URL");
     }
     if let Ok(v) = serde_json::from_str::<Value>(snippet) {
-        if let Some(msg) = v
-            .pointer("/error/message")
-            .or_else(|| v.pointer("/detail"))
-            .or_else(|| v.get("message"))
-            .and_then(|m| m.as_str())
-        {
+        if let Some(msg) = v.pointer("/error/message").or_else(|| v.pointer("/detail")).or_else(|| v.get("message")).and_then(|m| m.as_str()) {
             let clean: String = msg.chars().take(110).collect();
             return format!("{label} ({status}): {clean}");
         }
@@ -2009,13 +1703,7 @@ pub fn take_pending_directives() -> Vec<(u64, usize, Vec<ParsedDirective>)> {
 }
 
 /// Attach executed `AiActionBadge`s to a message and persist `chats.json`.
-pub fn record_action_badges(
-    conv_id: u64,
-    msg_idx: usize,
-    badges: Vec<AiActionBadge>,
-    new_memories: Vec<String>,
-    provider: AiProvider,
-) {
+pub fn record_action_badges(conv_id: u64, msg_idx: usize, badges: Vec<AiActionBadge>, new_memories: Vec<String>, provider: AiProvider) {
     with_runtime(|rt| {
         for mem in new_memories {
             if !rt.store.memories.iter().any(|m| m.eq_ignore_ascii_case(&mem)) {
@@ -2072,9 +1760,7 @@ mod tests {
     #[test]
     #[ignore = "live network probe; needs a Codex CLI login"]
     fn live_codex_catalog_keeps_curated_fallback_fresh() {
-        let home = std::env::var_os("CODEX_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(std::env::var_os("USERPROFILE").unwrap()).join(".codex"));
+        let home = std::env::var_os("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(std::env::var_os("USERPROFILE").unwrap()).join(".codex"));
         let Ok(text) = std::fs::read_to_string(home.join("auth.json")) else {
             eprintln!("skipped: no Codex CLI auth.json");
             return;
@@ -2082,11 +1768,7 @@ mod tests {
         let v: Value = serde_json::from_str(&text).unwrap();
         let tokens = v.get("tokens").unwrap_or(&v);
         let access = tokens.get("access_token").and_then(|s| s.as_str()).unwrap();
-        let acct = tokens
-            .get("account_id")
-            .and_then(|s| s.as_str())
-            .map(str::to_string)
-            .unwrap_or_else(|| extract_chatgpt_account_id(access));
+        let acct = tokens.get("account_id").and_then(|s| s.as_str()).map(str::to_string).unwrap_or_else(|| extract_chatgpt_account_id(access));
         let url = format!("{CODEX_BASE_URL}/models?client_version=1.0.0");
         let auth = format!("Bearer {access}");
         let mut hdrs = vec![("Authorization", auth.as_str()), ("Accept", "application/json")];
@@ -2098,10 +1780,7 @@ mod tests {
         assert!(!models.is_empty(), "live catalog came back empty");
         assert_eq!(models.first().map(String::as_str), CODEX_DEFAULT_MODELS.first().copied());
         for fallback in CODEX_DEFAULT_MODELS {
-            assert!(
-                models.iter().any(|m| m == fallback),
-                "curated fallback model {fallback} is no longer served: {models:?}"
-            );
+            assert!(models.iter().any(|m| m == fallback), "curated fallback model {fallback} is no longer served: {models:?}");
         }
     }
 
@@ -2177,10 +1856,7 @@ mod tests {
             {"slug":"gpt-5.6-luna","priority":9,"visibility":"list"},
             {"slug":"gpt-6-astra","priority":2,"visibility":"list"}
         ]}"#;
-        assert_eq!(
-            parse_codex_models(body),
-            vec!["gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-5.6-luna"]
-        );
+        assert_eq!(parse_codex_models(body), vec!["gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-5.6-luna"]);
         // The curated fallback must lead with the same model as the live catalog.
         assert_eq!(default_models_for(AiProvider::ChatGpt)[0], "gpt-6.1-sol");
         assert_eq!(AiProvider::ChatGpt.default_model(), "gpt-6.1-sol");
@@ -2241,10 +1917,7 @@ mod tests {
     fn base_url_normalization_handles_shortcuts() {
         assert_eq!(normalize_openai_base_url(""), "https://api.openai.com/v1");
         assert_eq!(normalize_openai_base_url("https://api.openai.com/v1/"), "https://api.openai.com/v1");
-        assert_eq!(
-            normalize_openai_base_url("https://api.groq.com/openai/v1/chat/completions"),
-            "https://api.groq.com/openai/v1"
-        );
+        assert_eq!(normalize_openai_base_url("https://api.groq.com/openai/v1/chat/completions"), "https://api.groq.com/openai/v1");
         assert_eq!(normalize_openai_base_url("http://localhost:1234/v1"), "http://localhost:1234/v1");
     }
 }

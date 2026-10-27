@@ -75,13 +75,11 @@ mod imp {
     use windows::core::{w, HSTRING, PCWSTR};
     use windows::Win32::Foundation::{CloseHandle, FILETIME, MAX_PATH};
     use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIFactory1};
-    use windows::Win32::Storage::FileSystem::{
-        GetDiskFreeSpaceExW, GetDriveTypeW, GetFileVersionInfoSizeW, GetFileVersionInfoW, GetLogicalDrives, VerQueryValueW,
-    };
+    use windows::Win32::Storage::FileSystem::{GetDiskFreeSpaceExW, GetDriveTypeW, GetFileVersionInfoSizeW, GetFileVersionInfoW, GetLogicalDrives, VerQueryValueW};
     use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
     use windows::Win32::System::Performance::{
-        PdhAddEnglishCounterW, PdhCloseQuery, PdhCollectQueryData, PdhGetFormattedCounterArrayW, PdhGetFormattedCounterValue, PdhOpenQueryW,
-        PDH_FMT_COUNTERVALUE, PDH_FMT_COUNTERVALUE_ITEM_W, PDH_FMT_DOUBLE, PDH_MORE_DATA,
+        PdhAddEnglishCounterW, PdhCloseQuery, PdhCollectQueryData, PdhGetFormattedCounterArrayW, PdhGetFormattedCounterValue, PdhOpenQueryW, PDH_FMT_COUNTERVALUE,
+        PDH_FMT_COUNTERVALUE_ITEM_W, PDH_FMT_DOUBLE, PDH_MORE_DATA,
     };
     use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
     use windows::Win32::System::ProcessStatus::{GetPerformanceInfo, K32GetProcessMemoryInfo, PERFORMANCE_INFORMATION, PROCESS_MEMORY_COUNTERS};
@@ -304,7 +302,11 @@ mod imp {
                         let mut n = buf.len() as u32;
                         let ok = QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, windows::core::PWSTR(buf.as_mut_ptr()), &mut n).is_ok();
                         let _ = CloseHandle(h);
-                        if ok { String::from_utf16_lossy(&buf[..n as usize]) } else { String::new() }
+                        if ok {
+                            String::from_utf16_lossy(&buf[..n as usize])
+                        } else {
+                            String::new()
+                        }
                     })
                     .unwrap_or_default()
             };
@@ -506,10 +508,7 @@ mod imp {
             let sys = value(c.cpu_priv).unwrap_or(0.0) as f32;
             let idle = value(c.cpu_idle).unwrap_or(100.0) as f32;
             let total = (100.0 - idle).clamp(0.0, 100.0);
-            let mut cores: Vec<(usize, f32)> = array(c.cores)
-                .into_iter()
-                .filter_map(|(n, v)| n.parse::<usize>().ok().map(|i| (i, v as f32)))
-                .collect();
+            let mut cores: Vec<(usize, f32)> = array(c.cores).into_iter().filter_map(|(n, v)| n.parse::<usize>().ok().map(|i| (i, v as f32))).collect();
             cores.sort_by_key(|c| c.0);
             let ghz = match (value(c.mhz), value(c.perf)) {
                 (Some(mhz), Some(p)) => (mhz * p / 100.0 / 1000.0) as f32,
@@ -541,12 +540,8 @@ mod imp {
             let up: f32 = tx.iter().filter(|(n, _)| real_nic(n)).map(|(_, v)| *v as f32).sum();
             down_total += down as u64;
             up_total += up as u64;
-            let adapter = rx
-                .iter()
-                .filter(|(n, _)| real_nic(n))
-                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|(n, _)| n.clone())
-                .unwrap_or_default();
+            let adapter =
+                rx.iter().filter(|(n, _)| real_nic(n)).max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)).map(|(n, _)| n.clone()).unwrap_or_default();
 
             // Battery --------------------------------------------------
             let mut ps = SYSTEM_POWER_STATUS::default();
@@ -734,8 +729,21 @@ mod tests {
         assert_eq!(v.cpu.history.len(), v.mem.history.len());
         eprintln!(
             "cpu {:.0}% ({}) cores={} ghz={:.2} temp={:?} gpu={} {:.0}% vram {:.1}/{:.1} GB net {:.0}/{:.0} B/s vols={} procs={} battery={} {:.0}%",
-            v.cpu.total, v.cpu.name, v.cpu.cores.len(), v.cpu.ghz, v.cpu.temp_c, v.gpu.name, v.gpu.util, v.gpu.mem_used_gb, v.gpu.mem_total_gb,
-            v.net.down_bps, v.net.up_bps, v.drives.volumes.len(), v.procs.len(), v.battery.present, v.battery.pct
+            v.cpu.total,
+            v.cpu.name,
+            v.cpu.cores.len(),
+            v.cpu.ghz,
+            v.cpu.temp_c,
+            v.gpu.name,
+            v.gpu.util,
+            v.gpu.mem_used_gb,
+            v.gpu.mem_total_gb,
+            v.net.down_bps,
+            v.net.up_bps,
+            v.drives.volumes.len(),
+            v.procs.len(),
+            v.battery.present,
+            v.battery.pct
         );
         set_active(None);
     }

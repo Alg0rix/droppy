@@ -297,11 +297,7 @@ impl Packet {
             if wire_payload.len() < w + 1 {
                 return None;
             }
-            let orig = if version == 2 {
-                u32::from_be_bytes(wire_payload[..4].try_into().ok()?) as usize
-            } else {
-                u16::from_be_bytes(wire_payload[..2].try_into().ok()?) as usize
-            };
+            let orig = if version == 2 { u32::from_be_bytes(wire_payload[..4].try_into().ok()?) as usize } else { u16::from_be_bytes(wire_payload[..2].try_into().ok()?) as usize };
             if orig > MAX_INFLATED {
                 return None;
             }
@@ -316,19 +312,7 @@ impl Packet {
         } else {
             (wire_payload.clone(), false)
         };
-        Some(Packet {
-            version,
-            ptype,
-            ttl,
-            timestamp,
-            sender: PeerId(sender),
-            recipient,
-            payload,
-            wire_payload,
-            compressed,
-            route,
-            signature,
-        })
+        Some(Packet { version, ptype, ttl, timestamp, sender: PeerId(sender), recipient, payload, wire_payload, compressed, route, signature })
     }
 
     /// Dedup identity: sender + timestamp + type + wire payload digest (§4.2).

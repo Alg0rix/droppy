@@ -30,7 +30,11 @@ pub fn extrapolate_ms(position_ms: u64, duration_ms: u64, playing: bool, rate: f
         return position_ms;
     }
     let advanced = position_ms + (age_ms as f64 * rate.clamp(0.0, 4.0) as f64) as u64;
-    if duration_ms > 0 { advanced.min(duration_ms) } else { advanced }
+    if duration_ms > 0 {
+        advanced.min(duration_ms)
+    } else {
+        advanced
+    }
 }
 
 /// Current extrapolated position of the published snapshot, without cloning it.
@@ -146,17 +150,14 @@ mod worker {
 
     /// Non-blocking read; returns None when no poll yet or data is stale.
     pub fn latest(max_age: Duration) -> Option<SmtcSnapshot> {
-        SLOT.lock()
-            .ok()
-            .and_then(|slot| slot.clone())
-            .and_then(|(mut s, at)| {
-                let age = at.elapsed();
-                if age > max_age {
-                    return None;
-                }
-                s.position_ms = super::extrapolate_ms(s.position_ms, s.duration_ms, s.playing, s.rate, age.as_millis() as u64);
-                Some(s)
-            })
+        SLOT.lock().ok().and_then(|slot| slot.clone()).and_then(|(mut s, at)| {
+            let age = at.elapsed();
+            if age > max_age {
+                return None;
+            }
+            s.position_ms = super::extrapolate_ms(s.position_ms, s.duration_ms, s.playing, s.rate, age.as_millis() as u64);
+            Some(s)
+        })
     }
 
     pub fn position_now() -> Option<u64> {
@@ -182,10 +183,7 @@ mod worker {
             let _ = SEEK_TX.set(tx);
             std::thread::spawn(move || {
                 unsafe {
-                    let _ = windows::Win32::System::Com::CoInitializeEx(
-                        None,
-                        windows::Win32::System::Com::COINIT_MULTITHREADED,
-                    );
+                    let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_MULTITHREADED);
                 }
                 // Publish a first snapshot right away; otherwise the Music
                 // page stays empty for one whole poll interval.
@@ -279,11 +277,7 @@ mod worker {
             let ras = props.Thumbnail().ok()?.OpenReadAsync().ok()?.get().ok()?;
             let stream: IStream = CreateStreamOverRandomAccessStream(&ras).ok()?;
             let wic: IWICImagingFactory = CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).ok()?;
-            let frame = wic
-                .CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnDemand)
-                .ok()?
-                .GetFrame(0)
-                .ok()?;
+            let frame = wic.CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnDemand).ok()?.GetFrame(0).ok()?;
             square_image(&wic, &frame.cast::<IWICBitmapSource>().ok()?, ART_PX)
         }
     }
@@ -292,8 +286,7 @@ mod worker {
     /// thumbnails), scale to `px` (never upscale), premultiplied BGRA out.
     pub(super) fn square_image(wic: &IWICImagingFactory, src: &IWICBitmapSource, px: u32) -> Option<Image> {
         use windows::Win32::Graphics::Imaging::{
-            GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, WICBitmapInterpolationModeFant, WICBitmapPaletteTypeCustom, WICRect,
-            IWICPalette,
+            GUID_WICPixelFormat32bppPBGRA, IWICPalette, WICBitmapDitherTypeNone, WICBitmapInterpolationModeFant, WICBitmapPaletteTypeCustom, WICRect,
         };
         unsafe {
             let (mut w, mut h) = (0, 0);
@@ -309,8 +302,7 @@ mod worker {
             let scaler = wic.CreateBitmapScaler().ok()?;
             scaler.Initialize(&clipper, out, out, WICBitmapInterpolationModeFant).ok()?;
             let conv = wic.CreateFormatConverter().ok()?;
-            conv.Initialize(&scaler, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None::<&IWICPalette>, 0.0, WICBitmapPaletteTypeCustom)
-                .ok()?;
+            conv.Initialize(&scaler, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None::<&IWICPalette>, 0.0, WICBitmapPaletteTypeCustom).ok()?;
             let stride = out * 4;
             let mut bgra = vec![0u8; (stride * out) as usize];
             conv.CopyPixels(&WICRect { X: 0, Y: 0, Width: out as i32, Height: out as i32 }, stride, &mut bgra).ok()?;
@@ -344,10 +336,7 @@ mod worker {
 
     fn poll_once() -> Option<SmtcSnapshot> {
         use windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager;
-        let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
-            .ok()?
-            .get()
-            .ok()?;
+        let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().ok()?.get().ok()?;
         let session = manager.GetCurrentSession().ok()?;
         let props = session.TryGetMediaPropertiesAsync().ok()?.get().ok()?;
         let title = props.Title().ok().map(|h| hstr(&h)).unwrap_or_default();
@@ -361,13 +350,7 @@ mod worker {
         }
         let info = session.GetPlaybackInfo().ok();
         let playing = info.as_ref().and_then(|i| i.PlaybackStatus().ok()).map(|st| st.0 == 4).unwrap_or(false);
-        let rate = info
-            .as_ref()
-            .and_then(|i| i.PlaybackRate().ok())
-            .and_then(|r| r.Value().ok())
-            .map(|r| r as f32)
-            .filter(|r| *r > 0.0)
-            .unwrap_or(1.0);
+        let rate = info.as_ref().and_then(|i| i.PlaybackRate().ok()).and_then(|r| r.Value().ok()).map(|r| r as f32).filter(|r| *r > 0.0).unwrap_or(1.0);
         let (position_ms, duration_ms) = session
             .GetTimelineProperties()
             .ok()
@@ -380,11 +363,7 @@ mod worker {
                 (super::extrapolate_ms(pos, end, playing, rate, since), end)
             })
             .unwrap_or((0, 0));
-        let app = session
-            .SourceAppUserModelId()
-            .ok()
-            .map(|h| super::friendly_app(&hstr(&h)).to_string())
-            .unwrap_or_else(|| "Music".to_string());
+        let app = session.SourceAppUserModelId().ok().map(|h| super::friendly_app(&hstr(&h)).to_string()).unwrap_or_else(|| "Music".to_string());
         Some(SmtcSnapshot { title, artist, album, app, position_ms, duration_ms, playing, rate })
     }
 }
@@ -418,16 +397,8 @@ mod tests {
 
     #[test]
     fn snapshot_converts_and_clamps() {
-        let s = SmtcSnapshot {
-            title: "T".into(),
-            artist: "A".into(),
-            album: "B".into(),
-            app: "Spotify".into(),
-            position_ms: 90_000,
-            duration_ms: 60_000,
-            playing: true,
-            rate: 1.0,
-        };
+        let s =
+            SmtcSnapshot { title: "T".into(), artist: "A".into(), album: "B".into(), app: "Spotify".into(), position_ms: 90_000, duration_ms: 60_000, playing: true, rate: 1.0 };
         let t = snapshot_to_track(&s);
         assert_eq!(t.position_ms, 60_000);
         assert_eq!(t.playback, Playback::Playing);

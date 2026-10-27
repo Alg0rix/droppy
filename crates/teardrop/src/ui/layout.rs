@@ -188,7 +188,11 @@ pub fn step_page(cur: Page, delta: i32, set: &Settings) -> Page {
 /// Pages that actually appear in the nav dock and the page cycle.
 pub fn visible_pages(set: &Settings) -> Vec<Page> {
     let v: Vec<Page> = Page::all().iter().copied().filter(|p| !set.hidden_pages.iter().any(|h| h == p.title())).collect();
-    if v.is_empty() { vec![Page::Music] } else { v }
+    if v.is_empty() {
+        vec![Page::Music]
+    } else {
+        v
+    }
 }
 
 pub fn tab_icon(p: Page) -> Icon {
@@ -640,7 +644,6 @@ fn glance(c: &mut Ctx, r: Rect, page: Page) {
     }
 }
 
-
 /// Quick peek for the Quick page: radios and levels in one line.
 fn glance_quick(c: &mut Ctx, r: Rect, cy: f32) {
     let acc = accent(Page::Quick);
@@ -675,11 +678,7 @@ fn glance_chat(c: &mut Ctx, r: Rect, cy: f32) {
         );
     }
     let n = chat.peers.iter().filter(|p| p.fresh).count();
-    let badge = if chat.unread_total > 0 {
-        format!("{} unread", chat.unread_total)
-    } else {
-        format!("{n} peer{}", if n == 1 { "" } else { "s" })
-    };
+    let badge = if chat.unread_total > 0 { format!("{} unread", chat.unread_total) } else { format!("{n} peer{}", if n == 1 { "" } else { "s" }) };
     c.text(badge, Rect::new(r.right() - 130.0, cy - 10.0, 118.0, 20.0), 11.5, Weight::Semibold, if chat.unread_total > 0 { acc } else { pal().text_3 }, Align::Right);
     if c.set.idle_look == IdleLook::Eyes {
         face(c, r, Spot::Music, None);
@@ -751,7 +750,13 @@ fn glance_focus(c: &mut Ctx, r: Rect, cy: f32) {
     };
     c.text(sub, Rect::new(r.x + 56.0, cy - 9.0, r.w - 250.0, 17.0), 14.0, Weight::Semibold, pal().text, Align::Left);
     c.text(mmss(vm.focus_remaining_ms()), Rect::new(r.right() - 200.0, cy - 16.0, 92.0, 30.0), 24.0, Weight::Semibold, pal().text, Align::Right);
-    let label = if vm.focus_running() { "Pause" } else if vm.pomo.remaining_ms_when_paused.is_some() { "Resume" } else { "Start" };
+    let label = if vm.focus_running() {
+        "Pause"
+    } else if vm.pomo.remaining_ms_when_paused.is_some() {
+        "Resume"
+    } else {
+        "Start"
+    };
     let pill = Rect::new(r.right() - 98.0, cy - 14.0, 80.0, 28.0);
     c.s.rect(pill, 14.0, acc);
     c.text(label, pill, 12.0, Weight::Semibold, Color::rgb(28, 18, 6), Align::Center);
@@ -871,7 +876,14 @@ fn glance_today(c: &mut Ctx, r: Rect, cy: f32) {
     if let Some(ev) = next.first() {
         c.text(ev.title.clone(), Rect::new(r.x + 46.0, cy - 14.0, r.w - 220.0, 18.0), 13.5, Weight::Semibold, pal().text, Align::Left);
         let tail = next.get(1).map(|e| format!("then {}", e.title)).unwrap_or_default();
-        c.text(format!("{}   {}", crate::calendar::countdown(ev, vm.now.timestamp()), tail), Rect::new(r.x + 46.0, cy + 3.0, r.w - 220.0, 14.0), 10.5, Weight::Regular, pal().text_3, Align::Left);
+        c.text(
+            format!("{}   {}", crate::calendar::countdown(ev, vm.now.timestamp()), tail),
+            Rect::new(r.x + 46.0, cy + 3.0, r.w - 220.0, 14.0),
+            10.5,
+            Weight::Regular,
+            pal().text_3,
+            Align::Left,
+        );
         let pill = Rect::new(r.right() - 80.0, cy - 13.0, 64.0, 26.0);
         c.s.rect(pill, 13.0, acc);
         c.text("Join", pill, 11.5, Weight::Semibold, Color::rgb(8, 16, 32), Align::Center);
@@ -891,11 +903,7 @@ fn glance_system(c: &mut Ctx, r: Rect, cy: f32) {
         return;
     }
     let gpu = if s.gpu.available { Some(s.gpu.util) } else { None };
-    let items = [
-        ("CPU", Some(s.cpu.total), Color::rgb(96, 165, 250)),
-        ("GPU", gpu, Color::rgb(74, 222, 128)),
-        ("MEM", Some(s.mem.pct()), Color::rgb(167, 139, 250)),
-    ];
+    let items = [("CPU", Some(s.cpu.total), Color::rgb(96, 165, 250)), ("GPU", gpu, Color::rgb(74, 222, 128)), ("MEM", Some(s.mem.pct()), Color::rgb(167, 139, 250))];
     let x0 = r.x + 56.0;
     let w = (r.right() - 18.0 - x0) / items.len() as f32;
     for (i, (label, v, col)) in items.iter().enumerate() {
@@ -947,7 +955,13 @@ fn glance_usage(c: &mut Ctx, r: Rect, cy: f32) {
         if let Some(w) = w {
             let used = w.used_now(now);
             if used > 0.0 {
-                let col = if used > 85.0 { Color::rgb(239, 68, 68) } else if used > 65.0 { pal().amber } else { acc };
+                let col = if used > 85.0 {
+                    Color::rgb(239, 68, 68)
+                } else if used > 65.0 {
+                    pal().amber
+                } else {
+                    acc
+                };
                 c.s.rect(Rect::new(bar.x, bar.y, (bar.w * used / 100.0).max(5.0), 5.0), 2.5, col);
             }
             c.text(format!("{used:.0}%"), Rect::new(bar.right() + 8.0, ry - 1.0, 44.0, 14.0), 10.5, Weight::Semibold, pal().text, Align::Left);
@@ -982,15 +996,21 @@ fn glance_windows(c: &mut Ctx, r: Rect, cy: f32) {
     let mut seen: Vec<String> = Vec::new();
     let mut x = r.x + 46.0;
     for w in c.vm.windows.iter().take(12) {
-        if seen.contains(&w.exe) { continue; }
+        if seen.contains(&w.exe) {
+            continue;
+        }
         seen.push(w.exe.clone());
-        if seen.len() > 4 { break; }
+        if seen.len() > 4 {
+            break;
+        }
         let tw = est_w(&w.app, 11.0) + 18.0;
         let chip = Rect::new(x, cy + 6.0, tw, 22.0);
         c.s.rect(chip, 11.0, pal().surface);
         c.text(w.app.clone(), Rect::new(chip.x + 9.0, chip.y, chip.w - 14.0, chip.h), 11.0, Weight::Medium, pal().text_2, Align::Left);
         x += tw + 6.0;
-        if x > r.right() - 30.0 { break; }
+        if x > r.right() - 30.0 {
+            break;
+        }
     }
     c.text(format!("{n}"), Rect::new(r.right() - 60.0, cy - 10.0, 46.0, 20.0), 14.0, Weight::Semibold, acc, Align::Right);
 }
@@ -1084,7 +1104,13 @@ fn hud(c: &mut Ctx, r: Rect, h: &teardrop_core::Hud, cy: f32) {
             c.text(h.title.clone(), tr, 14.0, Weight::Semibold, pal().text, Align::Left);
             c.text(h.detail.clone(), Rect::new(tr.x, cy + 2.0, tr.w, 16.0), 11.5, Weight::Regular, pal().text_3, Align::Left);
             if let Some(p) = h.progress {
-                let col = if p <= 0.15 { pal().red } else if p <= 0.30 { pal().amber } else { pal().green };
+                let col = if p <= 0.15 {
+                    pal().red
+                } else if p <= 0.30 {
+                    pal().amber
+                } else {
+                    pal().green
+                };
                 let body = Rect::new(r.right() - tail - 80.0, cy - 7.0, 28.0, 14.0);
                 c.s.stroke(body, 4.0, 1.4, pal().text_2);
                 c.s.rect(Rect::new(body.right() + 1.5, cy - 2.5, 2.4, 5.0), 1.0, pal().text_2);

@@ -298,12 +298,7 @@ impl History {
     /// use count, drops entries past [`History::MAX`].
     pub fn record(&mut self, id: &str, now: i64) {
         let id = id.to_lowercase();
-        let uses = self
-            .entries
-            .iter()
-            .position(|e| e.id == id)
-            .map(|i| self.entries.remove(i).uses)
-            .unwrap_or(0);
+        let uses = self.entries.iter().position(|e| e.id == id).map(|i| self.entries.remove(i).uses).unwrap_or(0);
         self.entries.insert(0, HistoryEntry { id, uses: uses + 1, last_used: now });
         self.entries.truncate(Self::MAX);
     }
@@ -392,12 +387,7 @@ mod tests {
 
     #[test]
     fn tier_of_round_trips() {
-        for (q, title) in [
-            ("code", "Code"),
-            ("code", "Code Insiders"),
-            ("code", "Visual Studio Code"),
-            ("vsud", "Visual Studio"),
-        ] {
+        for (q, title) in [("code", "Code"), ("code", "Code Insiders"), ("code", "Visual Studio Code"), ("vsud", "Visual Studio")] {
             let score = rank(q, title, "", 0.0);
             assert_eq!(tier_of(score), tier(q, title, true), "{q} / {title}");
         }

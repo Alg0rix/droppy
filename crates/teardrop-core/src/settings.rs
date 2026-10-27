@@ -129,14 +129,7 @@ pub enum AiProvider {
 }
 
 impl AiProvider {
-    pub const ALL: [AiProvider; 6] = [
-        AiProvider::ChatGpt,
-        AiProvider::OpenCodeGo,
-        AiProvider::OpenAiCompat,
-        AiProvider::Gemini,
-        AiProvider::Claude,
-        AiProvider::Ollama,
-    ];
+    pub const ALL: [AiProvider; 6] = [AiProvider::ChatGpt, AiProvider::OpenCodeGo, AiProvider::OpenAiCompat, AiProvider::Gemini, AiProvider::Claude, AiProvider::Ollama];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -345,11 +338,7 @@ impl Settings {
     }
 
     pub fn set_active_ai_model(&mut self, model: String) {
-        let m = if model.trim().is_empty() {
-            self.ai_provider.default_model().to_string()
-        } else {
-            model.trim().to_string()
-        };
+        let m = if model.trim().is_empty() { self.ai_provider.default_model().to_string() } else { model.trim().to_string() };
         match self.ai_provider {
             AiProvider::ChatGpt => self.ai_chatgpt_model = m,
             AiProvider::OpenCodeGo => self.ai_opencode_model = m,
@@ -384,12 +373,8 @@ impl Settings {
     pub fn set_active_ai_url(&mut self, url: String) {
         let u = url.trim().to_string();
         match self.ai_provider {
-            AiProvider::OpenAiCompat => {
-                self.ai_openai_url = if u.is_empty() { default_openai_url() } else { u }
-            }
-            AiProvider::Ollama => {
-                self.ai_ollama_url = if u.is_empty() { default_ollama_url() } else { u }
-            }
+            AiProvider::OpenAiCompat => self.ai_openai_url = if u.is_empty() { default_openai_url() } else { u },
+            AiProvider::Ollama => self.ai_ollama_url = if u.is_empty() { default_ollama_url() } else { u },
             _ => {}
         }
     }

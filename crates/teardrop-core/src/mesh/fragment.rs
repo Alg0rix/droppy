@@ -73,11 +73,7 @@ impl Reassembler {
         if self.map.len() >= MAX_ASSEMBLIES && !self.map.contains_key(&(sender, frag_id)) {
             return None;
         }
-        let a = self.map.entry((sender, frag_id)).or_insert_with(|| Assembly {
-            parts: vec![None; total as usize],
-            got: 0,
-            at: now_ms,
-        });
+        let a = self.map.entry((sender, frag_id)).or_insert_with(|| Assembly { parts: vec![None; total as usize], got: 0, at: now_ms });
         if a.parts.len() != total as usize {
             return None; // conflicting totals for one frag_id
         }

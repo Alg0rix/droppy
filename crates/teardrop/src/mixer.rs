@@ -5,9 +5,7 @@
 //! them under the same app headers as its windows.
 
 use windows::core::Interface;
-use windows::Win32::Media::Audio::{
-    eConsole, eRender, IAudioSessionControl2, IAudioSessionManager2, IMMDeviceEnumerator, ISimpleAudioVolume, MMDeviceEnumerator,
-};
+use windows::Win32::Media::Audio::{eConsole, eRender, IAudioSessionControl2, IAudioSessionManager2, IMMDeviceEnumerator, ISimpleAudioVolume, MMDeviceEnumerator};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 
 /// One app's audio session on the default output device.
@@ -40,17 +38,16 @@ pub fn sessions() -> Vec<AudioSession> {
                 continue;
             }
             let Ok(vol) = ctl.cast::<ISimpleAudioVolume>() else { continue };
-            let exe = regs.iter().find(|w| {
-                let mut p = 0u32;
-                let _ = windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(windows::Win32::Foundation::HWND(w.hwnd as *mut _), Some(&mut p));
-                p == pid
-            }).map(|w| w.exe.clone()).unwrap_or_default();
-            out.push(AudioSession {
-                pid,
-                exe,
-                volume: vol.GetMasterVolume().unwrap_or(0.0),
-                muted: vol.GetMute().unwrap_or(false.into()).as_bool(),
-            });
+            let exe = regs
+                .iter()
+                .find(|w| {
+                    let mut p = 0u32;
+                    let _ = windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(windows::Win32::Foundation::HWND(w.hwnd as *mut _), Some(&mut p));
+                    p == pid
+                })
+                .map(|w| w.exe.clone())
+                .unwrap_or_default();
+            out.push(AudioSession { pid, exe, volume: vol.GetMasterVolume().unwrap_or(0.0), muted: vol.GetMute().unwrap_or(false.into()).as_bool() });
         }
         out
     }

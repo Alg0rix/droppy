@@ -37,7 +37,7 @@ pub use quick::{slider_permille, BtDev, QuickState, WifiNet};
 pub use settings::{AiProvider, EyeStyle, IdleLook, IslandStyle, IslandTheme, Settings, PILL_GAP_MAX, PILL_GAP_STEP};
 pub use shelf::{Shelf, ShelfItem};
 pub use spring::Spring;
-pub use system::SystemSnapshot;
 pub use sysmon::{SysTab, SysView};
+pub use system::SystemSnapshot;
 pub use tasks::{Task, TaskList};
 pub use water::{add_label, fmt_glasses, glasses_label, WaterLog, GLASS_ML};

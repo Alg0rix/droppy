@@ -13,8 +13,12 @@ impl ClipboardRing {
     /// Returns false when ignored (empty, duplicate-of-head, or over size cap).
     pub fn push(&mut self, text: &str) -> bool {
         let t = text.trim();
-        if t.is_empty() || t.len() > 32_768 { return false; }
-        if self.items.first().map(|s| s == t).unwrap_or(false) { return false; }
+        if t.is_empty() || t.len() > 32_768 {
+            return false;
+        }
+        if self.items.first().map(|s| s == t).unwrap_or(false) {
+            return false;
+        }
         self.items.retain(|s| s != t);
         self.items.insert(0, t.to_string());
         self.items.truncate(self.max);

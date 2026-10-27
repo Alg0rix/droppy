@@ -46,7 +46,9 @@ mod tests {
         let mut moving = true;
         for _ in 0..600 {
             moving = s.step(1.0, 1.0 / 120.0);
-            if !moving { break; }
+            if !moving {
+                break;
+            }
         }
         assert!(!moving);
         assert!((s.value - 1.0).abs() < 0.01);

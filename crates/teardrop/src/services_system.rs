@@ -7,12 +7,12 @@
 #[cfg(windows)]
 pub mod sys {
     use teardrop_core::SystemSnapshot;
+    use windows::core::PCWSTR;
     use windows::Win32::Foundation::FILETIME;
     use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
     use windows::Win32::System::Power::GetSystemPowerStatus;
     use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
     use windows::Win32::System::Threading::GetSystemTimes;
-    use windows::core::PCWSTR;
 
     fn filetime_to_u64(ft: &FILETIME) -> u64 {
         ((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64
@@ -81,14 +81,7 @@ pub mod sys {
             let mut free_avail: u64 = 0;
             let mut total: u64 = 0;
             let mut total_free: u64 = 0;
-            if GetDiskFreeSpaceExW(
-                PCWSTR::from_raw(wide.as_ptr()),
-                Some(&mut free_avail),
-                Some(&mut total),
-                Some(&mut total_free),
-            )
-            .is_ok()
-            {
+            if GetDiskFreeSpaceExW(PCWSTR::from_raw(wide.as_ptr()), Some(&mut free_avail), Some(&mut total), Some(&mut total_free)).is_ok() {
                 if total > 0 {
                     out.disk_total_gb = total as f32 / 1_073_741_824.0;
                     out.disk_used_gb = (total.saturating_sub(total_free)) as f32 / 1_073_741_824.0;

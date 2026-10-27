@@ -145,19 +145,7 @@ pub fn draw(s: &mut Scene, icon: Icon, cx: f32, cy: f32, size: f32, c: Color) {
         }
         Icon::Sparkle => {
             // 4-point star + small companion star (AI Chat icon).
-            s.poly(
-                vec![
-                    p(7.5, 1.4),
-                    p(9.1, 5.9),
-                    p(13.6, 7.5),
-                    p(9.1, 9.1),
-                    p(7.5, 13.6),
-                    p(5.9, 9.1),
-                    p(1.4, 7.5),
-                    p(5.9, 5.9),
-                ],
-                c,
-            );
+            s.poly(vec![p(7.5, 1.4), p(9.1, 5.9), p(13.6, 7.5), p(9.1, 9.1), p(7.5, 13.6), p(5.9, 9.1), p(1.4, 7.5), p(5.9, 5.9)], c);
             s.circle(p(13.0, 3.0).0, p(13.0, 3.0).1, 1.2 * u, c);
         }
         Icon::Send => {
@@ -187,11 +175,7 @@ pub fn draw(s: &mut Scene, icon: Icon, cx: f32, cy: f32, size: f32, c: Color) {
             s.line(p(12.0, 4.0).0, p(12.0, 4.0).1, p(4.0, 12.0).0, p(4.0, 12.0).1, sw, c);
         }
         Icon::Folder => {
-            s.polyline(
-                vec![p(2.0, 12.6), p(2.0, 3.8), p(6.2, 3.8), p(7.6, 5.4), p(14.0, 5.4), p(14.0, 12.6), p(2.0, 12.6)],
-                sw,
-                c,
-            );
+            s.polyline(vec![p(2.0, 12.6), p(2.0, 3.8), p(6.2, 3.8), p(7.6, 5.4), p(14.0, 5.4), p(14.0, 12.6), p(2.0, 12.6)], sw, c);
         }
         Icon::Speaker => {
             s.poly(vec![p(2.0, 6.0), p(5.0, 6.0), p(8.6, 2.8), p(8.6, 13.2), p(5.0, 10.0), p(2.0, 10.0)], c);
@@ -373,8 +357,8 @@ mod tests {
         use Icon::*;
         let mut s = Scene::new();
         for i in [
-            Play, Pause, Next, Prev, Note, Timer, Drop, Tray, Check, List, Notes, Clipboard, Calendar, Gauge, Chart, Mic, Sparkle, Send,
-            Phone, Gear, Plus, Minus, Close, Folder, Speaker, Muted, Bolt, Headphones, Undo, Reset, File, Pin, Search, Chip, Chat,
+            Play, Pause, Next, Prev, Note, Timer, Drop, Tray, Check, List, Notes, Clipboard, Calendar, Gauge, Chart, Mic, Sparkle, Send, Phone, Gear, Plus, Minus, Close, Folder,
+            Speaker, Muted, Bolt, Headphones, Undo, Reset, File, Pin, Search, Chip, Chat,
         ] {
             let before = s.cmds.len();
             draw(&mut s, i, 10.0, 10.0, 16.0, Color::rgb(255, 255, 255));

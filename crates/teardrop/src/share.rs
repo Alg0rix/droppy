@@ -176,7 +176,10 @@ mod tests {
         paths.push(dir.join("missing.bin").to_string_lossy().into_owned()); // gone: skipped
         assert_eq!(prepare(&paths), 2);
 
-        let items = match PENDING.lock().unwrap().take().unwrap() { Payload::Files(i) => i, _ => panic!() };
+        let items = match PENDING.lock().unwrap().take().unwrap() {
+            Payload::Files(i) => i,
+            _ => panic!(),
+        };
         let list: IIterable<IStorageItem> = ItemList(items.list().to_vec()).into();
         // Our IIterable enumerates correctly...
         let names: Vec<String> = list.clone().into_iter().map(|i| i.Name().unwrap().to_string()).collect();

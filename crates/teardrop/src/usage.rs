@@ -331,11 +331,7 @@ fn spend_since(db: &crate::sqlite::Conn, since_ms: i64) -> Result<Vec<Spend>, cr
     Ok(rows
         .into_iter()
         .filter(|r| r.len() == 4)
-        .map(|r| Spend {
-            label: format!("{}/{}", r[0], r[1]),
-            tokens: r[2].parse::<f64>().unwrap_or(0.0).max(0.0) as u64,
-            cost: r[3].parse::<f64>().unwrap_or(0.0).max(0.0),
-        })
+        .map(|r| Spend { label: format!("{}/{}", r[0], r[1]), tokens: r[2].parse::<f64>().unwrap_or(0.0).max(0.0) as u64, cost: r[3].parse::<f64>().unwrap_or(0.0).max(0.0) })
         .collect())
 }
 
@@ -445,7 +441,9 @@ mod live {
     fn live_usage() {
         let now = chrono::Utc::now().timestamp();
         let show = |n: &str, l: &super::Limits| {
-            let w = |w: &Option<super::Window>| w.as_ref().map(|w| format!("{:.0}% (resets {})", w.used_now(now), super::reset_text(w.resets_at.unwrap_or(0), now))).unwrap_or("-".into());
+            let w = |w: &Option<super::Window>| {
+                w.as_ref().map(|w| format!("{:.0}% (resets {})", w.used_now(now), super::reset_text(w.resets_at.unwrap_or(0), now))).unwrap_or("-".into())
+            };
             println!("{n}: plan={} 5h={} week={} note={:?}", l.plan, w(&l.primary), w(&l.secondary), l.note);
         };
         show("claude", &super::read_claude());
@@ -458,6 +456,14 @@ mod live {
             assert!(!all.is_empty());
         }
         let o = super::read_opencode();
-        println!("opencode: today={} tok ${:.2}, week={} tok ${:.2}, top={:?}, note={:?}", o.today_tokens, o.today_cost, o.week_tokens, o.week_cost, o.top.iter().map(|s| (&s.label, s.tokens)).collect::<Vec<_>>(), o.note);
+        println!(
+            "opencode: today={} tok ${:.2}, week={} tok ${:.2}, top={:?}, note={:?}",
+            o.today_tokens,
+            o.today_cost,
+            o.week_tokens,
+            o.week_cost,
+            o.top.iter().map(|s| (&s.label, s.tokens)).collect::<Vec<_>>(),
+            o.note
+        );
     }
 }

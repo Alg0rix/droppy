@@ -71,9 +71,7 @@ fn exe_of(pid: u32) -> Option<(String, String)> {
         let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
         let mut buf = [0u16; MAX_PATH as usize];
         let mut n = buf.len() as u32;
-        let name = QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, windows::core::PWSTR(buf.as_mut_ptr()), &mut n)
-            .ok()
-            .map(|_| String::from_utf16_lossy(&buf[..n as usize]));
+        let name = QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, windows::core::PWSTR(buf.as_mut_ptr()), &mut n).ok().map(|_| String::from_utf16_lossy(&buf[..n as usize]));
         let _ = windows::Win32::Foundation::CloseHandle(h);
         name.and_then(|p| p.rsplit(['\\', '/']).next().map(|s| (s.to_lowercase(), p.clone())))
     }

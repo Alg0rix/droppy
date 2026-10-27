@@ -12,9 +12,7 @@ pub fn url_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.as_bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(*b as char)
-            }
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(*b as char),
             b' ' => out.push_str("%20"),
             _ => out.push_str(&format!("%{b:02X}")),
         }
@@ -40,7 +38,25 @@ pub fn usable(lrc: &str) -> bool {
 
 /// Words that mark a bracketed chunk as video noise, not part of the song name.
 const NOISE: [&str; 19] = [
-    "official", "video", "audio", "lyric", "lyrics", "visualizer", "visualiser", "mv", "hd", "4k", "remaster", "remastered", "hq", "explicit", "full", "version", "feat", "ft", "featuring",
+    "official",
+    "video",
+    "audio",
+    "lyric",
+    "lyrics",
+    "visualizer",
+    "visualiser",
+    "mv",
+    "hd",
+    "4k",
+    "remaster",
+    "remastered",
+    "hq",
+    "explicit",
+    "full",
+    "version",
+    "feat",
+    "ft",
+    "featuring",
 ];
 
 fn is_noise(chunk: &str) -> bool {
@@ -146,15 +162,7 @@ pub fn pick_synced(json_body: &str, duration_ms: u64) -> Option<String> {
 
 pub fn cache_path(cache_dir: &std::path::Path, artist: &str, title: &str) -> std::path::PathBuf {
     let bad = |c: char| matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*');
-    let clean = |s: &str| {
-        s.chars()
-            .map(|c| if bad(c) || c.is_control() { '_' } else { c })
-            .collect::<String>()
-            .trim()
-            .chars()
-            .take(80)
-            .collect::<String>()
-    };
+    let clean = |s: &str| s.chars().map(|c| if bad(c) || c.is_control() { '_' } else { c }).collect::<String>().trim().chars().take(80).collect::<String>();
     let a = clean(artist);
     let t = clean(title);
     let name = if a.is_empty() { t } else { format!("{a} — {t}") };
@@ -231,14 +239,7 @@ pub mod net {
             let mut buf = [0u8; 4096];
             loop {
                 let mut read: u32 = 0;
-                if windows::Win32::Networking::WinInet::InternetReadFile(
-                    hurl as *const _,
-                    buf.as_mut_ptr() as *mut _,
-                    buf.len() as u32,
-                    &mut read,
-                )
-                .is_err()
-                {
+                if windows::Win32::Networking::WinInet::InternetReadFile(hurl as *const _, buf.as_mut_ptr() as *mut _, buf.len() as u32, &mut read).is_err() {
                     break;
                 }
                 if read == 0 {
@@ -260,11 +261,7 @@ pub mod net {
     pub fn fetch_lrclib(artist: &str, title: &str, album: &str, duration_ms: u64) -> Option<String> {
         let secs = duration_ms / 1000;
         for (a, t) in super::candidates(artist, title) {
-            let mut url = format!(
-                "https://lrclib.net/api/get?artist_name={}&track_name={}",
-                url_encode(&a),
-                url_encode(&t)
-            );
+            let mut url = format!("https://lrclib.net/api/get?artist_name={}&track_name={}", url_encode(&a), url_encode(&t));
             if !album.trim().is_empty() {
                 url.push_str(&format!("&album_name={}", url_encode(album)));
             }
@@ -287,13 +284,7 @@ pub mod net {
 
 /// Resolve lyrics: cache hit wins, otherwise one network attempt (Windows),
 /// then persist whatever LRCLIB returned. Never panics, never blocks long.
-pub fn get_lyrics(
-    cache_dir: &std::path::Path,
-    artist: &str,
-    title: &str,
-    album: &str,
-    duration_ms: u64,
-) -> Vec<LyricLine> {
+pub fn get_lyrics(cache_dir: &std::path::Path, artist: &str, title: &str, album: &str, duration_ms: u64) -> Vec<LyricLine> {
     if artist.trim().is_empty() && title.trim().is_empty() {
         return Vec::new();
     }

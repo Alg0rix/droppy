@@ -14,9 +14,17 @@ pub struct SystemSnapshot {
 
 impl SystemSnapshot {
     pub fn mem_pct(&self) -> f32 {
-        if self.mem_total_gb <= 0.0 { 0.0 } else { (self.mem_used_gb / self.mem_total_gb * 100.0).clamp(0.0, 100.0) }
+        if self.mem_total_gb <= 0.0 {
+            0.0
+        } else {
+            (self.mem_used_gb / self.mem_total_gb * 100.0).clamp(0.0, 100.0)
+        }
     }
     pub fn disk_pct(&self) -> f32 {
-        if self.disk_total_gb <= 0.0 { 0.0 } else { (self.disk_used_gb / self.disk_total_gb * 100.0).clamp(0.0, 100.0) }
+        if self.disk_total_gb <= 0.0 {
+            0.0
+        } else {
+            (self.disk_used_gb / self.disk_total_gb * 100.0).clamp(0.0, 100.0)
+        }
     }
 }

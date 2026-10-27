@@ -221,14 +221,8 @@ const ROSE: Palette = Palette {
     light: false,
 };
 
-const STEALTH: Palette = Palette {
-    body_top: Color::rgb(7, 7, 9),
-    body_bottom: Color::rgb(0, 0, 0),
-    rim: Color::rgba(255, 255, 255, 0.13),
-    sheen: Color::rgba(255, 255, 255, 0.0),
-    shadow: 0.9,
-    ..ONYX
-};
+const STEALTH: Palette =
+    Palette { body_top: Color::rgb(7, 7, 9), body_bottom: Color::rgb(0, 0, 0), rim: Color::rgba(255, 255, 255, 0.13), sheen: Color::rgba(255, 255, 255, 0.0), shadow: 0.9, ..ONYX };
 
 const PALETTES: [Palette; 9] = [ONYX, LIQUID_GLASS, PORCELAIN, OCEAN, FOREST, EMBER, AMETHYST, ROSE, STEALTH];
 

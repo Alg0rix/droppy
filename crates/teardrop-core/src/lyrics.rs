@@ -25,12 +25,16 @@ pub fn parse_lrc(input: &str) -> Vec<LyricLine> {
                 // metadata lines have no lyric text; skip if line started with it
                 if raw.trim_start().starts_with('[') && tag.contains(':') && !tag.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
                     // could still be lyric if malformed; treat rest as text only when tags found
-                    if tags.is_empty() { break; }
+                    if tags.is_empty() {
+                        break;
+                    }
                 }
             }
         }
         let text = rest.trim().to_string();
-        if text.is_empty() { continue; }
+        if text.is_empty() {
+            continue;
+        }
         for ms in tags {
             out.push(LyricLine { at_ms: ms, text: text.clone() });
         }
@@ -44,7 +48,9 @@ fn parse_tag(tag: &str) -> Option<u64> {
     let m: u64 = parts.next()?.trim().parse().ok()?;
     let s: u64 = parts.next()?.trim().parse().ok()?;
     let frac = parts.next().unwrap_or("0");
-    if m > 999 || s > 99 { return None; }
+    if m > 999 || s > 99 {
+        return None;
+    }
     let frac_ms = match frac.len() {
         0 => 0,
         1 => frac.parse::<u64>().ok()? * 100,
@@ -56,12 +62,18 @@ fn parse_tag(tag: &str) -> Option<u64> {
 
 /// Index of the line playing at `pos_ms`.
 pub fn line_at(lines: &[LyricLine], pos_ms: u64) -> Option<usize> {
-    if lines.is_empty() { return None; }
+    if lines.is_empty() {
+        return None;
+    }
     let mut lo = 0usize;
     let mut hi = lines.len();
     while lo < hi {
         let mid = (lo + hi) / 2;
-        if lines[mid].at_ms <= pos_ms { lo = mid + 1; } else { hi = mid; }
+        if lines[mid].at_ms <= pos_ms {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
     }
     lo.checked_sub(1)
 }
@@ -70,7 +82,9 @@ pub fn line_at(lines: &[LyricLine], pos_ms: u64) -> Option<usize> {
 pub fn line_progress(lines: &[LyricLine], idx: usize, pos_ms: u64) -> f32 {
     let Some(cur) = lines.get(idx) else { return 0.0 };
     let next_at = lines.get(idx + 1).map(|l| l.at_ms).unwrap_or(cur.at_ms + 4000);
-    if pos_ms < cur.at_ms || next_at <= cur.at_ms { return 0.0; }
+    if pos_ms < cur.at_ms || next_at <= cur.at_ms {
+        return 0.0;
+    }
     // A line is sung in roughly 85 ms a character, not across the whole gap to
     // the next one (instrumental breaks would make the fill crawl).
     let sung = (cur.text.chars().count() as u64 * 85).max(1200);

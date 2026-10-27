@@ -10,8 +10,8 @@
 //!   no bundled time-zone database. An unknown zone falls back to the PC's own.
 //! * The last good result is cached so the agenda shows at startup and offline.
 
-use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use crate::tz::{self, Zone};
+use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -348,12 +348,7 @@ pub fn clean_description(raw: &str) -> String {
         }
     }
     out.push_str(rest);
-    let cleaned = out
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
+    let cleaned = out.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join("\n");
     cleaned.chars().take(600).collect()
 }
 
@@ -380,7 +375,13 @@ pub fn expand(raw: &[RawEvent], from: i64, to: i64) -> Vec<Event> {
         let len = match (e.end.and_then(|d| to_secs(d, zone)), e.duration) {
             (Some(end), _) => (end - start).max(0),
             (None, Some(d)) => d.max(0),
-            (None, None) => if all_day { 86_400 } else { 0 },
+            (None, None) => {
+                if all_day {
+                    86_400
+                } else {
+                    0
+                }
+            }
         };
         let join = find_join(&[&e.conference, &e.url, &e.location, &e.description]);
         let make = |s: i64, e_: &RawEvent| Event {
@@ -661,11 +662,7 @@ pub fn time_range_label(ev: &Event) -> String {
 
 /// Full local date label for an event (`"Wed, 28 Oct 2026"`).
 pub fn full_date_label(ev: &Event) -> String {
-    Local
-        .timestamp_opt(ev.start, 0)
-        .single()
-        .map(|d| d.format("%a, %-d %b %Y").to_string())
-        .unwrap_or_default()
+    Local.timestamp_opt(ev.start, 0).single().map(|d| d.format("%a, %-d %b %Y").to_string()).unwrap_or_default()
 }
 
 /// Whether `e` occurs on the local calendar date `date` (including multi-day spans).
@@ -674,11 +671,7 @@ pub fn event_on_date(e: &Event, date: NaiveDate) -> bool {
         return false;
     };
     let end_ts = (e.end - 1).max(e.start);
-    let e_date = Local
-        .timestamp_opt(end_ts, 0)
-        .single()
-        .map(|d| d.date_naive())
-        .unwrap_or(s);
+    let e_date = Local.timestamp_opt(end_ts, 0).single().map(|d| d.date_naive()).unwrap_or(s);
     date >= s && date <= e_date
 }
 
@@ -719,12 +712,7 @@ fn may_overlap(e: &Event, lo: i64, hi: i64) -> bool {
 
 #[allow(dead_code)]
 fn busy_days_legacy_unused(events: &[Event], year: i32, month: u32) -> Vec<u32> {
-    let mut days: Vec<u32> = events
-        .iter()
-        .filter_map(|e| Local.timestamp_opt(e.start, 0).single())
-        .filter(|d| d.year() == year && d.month() == month)
-        .map(|d| d.day())
-        .collect();
+    let mut days: Vec<u32> = events.iter().filter_map(|e| Local.timestamp_opt(e.start, 0).single()).filter(|d| d.year() == year && d.month() == month).map(|d| d.day()).collect();
     days.sort_unstable();
     days.dedup();
     days
@@ -826,12 +814,46 @@ mod tests {
     fn garbage_feeds_never_panic() {
         // Deterministic pseudo-random mixes of valid and broken calendar lines.
         let lines = [
-            "BEGIN:VCALENDAR", "BEGIN:VEVENT", "END:VEVENT", "END:VCALENDAR", "BEGIN:VALARM", "END:VALARM", "UID:a", "UID:", "SUMMARY:x\\,y\\nz", "SUMMARY:\\",
-            "DTSTART:20261025T100000Z", "DTSTART;TZID=\"SE Asia Standard Time\":20261025T100000", "DTSTART;TZID=Nowhere/Land:20261025T100000", "DTSTART;VALUE=DATE:20261025",
-            "DTSTART:99999999T999999Z", "DTSTART:00010101", "DTSTART:", "DTEND:20250101T000000Z", "DTEND;VALUE=DATE:19000101", "DURATION:P99999999999999999999W", "DURATION:-PT5M",
-            "RRULE:FREQ=DAILY;INTERVAL=2", "RRULE:FREQ=MONTHLY;BYDAY=-1FR;BYSETPOS=-1", "RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29", "RRULE:FREQ=WEEKLY;COUNT=99999999999", "RRULE:\u{0}",
-            "EXDATE:20261026T100000Z,garbage,", "EXDATE;TZID=x:", "RECURRENCE-ID:20261025T100000Z", "RECURRENCE-ID;VALUE=DATE:20261025", "STATUS:CANCELLED", ":::", ";;;:", "=", "",
-            "DESCRIPTION:see https://meet.google.com/abc and https://", "LOCATION:https://zoom.us/j/1", "X-GOOGLE-CONFERENCE:https://\u{e9}", " folded", "\tfolded",
+            "BEGIN:VCALENDAR",
+            "BEGIN:VEVENT",
+            "END:VEVENT",
+            "END:VCALENDAR",
+            "BEGIN:VALARM",
+            "END:VALARM",
+            "UID:a",
+            "UID:",
+            "SUMMARY:x\\,y\\nz",
+            "SUMMARY:\\",
+            "DTSTART:20261025T100000Z",
+            "DTSTART;TZID=\"SE Asia Standard Time\":20261025T100000",
+            "DTSTART;TZID=Nowhere/Land:20261025T100000",
+            "DTSTART;VALUE=DATE:20261025",
+            "DTSTART:99999999T999999Z",
+            "DTSTART:00010101",
+            "DTSTART:",
+            "DTEND:20250101T000000Z",
+            "DTEND;VALUE=DATE:19000101",
+            "DURATION:P99999999999999999999W",
+            "DURATION:-PT5M",
+            "RRULE:FREQ=DAILY;INTERVAL=2",
+            "RRULE:FREQ=MONTHLY;BYDAY=-1FR;BYSETPOS=-1",
+            "RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29",
+            "RRULE:FREQ=WEEKLY;COUNT=99999999999",
+            "RRULE:\u{0}",
+            "EXDATE:20261026T100000Z,garbage,",
+            "EXDATE;TZID=x:",
+            "RECURRENCE-ID:20261025T100000Z",
+            "RECURRENCE-ID;VALUE=DATE:20261025",
+            "STATUS:CANCELLED",
+            ":::",
+            ";;;:",
+            "=",
+            "",
+            "DESCRIPTION:see https://meet.google.com/abc and https://",
+            "LOCATION:https://zoom.us/j/1",
+            "X-GOOGLE-CONFERENCE:https://\u{e9}",
+            " folded",
+            "\tfolded",
         ];
         let mut seed: u64 = 0x2545_F491_4F6C_DD1D;
         let mut next = || {
@@ -886,16 +908,7 @@ mod tests {
     }
 
     fn ev(uid: &str, s: i64, e: i64) -> Event {
-        Event {
-            uid: uid.into(),
-            start: s,
-            end: e,
-            title: uid.into(),
-            location: String::new(),
-            description: String::new(),
-            all_day: false,
-            join: None,
-        }
+        Event { uid: uid.into(), start: s, end: e, title: uid.into(), location: String::new(), description: String::new(), all_day: false, join: None }
     }
 
     #[test]
@@ -925,11 +938,8 @@ mod tests {
         for off in -2..=2 {
             let d = if off < 0 { base - chrono::Months::new((-off) as u32) } else { base + chrono::Months::new(off as u32) };
             let (y, m) = (d.year(), d.month());
-            let slow: Vec<u32> = (1..=31)
-                .filter_map(|day| NaiveDate::from_ymd_opt(y, m, day))
-                .filter(|date| evs.iter().any(|e| event_on_date(e, *date)))
-                .map(|date| date.day())
-                .collect();
+            let slow: Vec<u32> =
+                (1..=31).filter_map(|day| NaiveDate::from_ymd_opt(y, m, day)).filter(|date| evs.iter().any(|e| event_on_date(e, *date))).map(|date| date.day()).collect();
             assert_eq!(busy_days(&evs, y, m), slow, "{y}-{m}");
         }
     }

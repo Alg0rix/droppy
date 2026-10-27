@@ -84,8 +84,12 @@ impl WaterLog {
     /// `now` is the real instant (for the interval); `today_ml` is today's
     /// total as the caller buckets it (the user's local day, not UTC's).
     pub fn reminder_due(&self, now: DateTime<Utc>, today_ml: u32) -> bool {
-        if !self.reminders_enabled { return false; }
-        if today_ml >= self.goal_ml { return false; }
+        if !self.reminders_enabled {
+            return false;
+        }
+        if today_ml >= self.goal_ml {
+            return false;
+        }
         match self.last_reminder {
             None => true,
             Some(t) => (now - t).num_minutes() >= self.reminder_every_min as i64,

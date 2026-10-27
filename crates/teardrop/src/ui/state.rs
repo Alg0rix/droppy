@@ -639,7 +639,11 @@ impl UiState {
         } else if vm.voice.phase == crate::voice::VoicePhase::Recording {
             Some(Spot::Rec)
         } else if vm.focus_visible() {
-            if vm.music_active() { Some(Spot::FocusMusic) } else { Some(Spot::Focus) }
+            if vm.music_active() {
+                Some(Spot::FocusMusic)
+            } else {
+                Some(Spot::Focus)
+            }
         } else if vm.music_active() {
             Some(Spot::Music)
         } else {

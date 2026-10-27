@@ -131,10 +131,18 @@ fn demo_sys(vm: &mut ViewModel, _: &mut Settings, ui: &mut UiState, tab: teardro
     sys.cpu.cores = (0..20).map(|i| wave(24.0, 22.0, i as f32 * 0.9, 3)).collect();
     sys.cpu.classes = (0..20).map(|i| if i < 16 { CoreClass::Performance } else { CoreClass::Efficiency }).collect();
     sys.cpu.history = series(28.0, 20.0, 0.0, 100.0);
-    sys.procs = [("Microsoft Edge", 9.1), ("Spotify", 4.2), ("Desktop Window Manager", 2.3), ("Visual Studio Code", 1.8), ("Windows Explorer", 1.3), ("Discord", 0.9), ("Antimalware Service Executable", 0.4)]
-        .iter()
-        .map(|(n, v)| ProcLoad { name: n.to_string(), path: String::new(), value: *v })
-        .collect();
+    sys.procs = [
+        ("Microsoft Edge", 9.1),
+        ("Spotify", 4.2),
+        ("Desktop Window Manager", 2.3),
+        ("Visual Studio Code", 1.8),
+        ("Windows Explorer", 1.3),
+        ("Discord", 0.9),
+        ("Antimalware Service Executable", 0.4),
+    ]
+    .iter()
+    .map(|(n, v)| ProcLoad { name: n.to_string(), path: String::new(), value: *v })
+    .collect();
 
     sys.gpu.available = true;
     sys.gpu.name = "NVIDIA GeForce RTX 4060 Laptop GPU".into();
@@ -167,10 +175,7 @@ fn demo_sys(vm: &mut ViewModel, _: &mut Settings, ui: &mut UiState, tab: teardro
     sys.drives.busy = 14.0;
     sys.drives.read_hist = series(1.2e6, 1.0e6, 0.3, 9e6);
     sys.drives.write_hist = series(0.6e6, 0.5e6, 2.0, 9e6);
-    sys.drives.volumes = vec![
-        Volume { label: "C:".into(), used_gb: 312.0, total_gb: 476.0 },
-        Volume { label: "D:".into(), used_gb: 822.0, total_gb: 931.0 },
-    ];
+    sys.drives.volumes = vec![Volume { label: "C:".into(), used_gb: 312.0, total_gb: 476.0 }, Volume { label: "D:".into(), used_gb: 822.0, total_gb: 931.0 }];
 
     sys.net.adapter = "Intel Wi-Fi 6E AX211".into();
     sys.net.down_bps = 1.2e6;
@@ -215,7 +220,15 @@ fn demo_calendar(vm: &mut ViewModel, _: &mut Settings, _: &mut UiState, _: u64) 
                 Some(("Google Meet", "https://meet.google.com/abc-defg-hij")),
             ),
             ev("b", "1:1 with Rina", "Zoom", "Weekly sync and roadmap check-in.", now + 3 * 3600, 30, Some(("Zoom", "https://zoom.us/j/123"))),
-            ev("c", "Sprint planning", "Room 402", "Prioritize backlog items for next sprint.", now + 26 * 3600, 60, Some(("Teams", "https://teams.microsoft.com/l/meetup-join/x"))),
+            ev(
+                "c",
+                "Sprint planning",
+                "Room 402",
+                "Prioritize backlog items for next sprint.",
+                now + 26 * 3600,
+                60,
+                Some(("Teams", "https://teams.microsoft.com/l/meetup-join/x")),
+            ),
         ],
         state: FeedState::Ok,
         error: String::new(),
@@ -237,7 +250,9 @@ fn shots() -> Vec<Shot> {
         },
         Shot {
             setup: |vm, _, _, _| {
-                vm.lyric_lines = teardrop_core::parse_lrc("[00:00.00]Somewhere out on the water where the ripples keep the shape of every word you ever whispered softly to the rain\n[01:02.00]next line\n");
+                vm.lyric_lines = teardrop_core::parse_lrc(
+                    "[00:00.00]Somewhere out on the water where the ripples keep the shape of every word you ever whispered softly to the rain\n[01:02.00]next line\n",
+                );
                 vm.lyric_idx = Some(0);
                 vm.track.position_ms = 1_400;
             },
@@ -266,10 +281,7 @@ fn shots() -> Vec<Shot> {
             ..shot("05e-hud-bluetooth-eyes", 0.0, Page::Music)
         },
         Shot { setup: |vm, _, _, ms| vm.hud = Some(hud_water_due(ms)), ..shot("06-hud-water", 0.0, Page::Music) },
-        Shot {
-            setup: |vm, _, _, ms| vm.hud = Some(Hud::transient(HudKind::Charging, "Charging", "87%", ms, 5000)),
-            ..shot("07-hud-charging", 0.0, Page::Music)
-        },
+        Shot { setup: |vm, _, _, ms| vm.hud = Some(Hud::transient(HudKind::Charging, "Charging", "87%", ms, 5000)), ..shot("07-hud-charging", 0.0, Page::Music) },
         Shot {
             setup: |vm, _, _, _| {
                 let now = vm.now;
@@ -330,9 +342,7 @@ fn shots() -> Vec<Shot> {
             setup: |_, _, ui, _| {
                 // 115 chars (under the 120 cap), caret at end: the field must
                 // scroll right to keep the caret visible.
-                ui.input = Some(super::ui::textedit::TextField::new(
-                    "Review the launch checklist with design, copy, QA, and the release owner before Friday's freeze",
-                ));
+                ui.input = Some(super::ui::textedit::TextField::new("Review the launch checklist with design, copy, QA, and the release owner before Friday's freeze"));
             },
             ticks: 30,
             ..shot("24c-tasks-caret-end-long", 1.0, Page::Tasks)
@@ -374,9 +384,8 @@ fn shots() -> Vec<Shot> {
             setup: |vm, _, ui, _| {
                 crate::ai::set_focus_field(crate::ai::AiFocusField::Prompt);
                 vm.ai.focus_field = crate::ai::AiFocusField::Prompt;
-                let mut f = super::ui::textedit::TextField::new(
-                    "Draft a friendly reminder for tomorrow's design review, mention the calendar update and the two open action items",
-                );
+                let mut f =
+                    super::ui::textedit::TextField::new("Draft a friendly reminder for tomorrow's design review, mention the calendar update and the two open action items");
                 f.home(false, true);
                 f.move_h(1, false, false);
                 f.move_h(1, false, false);
@@ -452,10 +461,7 @@ fn shots() -> Vec<Shot> {
                         today_cost: 0.31,
                         week_tokens: 2_840_000,
                         week_cost: 2.4,
-                        top: vec![
-                            Spend { label: "xai/grok-4.5".into(), tokens: 1_900_000, cost: 1.6 },
-                            Spend { label: "kimi-for-coding/k2".into(), tokens: 700_000, cost: 0.5 },
-                        ],
+                        top: vec![Spend { label: "xai/grok-4.5".into(), tokens: 1_900_000, cost: 1.6 }, Spend { label: "kimi-for-coding/k2".into(), tokens: 700_000, cost: 0.5 }],
                         note: String::new(),
                     },
                     loaded: true,
@@ -501,26 +507,13 @@ fn shots() -> Vec<Shot> {
             setup: |vm, _, _, _| {
                 use crate::ai::{AiActionBadge, ChatMessage, Role, UndoOp};
                 vm.ai.messages = vec![
-                    ChatMessage {
-                        role: Role::User,
-                        text: "Add a task 'Deep work block' and log a glass of water.".into(),
-                        actions: Vec::new(),
-                        timestamp: 0,
-                    },
+                    ChatMessage { role: Role::User, text: "Add a task 'Deep work block' and log a glass of water.".into(), actions: Vec::new(), timestamp: 0 },
                     ChatMessage {
                         role: Role::Assistant,
                         text: "All set! Added your deep work block and logged a glass of water \u{2014} you're at 6 / 8 glasses today.".into(),
                         actions: vec![
-                            AiActionBadge {
-                                label: "Added task: Deep work block".into(),
-                                undo: UndoOp::RemoveAddedTask("1".into()),
-                                undone: false,
-                            },
-                            AiActionBadge {
-                                label: "Logged +1 glass of water".into(),
-                                undo: UndoOp::SubtractWater(250),
-                                undone: false,
-                            },
+                            AiActionBadge { label: "Added task: Deep work block".into(), undo: UndoOp::RemoveAddedTask("1".into()), undone: false },
+                            AiActionBadge { label: "Logged +1 glass of water".into(), undo: UndoOp::SubtractWater(250), undone: false },
                         ],
                         timestamp: 0,
                     },
@@ -562,9 +555,31 @@ fn shots() -> Vec<Shot> {
             },
             ..shot("26o-page-ai-setup-opencode", 1.0, Page::Ai)
         },
-        Shot { setup: |_, _, ui, _| { ui.drag_files = 2; ui.drop_amt = 1.0; ui.clock_s = 0.3; }, ..shot("23b-shelf-drag-over", 1.0, Page::Shelf) },
-        Shot { setup: |_, _, ui, _| { ui.drag_files = 2; ui.drop_amt = 1.0; ui.clock_s = 0.3; ui.drag_zone = 1; ui.zone_amt = 1.0; }, ..shot("23c-drag-over-phone", 1.0, Page::Shelf) },
-        Shot { setup: |_, _, ui, _| { ui.absorb_t = 0.7; ui.absorb_zone = 1; }, ..shot("23d-drop-phone-burst", 1.0, Page::Shelf) },
+        Shot {
+            setup: |_, _, ui, _| {
+                ui.drag_files = 2;
+                ui.drop_amt = 1.0;
+                ui.clock_s = 0.3;
+            },
+            ..shot("23b-shelf-drag-over", 1.0, Page::Shelf)
+        },
+        Shot {
+            setup: |_, _, ui, _| {
+                ui.drag_files = 2;
+                ui.drop_amt = 1.0;
+                ui.clock_s = 0.3;
+                ui.drag_zone = 1;
+                ui.zone_amt = 1.0;
+            },
+            ..shot("23c-drag-over-phone", 1.0, Page::Shelf)
+        },
+        Shot {
+            setup: |_, _, ui, _| {
+                ui.absorb_t = 0.7;
+                ui.absorb_zone = 1;
+            },
+            ..shot("23d-drop-phone-burst", 1.0, Page::Shelf)
+        },
         shot("26b-page-speed", 1.0, Page::Speed),
         Shot {
             setup: |vm, _, ui, _| {
@@ -805,18 +820,9 @@ fn shots() -> Vec<Shot> {
             },
             ..shot("28-page-settings-eyes", 1.0, Page::Settings)
         },
-        Shot {
-            setup: |vm, set, _, _| focus_app(vm, set, "Code.exe", "main.rs - teardrop - Visual Studio Code"),
-            ..shot("53-eyes-focus-coding", 0.0, Page::Music)
-        },
-        Shot {
-            setup: |vm, set, _, _| focus_app(vm, set, "chrome.exe", "Q3 plan - Google Docs - Google Chrome"),
-            ..shot("54-eyes-focus-writing", 0.0, Page::Music)
-        },
-        Shot {
-            setup: |vm, set, _, _| focus_app(vm, set, "Figma.exe", "Untitled"),
-            ..shot("55-eyes-focus-design", 0.0, Page::Music)
-        },
+        Shot { setup: |vm, set, _, _| focus_app(vm, set, "Code.exe", "main.rs - teardrop - Visual Studio Code"), ..shot("53-eyes-focus-coding", 0.0, Page::Music) },
+        Shot { setup: |vm, set, _, _| focus_app(vm, set, "chrome.exe", "Q3 plan - Google Docs - Google Chrome"), ..shot("54-eyes-focus-writing", 0.0, Page::Music) },
+        Shot { setup: |vm, set, _, _| focus_app(vm, set, "Figma.exe", "Untitled"), ..shot("55-eyes-focus-design", 0.0, Page::Music) },
         Shot {
             setup: |vm, set, _, _| {
                 focus_app(vm, set, "EXCEL.EXE", "Budget.xlsx - Excel");
@@ -849,7 +855,13 @@ fn shots() -> Vec<Shot> {
         Shot { setup: |_, set, _, _| set.theme = teardrop_core::IslandTheme::LiquidGlass, ..shot("69-collapsed-liquid-glass", 0.0, Page::Music) },
         Shot { setup: |_, set, _, _| set.theme = teardrop_core::IslandTheme::Porcelain, ..shot("70-collapsed-porcelain", 0.0, Page::Music) },
         Shot { setup: |_, set, _, _| set.theme = teardrop_core::IslandTheme::Ocean, ..shot("71-theme-settings", 1.0, Page::Settings) },
-        Shot { setup: |vm, set, _, _| { set.theme = teardrop_core::IslandTheme::LiquidGlass; eyes(vm, set, EyeStyle::Round, true); }, ..shot("72-eyes-liquid-glass", 0.0, Page::Music) },
+        Shot {
+            setup: |vm, set, _, _| {
+                set.theme = teardrop_core::IslandTheme::LiquidGlass;
+                eyes(vm, set, EyeStyle::Round, true);
+            },
+            ..shot("72-eyes-liquid-glass", 0.0, Page::Music)
+        },
     ]
 }
 

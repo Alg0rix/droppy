@@ -61,16 +61,7 @@ pub fn get(url: &str, headers: &[(&str, &str)], limit: usize) -> Result<Vec<u8>,
         let _ = InternetSetOptionW(Some(hinet as *const _), 6, Some(&recv_timeout as *const u32 as *const _), 4);
 
         let whost: Vec<u16> = host.encode_utf16().chain(std::iter::once(0)).collect();
-        let hconn = InternetConnectW(
-            hinet as *const _,
-            PCWSTR::from_raw(whost.as_ptr()),
-            port,
-            PCWSTR::null(),
-            PCWSTR::null(),
-            INTERNET_SERVICE_HTTP,
-            0,
-            0,
-        );
+        let hconn = InternetConnectW(hinet as *const _, PCWSTR::from_raw(whost.as_ptr()), port, PCWSTR::null(), PCWSTR::null(), INTERNET_SERVICE_HTTP, 0, 0);
         if hconn.is_null() {
             let _ = InternetCloseHandle(hinet as *const _);
             return Err(0);
@@ -83,16 +74,7 @@ pub fn get(url: &str, headers: &[(&str, &str)], limit: usize) -> Result<Vec<u8>,
         if https {
             flags |= 0x0080_0000; // INTERNET_FLAG_SECURE
         }
-        let hreq = HttpOpenRequestW(
-            hconn as *const _,
-            PCWSTR::from_raw(verb.as_ptr()),
-            PCWSTR::from_raw(wpath.as_ptr()),
-            PCWSTR::null(),
-            PCWSTR::null(),
-            None,
-            flags,
-            0,
-        );
+        let hreq = HttpOpenRequestW(hconn as *const _, PCWSTR::from_raw(verb.as_ptr()), PCWSTR::from_raw(wpath.as_ptr()), PCWSTR::null(), PCWSTR::null(), None, flags, 0);
         if hreq.is_null() {
             let _ = InternetCloseHandle(hconn as *const _);
             let _ = InternetCloseHandle(hinet as *const _);
@@ -103,12 +85,7 @@ pub fn get(url: &str, headers: &[(&str, &str)], limit: usize) -> Result<Vec<u8>,
         let hdr: Vec<u16> = hdr_str.encode_utf16().collect();
         // Never pass an empty slice: WinINet falls back to reading it as a
         // NUL-terminated string and walks off the end of the buffer.
-        let sent = HttpSendRequestW(
-            hreq as *const _,
-            if hdr.is_empty() { None } else { Some(&hdr) },
-            None,
-            0,
-        );
+        let sent = HttpSendRequestW(hreq as *const _, if hdr.is_empty() { None } else { Some(&hdr) }, None, 0);
         if sent.is_err() {
             let _ = InternetCloseHandle(hreq as *const _);
             let _ = InternetCloseHandle(hconn as *const _);
@@ -178,16 +155,7 @@ pub fn post(url: &str, headers: &[(&str, &str)], body: &[u8], limit: usize) -> R
         let _ = InternetSetOptionW(Some(hinet as *const _), 6, Some(&recv_timeout as *const u32 as *const _), 4);
 
         let whost: Vec<u16> = host.encode_utf16().chain(std::iter::once(0)).collect();
-        let hconn = InternetConnectW(
-            hinet as *const _,
-            PCWSTR::from_raw(whost.as_ptr()),
-            port,
-            PCWSTR::null(),
-            PCWSTR::null(),
-            INTERNET_SERVICE_HTTP,
-            0,
-            0,
-        );
+        let hconn = InternetConnectW(hinet as *const _, PCWSTR::from_raw(whost.as_ptr()), port, PCWSTR::null(), PCWSTR::null(), INTERNET_SERVICE_HTTP, 0, 0);
         if hconn.is_null() {
             let _ = InternetCloseHandle(hinet as *const _);
             return Err((0, "Could not connect to server".into()));
@@ -200,16 +168,7 @@ pub fn post(url: &str, headers: &[(&str, &str)], body: &[u8], limit: usize) -> R
         if https {
             flags |= 0x0080_0000; // INTERNET_FLAG_SECURE
         }
-        let hreq = HttpOpenRequestW(
-            hconn as *const _,
-            PCWSTR::from_raw(verb.as_ptr()),
-            PCWSTR::from_raw(wpath.as_ptr()),
-            PCWSTR::null(),
-            PCWSTR::null(),
-            None,
-            flags,
-            0,
-        );
+        let hreq = HttpOpenRequestW(hconn as *const _, PCWSTR::from_raw(verb.as_ptr()), PCWSTR::from_raw(wpath.as_ptr()), PCWSTR::null(), PCWSTR::null(), None, flags, 0);
         if hreq.is_null() {
             let _ = InternetCloseHandle(hconn as *const _);
             let _ = InternetCloseHandle(hinet as *const _);
@@ -286,14 +245,8 @@ mod tests {
 
     #[test]
     fn split_url_handles_https_and_local_ports() {
-        assert_eq!(
-            split_url("https://opencode.ai/zen/go/v1/chat/completions"),
-            Some((true, "opencode.ai", 443, "/zen/go/v1/chat/completions"))
-        );
-        assert_eq!(
-            split_url("http://localhost:11434/api/chat"),
-            Some((false, "localhost", 11434, "/api/chat"))
-        );
+        assert_eq!(split_url("https://opencode.ai/zen/go/v1/chat/completions"), Some((true, "opencode.ai", 443, "/zen/go/v1/chat/completions")));
+        assert_eq!(split_url("http://localhost:11434/api/chat"), Some((false, "localhost", 11434, "/api/chat")));
         assert_eq!(
             split_url("https://chatgpt.com/backend-api/codex/models?client_version=1.0.0"),
             Some((true, "chatgpt.com", 443, "/backend-api/codex/models?client_version=1.0.0"))

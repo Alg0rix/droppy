@@ -30,21 +30,11 @@ fn params() -> snow::params::NoiseParams {
 
 impl Session {
     pub fn initiator(static_sk: &[u8; 32]) -> Result<Self, snow::Error> {
-        Ok(Self {
-            inner: Some(Inner::Hs(snow::Builder::new(params()).local_private_key(static_sk)?.build_initiator()?)),
-            send_n: 0,
-            recv_hi: None,
-            recv_seen: Default::default(),
-        })
+        Ok(Self { inner: Some(Inner::Hs(snow::Builder::new(params()).local_private_key(static_sk)?.build_initiator()?)), send_n: 0, recv_hi: None, recv_seen: Default::default() })
     }
 
     pub fn responder(static_sk: &[u8; 32]) -> Result<Self, snow::Error> {
-        Ok(Self {
-            inner: Some(Inner::Hs(snow::Builder::new(params()).local_private_key(static_sk)?.build_responder()?)),
-            send_n: 0,
-            recv_hi: None,
-            recv_seen: Default::default(),
-        })
+        Ok(Self { inner: Some(Inner::Hs(snow::Builder::new(params()).local_private_key(static_sk)?.build_responder()?)), send_n: 0, recv_hi: None, recv_seen: Default::default() })
     }
 
     /// Produce the next handshake frame (initiator's 1st and 3rd flight).

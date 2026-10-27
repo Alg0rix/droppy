@@ -70,9 +70,7 @@ static WORKER_UP: AtomicBool = AtomicBool::new(false);
 /// The search worker's state; first use starts the thread, which also warms
 /// the Start Menu scan so the first keystroke doesn't pay for it.
 fn shared() -> &'static (Mutex<Shared>, Condvar) {
-    let sh = SHARED.get_or_init(|| {
-        (Mutex::new(Shared { want: None, requested: String::new(), done_q: String::new(), rows: Vec::new(), seq: 0 }), Condvar::new())
-    });
+    let sh = SHARED.get_or_init(|| (Mutex::new(Shared { want: None, requested: String::new(), done_q: String::new(), rows: Vec::new(), seq: 0 }), Condvar::new()));
     if !WORKER_UP.swap(true, Ordering::SeqCst) {
         std::thread::Builder::new().name("launcher-search".into()).spawn(worker).ok();
     }
@@ -306,13 +304,7 @@ fn compute(q: &str, ready: u8, rows: &[crate::winsearch::Row]) -> Vec<Hit> {
 /// Subtitle used for ranking a Start Menu app: its folder under Programs
 /// ("Steam", "Tools"), empty when the .lnk sits directly in Programs.
 fn app_subtitle(path: &str) -> String {
-    std::path::Path::new(path)
-        .parent()
-        .and_then(|d| d.file_name())
-        .and_then(|s| s.to_str())
-        .filter(|s| !s.eq_ignore_ascii_case("Programs"))
-        .unwrap_or_default()
-        .to_string()
+    std::path::Path::new(path).parent().and_then(|d| d.file_name()).and_then(|s| s.to_str()).filter(|s| !s.eq_ignore_ascii_case("Programs")).unwrap_or_default().to_string()
 }
 
 /// Extra match phrases for well-known apps — what Start Menu finds them by
@@ -353,11 +345,11 @@ fn app_keywords(name: &str) -> &'static str {
 /// stays on ShellExecuteW.
 pub fn launch(path: &str) {
     unsafe {
+        use windows::core::{w, HSTRING, PCWSTR};
         use windows::Win32::Foundation::HWND;
         use windows::Win32::System::Com::{CoTaskMemFree, IBindCtx};
-        use windows::Win32::UI::Shell::{Common::ITEMIDLIST, ShellExecuteExW, ShellExecuteW, SHParseDisplayName, SEE_MASK_IDLIST, SHELLEXECUTEINFOW};
+        use windows::Win32::UI::Shell::{Common::ITEMIDLIST, SHParseDisplayName, ShellExecuteExW, ShellExecuteW, SEE_MASK_IDLIST, SHELLEXECUTEINFOW};
         use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-        use windows::core::{w, HSTRING, PCWSTR};
         if path.starts_with("::") || path.starts_with("shell:::") {
             // Control Panel task paths can't be re-parsed — the catalog kept
             // their absolute PIDLs; those stay table-owned, a parsed one is freed.
@@ -449,10 +441,7 @@ mod tests {
         let _ = hits("warm");
         let t0 = Instant::now();
         loop {
-            if crate::shellcatalog::loaded_apps().is_some()
-                && crate::shellcatalog::loaded_settings().is_some()
-                && crate::shellcatalog::loaded_tasks().is_some()
-            {
+            if crate::shellcatalog::loaded_apps().is_some() && crate::shellcatalog::loaded_settings().is_some() && crate::shellcatalog::loaded_tasks().is_some() {
                 break;
             }
             assert!(t0.elapsed() < Duration::from_secs(60), "shell catalogs never landed");

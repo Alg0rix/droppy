@@ -135,7 +135,7 @@ mod imp {
     use super::*;
     use std::collections::{HashMap, HashSet};
     use std::sync::mpsc::{Receiver, Sender};
-    use windows::core::{GUID, HSTRING, Interface};
+    use windows::core::{Interface, GUID, HSTRING};
     use windows::Devices::Bluetooth::Advertisement::*;
     use windows::Devices::Bluetooth::GenericAttributeProfile::*;
     use windows::Devices::Bluetooth::{BluetoothAddressType, BluetoothCacheMode, BluetoothConnectionStatus, BluetoothLEDevice};
@@ -275,10 +275,7 @@ mod imp {
 
         // Packet timestamps are wall-clock epoch ms (peers compare them
         // against their own dedup windows).
-        let epoch = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
+        let epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
         let start = std::time::Instant::now();
         let now = move || epoch + start.elapsed().as_millis() as u64;
         let _ = keep;
@@ -407,12 +404,7 @@ mod imp {
         let mut seen: HashSet<u64> = HashSet::new();
         if let Ok(list) = lc.SubscribedClients() {
             for c in list {
-                let addr = c
-                    .Session()
-                    .and_then(|s| s.DeviceId())
-                    .and_then(|d| d.Id())
-                    .ok()
-                    .and_then(|id| addr_of_device_id(&id));
+                let addr = c.Session().and_then(|s| s.DeviceId()).and_then(|d| d.Id()).ok().and_then(|id| addr_of_device_id(&id));
                 let Some(addr) = addr else { continue };
                 seen.insert(addr);
                 let l = links.entry(addr).or_insert_with(Link::new);
@@ -507,28 +499,16 @@ mod imp {
     fn peripheral(tx: &Sender<Msg>) -> windows::core::Result<(GattServiceProvider, GattLocalCharacteristic)> {
         let provider = GattServiceProvider::CreateAsync(SERVICE)?.get()?.ServiceProvider()?;
         let params = GattLocalCharacteristicParameters::new()?;
-        params.SetCharacteristicProperties(
-            GattCharacteristicProperties::Write | GattCharacteristicProperties::WriteWithoutResponse | GattCharacteristicProperties::Notify,
-        )?;
+        params.SetCharacteristicProperties(GattCharacteristicProperties::Write | GattCharacteristicProperties::WriteWithoutResponse | GattCharacteristicProperties::Notify)?;
         params.SetWriteProtectionLevel(GattProtectionLevel::Plain)?;
-        let ch = provider
-            .Service()?
-            .CreateCharacteristicAsync(MESH_CHAR, &params)?
-            .get()?
-            .Characteristic()?;
+        let ch = provider.Service()?.CreateCharacteristicAsync(MESH_CHAR, &params)?.get()?.Characteristic()?;
 
         // Remote writes → frames into the loop.
         {
             let tx = tx.clone();
             ch.WriteRequested(&TypedEventHandler::new(move |_c: &Option<GattLocalCharacteristic>, args: &Option<GattWriteRequestedEventArgs>| {
                 let Some(args) = args else { return Ok(()) };
-                let addr = args
-                    .Session()
-                    .and_then(|s| s.DeviceId())
-                    .and_then(|d| d.Id())
-                    .ok()
-                    .and_then(|id| addr_of_device_id(&id))
-                    .unwrap_or(0);
+                let addr = args.Session().and_then(|s| s.DeviceId()).and_then(|d| d.Id()).ok().and_then(|id| addr_of_device_id(&id)).unwrap_or(0);
                 if let Ok(req) = args.GetRequestAsync().and_then(|op| op.get()) {
                     let bytes = req.Value().map(|b| from_buffer(&b)).unwrap_or_default();
                     if !bytes.is_empty() {
@@ -614,15 +594,9 @@ mod imp {
         unsafe {
             let _ = RoInitialize(RO_INIT_MULTITHREADED);
         }
-        let dev = BluetoothLEDevice::FromBluetoothAddressWithBluetoothAddressTypeAsync(addr, atype)
-            .map_err(|e| step("connect", e))?
-            .get()
-            .map_err(|e| step("connect-await", e))?;
+        let dev = BluetoothLEDevice::FromBluetoothAddressWithBluetoothAddressTypeAsync(addr, atype).map_err(|e| step("connect", e))?.get().map_err(|e| step("connect-await", e))?;
         // Uncached: without it, unpaired devices return empty service lists.
-        let services = match dev
-            .GetGattServicesForUuidWithCacheModeAsync(SERVICE, BluetoothCacheMode::Uncached)
-            .map_err(|e| step("services", e))
-        {
+        let services = match dev.GetGattServicesForUuidWithCacheModeAsync(SERVICE, BluetoothCacheMode::Uncached).map_err(|e| step("services", e)) {
             Ok(op) => op.get().or_else(|e| {
                 // Some stacks reject Uncached outright — retry Cached once.
                 let first = format!("{e}");
@@ -634,11 +608,8 @@ mod imp {
             Err(e) => return Err(e),
         };
         let svc = services.Services().map_err(|e| step("svc-list", e))?.GetAt(0).map_err(|e| step("svc-none", e))?;
-        let chars = svc
-            .GetCharacteristicsForUuidWithCacheModeAsync(MESH_CHAR, BluetoothCacheMode::Uncached)
-            .map_err(|e| step("chars", e))?
-            .get()
-            .map_err(|e| step("chars-await", e))?;
+        let chars =
+            svc.GetCharacteristicsForUuidWithCacheModeAsync(MESH_CHAR, BluetoothCacheMode::Uncached).map_err(|e| step("chars", e))?.get().map_err(|e| step("chars-await", e))?;
         let ch = chars.Characteristics().map_err(|e| step("char-list", e))?.GetAt(0).map_err(|e| step("char-none", e))?;
 
         // Notifications → frames into the loop.

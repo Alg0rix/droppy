@@ -8,6 +8,7 @@
 
 #[cfg(windows)]
 mod inner {
+    use crate::drop_target::{DropEvent, DropTarget};
     use crate::render_d2d::d2d::{render_offscreen, Presenter};
     use crate::services_env::sys as env;
     use crate::services_system::sys::{sample_all, CpuTracker};
@@ -28,32 +29,25 @@ mod inner {
     use windows::core::{w, PCWSTR};
     use windows::Win32::Foundation::{HANDLE, HGLOBAL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
     use windows::Win32::Graphics::Dwm::DwmFlush;
-    use windows::Win32::Graphics::Gdi::{
-        CreateBitmap, DeleteObject, GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
-    };
+    use windows::Win32::Graphics::Gdi::{CreateBitmap, DeleteObject, GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
     use windows::Win32::System::DataExchange::{
-        AddClipboardFormatListener, CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
-        RegisterClipboardFormatW, RemoveClipboardFormatListener, SetClipboardData,
+        AddClipboardFormatListener, CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard, RegisterClipboardFormatW,
+        RemoveClipboardFormatListener, SetClipboardData,
     };
     use windows::Win32::System::Diagnostics::Debug::Beep;
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
-    use crate::drop_target::{DropEvent, DropTarget};
     use windows::Win32::System::Ole::{OleInitialize, RegisterDragDrop};
-    use windows::Win32::System::RemoteDesktop::{WTSRegisterSessionNotification, WTSUnRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION};
     use windows::Win32::System::Power::{RegisterPowerSettingNotification, POWERBROADCAST_SETTING};
+    use windows::Win32::System::RemoteDesktop::{WTSRegisterSessionNotification, WTSUnRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION};
     use windows::Win32::System::SystemServices::{GUID_VIDEO_CURRENT_MONITOR_BRIGHTNESS, MK_LBUTTON};
     use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
     use windows::Win32::UI::HiDpi::{GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        keybd_event, RegisterHotKey, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, UnregisterHotKey, KEYBD_EVENT_FLAGS,
-        HOT_KEY_MODIFIERS, KEYEVENTF_KEYUP, MOD_ALT, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN, TME_LEAVE, TRACKMOUSEEVENT, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE,
-        VK_MEDIA_PREV_TRACK,
+        keybd_event, RegisterHotKey, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, UnregisterHotKey, HOT_KEY_MODIFIERS, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, MOD_ALT,
+        MOD_NOREPEAT, MOD_SHIFT, MOD_WIN, TME_LEAVE, TRACKMOUSEEVENT, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK,
     };
-    use windows::Win32::UI::Shell::{
-        ShellExecuteW, Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP,
-        NIM_ADD, NIM_DELETE, NOTIFYICONDATAW,
-    };
+    use windows::Win32::UI::Shell::{ShellExecuteW, Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW};
     use windows::Win32::UI::WindowsAndMessaging::*;
 
     const TRAY_MSG: u32 = 0x8001;
@@ -325,7 +319,15 @@ mod inner {
         if n >= 120 {
             let secs = start.elapsed().as_secs_f32().max(0.001);
             let (_d, cache) = paths::ensure_dirs();
-            store::log_line(&cache, &format!("perf: {:.1} fps, render {:.2} ms avg (last d2d draw {:.2} ms)", n as f32 / secs, sum / n as f32, crate::render_d2d::d2d::PROF_DRAW.load(std::sync::atomic::Ordering::Relaxed) as f32 / 100.0));
+            store::log_line(
+                &cache,
+                &format!(
+                    "perf: {:.1} fps, render {:.2} ms avg (last d2d draw {:.2} ms)",
+                    n as f32 / secs,
+                    sum / n as f32,
+                    crate::render_d2d::d2d::PROF_DRAW.load(std::sync::atomic::Ordering::Relaxed) as f32 / 100.0
+                ),
+            );
             ST.set((0, 0.0, None));
         } else {
             ST.set((n, sum, Some(start)));
@@ -487,10 +489,7 @@ mod inner {
     /// Open the island on `page` and run `focus` to put the cursor in its
     /// field. Pressing the hotkey again while that field is live closes it.
     fn hotkey_jump(hwnd: HWND, page: Page, focus: impl FnOnce(HWND)) {
-        let live = is_open()
-            && unsafe { GetForegroundWindow() } == hwnd
-            && VIEW.with(|v| v.borrow().page) == page
-            && UI.with(|u| u.borrow().input.is_some());
+        let live = is_open() && unsafe { GetForegroundWindow() } == hwnd && VIEW.with(|v| v.borrow().page) == page && UI.with(|u| u.borrow().input.is_some());
         if live {
             close_island(hwnd);
             return;
@@ -954,11 +953,7 @@ mod inner {
             return;
         }
         let set = SETTINGS.with(|s| s.borrow().clone());
-        let day_ctx = if set.ai_share_day {
-            Some(VIEW.with(|v| v.borrow().day_context_summary()))
-        } else {
-            None
-        };
+        let day_ctx = if set.ai_share_day { Some(VIEW.with(|v| v.borrow().day_context_summary())) } else { None };
         UI.with(|u| u.borrow_mut().input = None);
         crate::ai::send_prompt(prompt, set, day_ctx);
         with_eyes(|e| e.react(React::GotIt));
@@ -1234,9 +1229,7 @@ mod inner {
                 let sel_day = UI.with(|u| u.borrow().cal_selected_day);
                 let url = VIEW.with(|v| {
                     let vm = v.borrow();
-                    ui::pages::active_calendar_events(&vm, sel_day)
-                        .get(i as usize)
-                        .and_then(|e| e.join.as_ref().map(|j| j.url.clone()))
+                    ui::pages::active_calendar_events(&vm, sel_day).get(i as usize).and_then(|e| e.join.as_ref().map(|j| j.url.clone()))
                 });
                 with_eyes(|e| e.react(React::Salute));
                 open_meeting(hwnd, url);
@@ -1315,12 +1308,7 @@ mod inner {
                     });
                     let items = ui::pages::active_calendar_events(&vm, sel_day);
                     sel_ev.and_then(|idx| items.get(idx)).map(|ev| {
-                        let mut out = format!(
-                            "{}\n{} \u{00b7} {}",
-                            ev.title,
-                            crate::calendar::full_date_label(ev),
-                            crate::calendar::time_range_label(ev)
-                        );
+                        let mut out = format!("{}\n{} \u{00b7} {}", ev.title, crate::calendar::full_date_label(ev), crate::calendar::time_range_label(ev));
                         if !ev.location.is_empty() {
                             out.push_str(&format!("\nLocation: {}", ev.location));
                         }
@@ -1512,9 +1500,7 @@ mod inner {
                 save = false;
             }
             Action::NoteOpen(i) => {
-                let note = VIEW.with(|v| {
-                    v.borrow().notes.notes.get(i as usize).map(|n| (n.id.clone(), n.text.clone()))
-                });
+                let note = VIEW.with(|v| v.borrow().notes.notes.get(i as usize).map(|n| (n.id.clone(), n.text.clone())));
                 if let Some((id, text)) = note {
                     NOTE_BEFORE.set(Some(text.clone()));
                     UI.with(|u| {
@@ -1670,7 +1656,8 @@ mod inner {
             Action::GoalStep(d) => {
                 VIEW.with(|v| {
                     let mut vm = v.borrow_mut();
-                    vm.water.goal_ml = (vm.water.goal_ml as i32 + teardrop_core::GLASS_ML as i32 * d as i32).clamp(2 * teardrop_core::GLASS_ML as i32, 24 * teardrop_core::GLASS_ML as i32) as u32;
+                    vm.water.goal_ml =
+                        (vm.water.goal_ml as i32 + teardrop_core::GLASS_ML as i32 * d as i32).clamp(2 * teardrop_core::GLASS_ML as i32, 24 * teardrop_core::GLASS_ML as i32) as u32;
                 });
                 with_eyes(|e| e.react(if d > 0 { React::Nod } else { React::Shake }));
             }
@@ -1701,9 +1688,7 @@ mod inner {
             }
             Action::AiSend => {
                 let prov = SETTINGS.with(|s| s.borrow().ai_provider);
-                let text = UI
-                    .with(|u| u.borrow().input.as_ref().map(|f| f.as_str().to_string()))
-                    .unwrap_or_else(|| crate::ai::snapshot(prov).input);
+                let text = UI.with(|u| u.borrow().input.as_ref().map(|f| f.as_str().to_string())).unwrap_or_else(|| crate::ai::snapshot(prov).input);
                 send_ai_prompt(text);
                 save = false;
             }
@@ -1876,11 +1861,7 @@ mod inner {
                 }
             }
             Action::ChatSelect(i) => {
-                let sel = if i == 0 {
-                    None
-                } else {
-                    VIEW.with(|v| v.borrow().chat.peers.get(i as usize - 1).map(|p| p.id.clone()))
-                };
+                let sel = if i == 0 { None } else { VIEW.with(|v| v.borrow().chat.peers.get(i as usize - 1).map(|p| p.id.clone())) };
                 crate::chat::select(sel);
                 sync_chat();
                 save = false;
@@ -1922,14 +1903,7 @@ mod inner {
         unsafe {
             let inst = GetModuleHandleW(None).ok()?;
             let hinst: windows::Win32::Foundation::HINSTANCE = inst.into();
-            let res = LoadImageW(
-                hinst,
-                windows::core::PCWSTR(1 as *const u16),
-                IMAGE_ICON,
-                GetSystemMetrics(SM_CXSMICON),
-                GetSystemMetrics(SM_CYSMICON),
-                IMAGE_FLAGS(0),
-            );
+            let res = LoadImageW(hinst, windows::core::PCWSTR(1 as *const u16), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), IMAGE_FLAGS(0));
             if let Ok(handle) = res {
                 if !handle.is_invalid() {
                     return Some(HICON(handle.0));
@@ -1992,8 +1966,7 @@ mod inner {
     fn show_menu(hwnd: HWND) {
         unsafe {
             let Ok(menu) = CreatePopupMenu() else { return };
-            let items: [(usize, &str); 3] =
-                [(ID_TOGGLE, if is_open() { "Collapse island" } else { "Open island" }), (ID_SETTINGS, "Settings"), (ID_QUIT, "Quit Droppy")];
+            let items: [(usize, &str); 3] = [(ID_TOGGLE, if is_open() { "Collapse island" } else { "Open island" }), (ID_SETTINGS, "Settings"), (ID_QUIT, "Quit Droppy")];
             for (id, label) in items {
                 let l = wide(label);
                 let _ = AppendMenuW(menu, MF_STRING, id, PCWSTR::from_raw(l.as_ptr()));
@@ -2204,11 +2177,7 @@ mod inner {
                             AddTask(title) => {
                                 let t = vm.tasks.add(&title, now);
                                 let id = t.id.clone();
-                                badges.push(AiActionBadge {
-                                    label: format!("Added task: {title}"),
-                                    undo: UndoOp::RemoveAddedTask(id),
-                                    undone: false,
-                                });
+                                badges.push(AiActionBadge { label: format!("Added task: {title}"), undo: UndoOp::RemoveAddedTask(id), undone: false });
                                 mutated = true;
                             }
                             DoneTask(query) => {
@@ -2217,11 +2186,7 @@ mod inner {
                                     t.done = true;
                                     let id = t.id.clone();
                                     let title = t.title.clone();
-                                    badges.push(AiActionBadge {
-                                        label: format!("Completed: {title}"),
-                                        undo: UndoOp::ReopenTask(id),
-                                        undone: false,
-                                    });
+                                    badges.push(AiActionBadge { label: format!("Completed: {title}"), undo: UndoOp::ReopenTask(id), undone: false });
                                     mutated = true;
                                 }
                             }
@@ -2254,30 +2219,18 @@ mod inner {
                                     "reset" | "stop" => vm.pomo.stop(),
                                     _ => vm.pomo.start_focus(now),
                                 }
-                                badges.push(AiActionBadge {
-                                    label: format!("Focus timer: {cmd}"),
-                                    undo: UndoOp::None,
-                                    undone: false,
-                                });
+                                badges.push(AiActionBadge { label: format!("Focus timer: {cmd}"), undo: UndoOp::None, undone: false });
                                 mutated = true;
                             }
                             Remember(fact) => {
                                 memories.push(fact.clone());
-                                badges.push(AiActionBadge {
-                                    label: format!("Remembered: {fact}"),
-                                    undo: UndoOp::ForgetMemory(fact),
-                                    undone: false,
-                                });
+                                badges.push(AiActionBadge { label: format!("Remembered: {fact}"), undo: UndoOp::ForgetMemory(fact), undone: false });
                             }
                             Note(text) => {
                                 let title = teardrop_core::title_of(&text);
                                 let id = vm.notes.add(&text, now).id.clone();
                                 with_eyes(|e| e.noted(text.chars().count()));
-                                badges.push(AiActionBadge {
-                                    label: format!("Saved note: {title}"),
-                                    undo: UndoOp::RemoveAddedNote(id),
-                                    undone: false,
-                                });
+                                badges.push(AiActionBadge { label: format!("Saved note: {title}"), undo: UndoOp::RemoveAddedNote(id), undone: false });
                                 mutated = true;
                             }
                         }
@@ -2330,8 +2283,7 @@ mod inner {
             let mut vm = v.borrow_mut();
             match snap {
                 Some(s) if !s.title.trim().is_empty() => {
-                    let changed =
-                        vm.track.title != s.title || vm.track.artist != s.artist || vm.track.album != s.album;
+                    let changed = vm.track.title != s.title || vm.track.artist != s.artist || vm.track.album != s.album;
                     if changed {
                         SEEK_AT.set(None);
                     } else if SEEK_AT.get().map(|at| now.saturating_sub(at) >= 2_000).unwrap_or(false) {
@@ -2464,11 +2416,7 @@ mod inner {
         let enabled = SETTINGS.with(|s| s.borrow().focus_app_eyes);
         if !(eyes_on() && enabled) {
             VIEW.with(|v| v.borrow_mut().env.app = None);
-            let why = if !eyes_on() {
-                "off (idle look is not Eyes)"
-            } else {
-                "off (Focus apps is turned off in Settings)"
-            };
+            let why = if !eyes_on() { "off (idle look is not Eyes)" } else { "off (Focus apps is turned off in Settings)" };
             log_focus(why.to_string());
             return;
         }
@@ -2663,12 +2611,7 @@ mod inner {
 
         let path = VIEW.with(|v| {
             let vm = v.borrow();
-            vm.shelf
-                .items
-                .len()
-                .checked_sub(1 + i as usize)
-                .and_then(|ix| vm.shelf.items.get(ix))
-                .map(|it| it.path.clone())
+            vm.shelf.items.len().checked_sub(1 + i as usize).and_then(|ix| vm.shelf.items.get(ix)).map(|it| it.path.clone())
         });
         let Some(path) = path else { return };
 
@@ -2859,7 +2802,17 @@ mod inner {
                 None
             }
         } else if has_input {
-            Some((false, false, if page == Page::Ai { 400 } else if page == Page::Chat { 240 } else { 120 }))
+            Some((
+                false,
+                false,
+                if page == Page::Ai {
+                    400
+                } else if page == Page::Chat {
+                    240
+                } else {
+                    120
+                },
+            ))
         } else {
             None
         }
@@ -2966,13 +2919,7 @@ mod inner {
     fn on_key(hwnd: HWND, vk: u32) -> bool {
         let page = VIEW.with(|v| v.borrow().page);
         use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_MENU, VK_SHIFT};
-        let (ctrl, shift, alt) = unsafe {
-            (
-                GetKeyState(VK_CONTROL.0 as i32) < 0,
-                GetKeyState(VK_SHIFT.0 as i32) < 0,
-                GetKeyState(VK_MENU.0 as i32) < 0,
-            )
-        };
+        let (ctrl, shift, alt) = unsafe { (GetKeyState(VK_CONTROL.0 as i32) < 0, GetKeyState(VK_SHIFT.0 as i32) < 0, GetKeyState(VK_MENU.0 as i32) < 0) };
 
         if let Some((editing_note, searching_note, cap)) = field_kind() {
             // Ctrl shortcuts — but not with Alt held: AltGr is Ctrl+Alt and
@@ -3013,11 +2960,7 @@ mod inner {
                         // Ctrl+V paste.
                         if let Some(clip) = read_clipboard_text(hwnd) {
                             // Notes keep paragraph breaks; other fields join lines.
-                            let clean = if editing_note {
-                                clip.replace("\r\n", "\n").replace('\r', "\n")
-                            } else {
-                                clip.lines().collect::<Vec<_>>().join(" ")
-                            };
+                            let clean = if editing_note { clip.replace("\r\n", "\n").replace('\r', "\n") } else { clip.lines().collect::<Vec<_>>().join(" ") };
                             edit_field(page, |f| f.insert(&clean, cap));
                             after_edit(hwnd, page);
                         }

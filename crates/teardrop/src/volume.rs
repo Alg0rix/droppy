@@ -29,13 +29,12 @@ pub fn label(v: VolumeState) -> (&'static str, String) {
 /// capture (microphone).
 #[cfg(windows)]
 fn endpoint(capture: bool) -> Option<windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume> {
-    use windows::Win32::Media::Audio::{eCapture, eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
     use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+    use windows::Win32::Media::Audio::{eCapture, eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
     use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 
     unsafe {
-        let enumerator: IMMDeviceEnumerator =
-            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+        let enumerator: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
         let device = enumerator.GetDefaultAudioEndpoint(if capture { eCapture } else { eRender }, eConsole).ok()?;
         let volume: IAudioEndpointVolume = device.Activate(CLSCTX_ALL, None).ok()?;
         Some(volume)

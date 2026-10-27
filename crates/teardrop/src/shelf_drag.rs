@@ -9,13 +9,11 @@ use std::mem::ManuallyDrop;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use windows::core::{implement, Result, HRESULT};
 use windows::Win32::Foundation::{
-    BOOL, DATA_S_SAMEFORMATETC, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS, DV_E_DVASPECT, DV_E_FORMATETC,
-    DV_E_LINDEX, DV_E_TYMED, E_INVALIDARG, E_NOTIMPL, E_OUTOFMEMORY, GlobalFree, HGLOBAL,
-    OLE_E_ADVISENOTSUPPORTED, POINT, S_FALSE, S_OK,
+    GlobalFree, BOOL, DATA_S_SAMEFORMATETC, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS, DV_E_DVASPECT, DV_E_FORMATETC, DV_E_LINDEX, DV_E_TYMED, E_INVALIDARG, E_NOTIMPL,
+    E_OUTOFMEMORY, HGLOBAL, OLE_E_ADVISENOTSUPPORTED, POINT, S_FALSE, S_OK,
 };
 use windows::Win32::System::Com::{
-    IAdviseSink, IDataObject, IDataObject_Impl, IEnumFORMATETC, IEnumFORMATETC_Impl, IEnumSTATDATA, DATADIR_GET,
-    DVASPECT_CONTENT, FORMATETC, STGMEDIUM, STGMEDIUM_0, TYMED_HGLOBAL,
+    IAdviseSink, IDataObject, IDataObject_Impl, IEnumFORMATETC, IEnumFORMATETC_Impl, IEnumSTATDATA, DATADIR_GET, DVASPECT_CONTENT, FORMATETC, STGMEDIUM, STGMEDIUM_0, TYMED_HGLOBAL,
 };
 use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::System::Ole::{DoDragDrop, IDropSource, CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK};
@@ -28,25 +26,12 @@ pub fn drag(path: &str) -> bool {
     let data: IDataObject = ShelfDataObject { paths: vec![path.to_string()] }.into();
     let source: windows::Win32::System::Ole::IDropSource = DropSource.into();
     let mut effect = DROPEFFECT(0);
-    let hr = unsafe {
-        DoDragDrop(
-            &data,
-            &source,
-            DROPEFFECT_COPY | DROPEFFECT_LINK,
-            &mut effect,
-        )
-    };
+    let hr = unsafe { DoDragDrop(&data, &source, DROPEFFECT_COPY | DROPEFFECT_LINK, &mut effect) };
     hr == DRAGDROP_S_DROP
 }
 
 fn hdrop_format() -> FORMATETC {
-    FORMATETC {
-        cfFormat: CF_HDROP.0,
-        ptd: std::ptr::null_mut(),
-        dwAspect: DVASPECT_CONTENT.0,
-        lindex: -1,
-        tymed: TYMED_HGLOBAL.0 as u32,
-    }
+    FORMATETC { cfFormat: CF_HDROP.0, ptd: std::ptr::null_mut(), dwAspect: DVASPECT_CONTENT.0, lindex: -1, tymed: TYMED_HGLOBAL.0 as u32 }
 }
 
 fn accepts(f: &FORMATETC) -> HRESULT {
@@ -74,19 +59,10 @@ fn hdrop_payload(paths: &[String]) -> Vec<u8> {
 
     let header = std::mem::size_of::<DROPFILES>();
     let mut bytes = vec![0u8; header + units.len() * 2];
-    let df = DROPFILES {
-        pFiles: header as u32,
-        pt: POINT::default(),
-        fNC: BOOL(0),
-        fWide: BOOL(1),
-    };
+    let df = DROPFILES { pFiles: header as u32, pt: POINT::default(), fNC: BOOL(0), fWide: BOOL(1) };
     unsafe {
         std::ptr::write_unaligned(bytes.as_mut_ptr() as *mut DROPFILES, df);
-        std::ptr::copy_nonoverlapping(
-            units.as_ptr() as *const u8,
-            bytes.as_mut_ptr().add(header),
-            units.len() * 2,
-        );
+        std::ptr::copy_nonoverlapping(units.as_ptr() as *const u8, bytes.as_mut_ptr().add(header), units.len() * 2);
     }
     bytes
 }
@@ -120,11 +96,7 @@ impl IDataObject_Impl for ShelfDataObject_Impl {
             std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr as *mut u8, bytes.len());
             let _ = GlobalUnlock(hglobal);
         }
-        Ok(STGMEDIUM {
-            tymed: TYMED_HGLOBAL.0 as u32,
-            u: STGMEDIUM_0 { hGlobal: hglobal },
-            pUnkForRelease: ManuallyDrop::new(None),
-        })
+        Ok(STGMEDIUM { tymed: TYMED_HGLOBAL.0 as u32, u: STGMEDIUM_0 { hGlobal: hglobal }, pUnkForRelease: ManuallyDrop::new(None) })
     }
 
     fn GetDataHere(&self, _pformatetc: *const FORMATETC, _pmedium: *mut STGMEDIUM) -> Result<()> {
@@ -138,11 +110,7 @@ impl IDataObject_Impl for ShelfDataObject_Impl {
         accepts(unsafe { &*pformatetc })
     }
 
-    fn GetCanonicalFormatEtc(
-        &self,
-        pformatectin: *const FORMATETC,
-        pformatectout: *mut FORMATETC,
-    ) -> HRESULT {
+    fn GetCanonicalFormatEtc(&self, pformatectin: *const FORMATETC, pformatectout: *mut FORMATETC) -> HRESULT {
         if pformatectin.is_null() || pformatectout.is_null() {
             return E_INVALIDARG;
         }
@@ -152,12 +120,7 @@ impl IDataObject_Impl for ShelfDataObject_Impl {
         DATA_S_SAMEFORMATETC
     }
 
-    fn SetData(
-        &self,
-        _pformatetc: *const FORMATETC,
-        _pmedium: *const STGMEDIUM,
-        _frelease: BOOL,
-    ) -> Result<()> {
+    fn SetData(&self, _pformatetc: *const FORMATETC, _pmedium: *const STGMEDIUM, _frelease: BOOL) -> Result<()> {
         Err(E_NOTIMPL.into())
     }
 
@@ -168,12 +131,7 @@ impl IDataObject_Impl for ShelfDataObject_Impl {
         Ok(FormatEtcEnum { index: AtomicUsize::new(0) }.into())
     }
 
-    fn DAdvise(
-        &self,
-        _pformatetc: *const FORMATETC,
-        _advf: u32,
-        _padvsink: Option<&IAdviseSink>,
-    ) -> Result<u32> {
+    fn DAdvise(&self, _pformatetc: *const FORMATETC, _advf: u32, _padvsink: Option<&IAdviseSink>) -> Result<u32> {
         Err(OLE_E_ADVISENOTSUPPORTED.into())
     }
 
@@ -275,10 +233,7 @@ mod tests {
         assert!(header.fWide.as_bool());
         assert!(!header.fNC.as_bool());
 
-        let units: Vec<u16> = bytes[header.pFiles as usize..]
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
-            .collect();
+        let units: Vec<u16> = bytes[header.pFiles as usize..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
         let mut found = Vec::new();
         let mut start = 0;
         for (i, ch) in units.iter().enumerate() {

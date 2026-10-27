@@ -894,15 +894,7 @@ impl React {
         Some(match self {
             React::Fishing | React::Bowling | React::Darts | React::Archery | React::Golf => React::Proud,
             React::Phone | React::Binge | React::Fidget => React::Dizzy,
-            React::Lift
-            | React::Workout
-            | React::Jog
-            | React::JumpRope
-            | React::Box
-            | React::Sumo
-            | React::Surf
-            | React::Ski
-            | React::Dribble => React::Hot,
+            React::Lift | React::Workout | React::Jog | React::JumpRope | React::Box | React::Sumo | React::Surf | React::Ski | React::Dribble => React::Hot,
             React::Karate | React::Fencing | React::TaDa | React::CardTrick | React::Magic => React::Bow,
             React::Coffee => React::Perk,
             React::Snack | React::Pizza | React::Popcorn | React::Marshmallow | React::BubbleGum => React::Satisfied,
@@ -1061,7 +1053,21 @@ pub struct Extras {
 
 impl Default for Extras {
     fn default() -> Self {
-        Self { glyph: Glyph::None, hat: Hat::None, shades: false, pumpkin: false, glow: None, slit: false, shine: false, dream: false, caption: None, rec: None, screen: None, prop: None, prop_k: 0.0 }
+        Self {
+            glyph: Glyph::None,
+            hat: Hat::None,
+            shades: false,
+            pumpkin: false,
+            glow: None,
+            slit: false,
+            shine: false,
+            dream: false,
+            caption: None,
+            rec: None,
+            screen: None,
+            prop: None,
+            prop_k: 0.0,
+        }
     }
 }
 
@@ -1751,18 +1757,117 @@ impl Eyes {
                 self.jig.wobble(w);
             }
             // Object skits get a small hop; routines with a lift get a big one.
-            React::Laptop | React::Read | React::Phone | React::Game | React::Guitar | React::Sing | React::Photo | React::Paint | React::Toast | React::Wave | React::Idea | React::Catch | React::Juggle | React::Cheer | React::Proud | React::PeekABoo | React::Eavesdrop | React::Count | React::Wait | React::Kiss | React::Spy | React::Inspect | React::BrowWiggle | React::Sniff | React::Binge | React::Stargaze | React::Mirror | React::Hack => self.jig.hop(26.0),
+            React::Laptop
+            | React::Read
+            | React::Phone
+            | React::Game
+            | React::Guitar
+            | React::Sing
+            | React::Photo
+            | React::Paint
+            | React::Toast
+            | React::Wave
+            | React::Idea
+            | React::Catch
+            | React::Juggle
+            | React::Cheer
+            | React::Proud
+            | React::PeekABoo
+            | React::Eavesdrop
+            | React::Count
+            | React::Wait
+            | React::Kiss
+            | React::Spy
+            | React::Inspect
+            | React::BrowWiggle
+            | React::Sniff
+            | React::Binge
+            | React::Stargaze
+            | React::Mirror
+            | React::Hack => self.jig.hop(26.0),
             React::Coffee | React::Snack | React::Hug | React::Bask | React::Meditate | React::Breathe | React::Nap | React::BubbleGum => self.jig.hop(14.0),
-            React::Lift | React::Magic | React::Balloon | React::Ninja | React::Splash | React::Pogo | React::Hype | React::Spin | React::March | React::Moonwalk | React::Rage | React::Beep | React::ZeroG => self.jig.hop(45.0),
+            React::Lift
+            | React::Magic
+            | React::Balloon
+            | React::Ninja
+            | React::Splash
+            | React::Pogo
+            | React::Hype
+            | React::Spin
+            | React::March
+            | React::Moonwalk
+            | React::Rage
+            | React::Beep
+            | React::ZeroG => self.jig.hop(45.0),
             React::Umbrella | React::Grumble | React::Facepalm | React::Rub | React::Doze | React::SideEye | React::Squint => self.jig.squish(35.0),
             React::Shiver | React::Cringe | React::Bobble | React::Hot | React::Plant => self.jig.wobble(3.0),
             // Batch two: same anticipation grammar, grouped by kick size.
             React::Drum | React::Dice | React::Kite | React::Pirouette | React::TaDa | React::Flip | React::PowerUp | React::Storm | React::Tumble => self.jig.hop(45.0),
-            React::Scope | React::News | React::Pizza | React::Radio | React::Lantern | React::Whistle | React::Measure | React::CardTrick | React::Origami | React::Scan | React::Metronome | React::Morse | React::Popcorn | React::FistPump | React::Bow | React::Skate | React::Dribble | React::Row | React::Trapped | React::Tiptoe | React::Glitch | React::Radar | React::Compass => self.jig.hop(26.0),
+            React::Scope
+            | React::News
+            | React::Pizza
+            | React::Radio
+            | React::Lantern
+            | React::Whistle
+            | React::Measure
+            | React::CardTrick
+            | React::Origami
+            | React::Scan
+            | React::Metronome
+            | React::Morse
+            | React::Popcorn
+            | React::FistPump
+            | React::Bow
+            | React::Skate
+            | React::Dribble
+            | React::Row
+            | React::Trapped
+            | React::Tiptoe
+            | React::Glitch
+            | React::Radar
+            | React::Compass => self.jig.hop(26.0),
             React::Workout | React::Swim | React::Jog | React::Scheme => self.jig.hop(36.0),
-            React::Daydream | React::Hum | React::Hammock | React::Fireplace | React::Aurora | React::WarmHands | React::Puppy | React::Sulk | React::Nervous | React::Balance | React::Breeze => self.jig.hop(14.0),
-            React::Yodel | React::AhChoo | React::Photobomb | React::HideSeek | React::Karate | React::Fencing | React::Archery | React::Darts | React::Spring | React::Box | React::Meteor | React::Sumo => self.jig.hop(40.0),
-            React::Jelly | React::Cloudwatch | React::Vogue | React::Flex | React::Plie | React::Pinwheel | React::BubbleWand | React::Polish | React::Flashlight | React::Shush | React::SlowClap | React::Coin | React::Letter | React::Selfie | React::Marshmallow | React::Moth | React::YoYo | React::Jenga => self.jig.hop(24.0),
+            React::Daydream
+            | React::Hum
+            | React::Hammock
+            | React::Fireplace
+            | React::Aurora
+            | React::WarmHands
+            | React::Puppy
+            | React::Sulk
+            | React::Nervous
+            | React::Balance
+            | React::Breeze => self.jig.hop(14.0),
+            React::Yodel
+            | React::AhChoo
+            | React::Photobomb
+            | React::HideSeek
+            | React::Karate
+            | React::Fencing
+            | React::Archery
+            | React::Darts
+            | React::Spring
+            | React::Box
+            | React::Meteor
+            | React::Sumo => self.jig.hop(40.0),
+            React::Jelly
+            | React::Cloudwatch
+            | React::Vogue
+            | React::Flex
+            | React::Plie
+            | React::Pinwheel
+            | React::BubbleWand
+            | React::Polish
+            | React::Flashlight
+            | React::Shush
+            | React::SlowClap
+            | React::Coin
+            | React::Letter
+            | React::Selfie
+            | React::Marshmallow
+            | React::Moth
+            | React::YoYo
+            | React::Jenga => self.jig.hop(24.0),
             React::JumpRope | React::Skip | React::Bowling | React::Golf | React::Fishing | React::Surf | React::Ski | React::Dominoes | React::Fidget => self.jig.hop(30.0),
             _ => {}
         }
@@ -2078,10 +2183,7 @@ impl Eyes {
         self.mood = self.pick_mood(s);
         // A real activity taking over cuts a long skit short — but not
         // pointer play (purring, delight), which flaps with the pointer.
-        let loud = matches!(
-            self.mood,
-            Mood::Dance | Mood::Headbang | Mood::Vibe | Mood::Typing | Mood::Work(_) | Mood::Listening | Mood::Thinking
-        );
+        let loud = matches!(self.mood, Mood::Dance | Mood::Headbang | Mood::Vibe | Mood::Typing | Mood::Work(_) | Mood::Listening | Mood::Thinking);
         if loud && self.react.is_some_and(|(r, st)| r.duration() > 2.4 && t - st > 0.5) {
             self.react = None;
         }
@@ -2680,7 +2782,13 @@ impl Eyes {
                 // petting is play, not watching — the face shouldn't start a
                 // routine while you're rubbing it.
                 let watching = (self.hover_s > 0.5 || self.stare_s > 0.5 || self.near_s > 1.0) && !self.petting();
-                let gate = if watching { 0.3 } else if self.keys.len() >= 8 || self.petting() { 0.04 } else { 0.15 };
+                let gate = if watching {
+                    0.3
+                } else if self.keys.len() >= 8 || self.petting() {
+                    0.04
+                } else {
+                    0.15
+                };
                 let r = if r < gate {
                     let b = self.bit(s);
                     self.start(b);
@@ -3395,11 +3503,7 @@ impl Eyes {
                 // Head tilted toward the mic on the left.
                 lv.rot = -0.08;
                 lv.dy = (t * 1.4).sin() * 0.4;
-                look = Some(if lvl > 0.08 {
-                    (-0.7, 0.05)
-                } else {
-                    (0.15 * (t * 0.8).sin(), 0.0)
-                });
+                look = Some(if lvl > 0.08 { (-0.7, 0.05) } else { (0.15 * (t * 0.8).sin(), 0.0) });
             }
         }
 
@@ -4811,13 +4915,7 @@ impl Eyes {
                     // Tracking the firefly wherever it loops — or your
                     // pointer, if you wave it while it's playing.
                     let t = s.mouse.map_or_else(
-                        || {
-                            self.parts
-                                .iter()
-                                .find(|p| p.kind == Kind::Fly)
-                                .map(|f| (f.x / s.area.0.max(1.0), f.y / s.area.1.max(1.0)))
-                                .unwrap_or((0.0, 0.0))
-                        },
+                        || self.parts.iter().find(|p| p.kind == Kind::Fly).map(|f| (f.x / s.area.0.max(1.0), f.y / s.area.1.max(1.0))).unwrap_or((0.0, 0.0)),
                         |(mx, my)| (mx / s.area.0.max(1.0), my / s.area.1.max(1.0)),
                     );
                     let (lx, ly) = (t.0.clamp(-1.0, 1.0), t.1.clamp(-1.0, 1.0));
@@ -5208,7 +5306,13 @@ impl Eyes {
             React::Measure => {
                 // Eyeballing a length: left end, right end, double-check.
                 let phase = (e * 1.2).fract();
-                let (lx, squint) = if phase < 0.4 { (-0.85, 0.5) } else if phase < 0.8 { (0.85, 0.5) } else { (0.0, 0.3) };
+                let (lx, squint) = if phase < 0.4 {
+                    (-0.85, 0.5)
+                } else if phase < 0.8 {
+                    (0.85, 0.5)
+                } else {
+                    (0.0, 0.3)
+                };
                 *look = Some((lx, 0.5));
                 p.open = squint;
                 p.size = 0.92;
@@ -6174,15 +6278,7 @@ impl Eyes {
         // blinking off, not as a dance move).
         let lx = (pt.bounds.w / 2.0 / pt.scale - 14.0).max(4.0);
         let ly = (pt.bounds.h / 2.0 / pt.scale - 14.0).max(4.0);
-        let xf = Xf::new(
-            pt.cx,
-            pt.cy,
-            pt.scale,
-            (p.dx + lv.dx).clamp(-lx, lx),
-            (p.dy + lv.dy + j.y).clamp(-ly, ly),
-            p.rot + lv.rot + j.rot,
-            p.squash + lv.squash + j.sq,
-        );
+        let xf = Xf::new(pt.cx, pt.cy, pt.scale, (p.dx + lv.dx).clamp(-lx, lx), (p.dy + lv.dy + j.y).clamp(-ly, ly), p.rot + lv.rot + j.rot, p.squash + lv.squash + j.sq);
         let tint = pt.tint.or(self.work.and_then(|w| w.tint).map(|[r, g, b]| Color::rgb(r, g, b))).or(self.ring);
         for side in [-1.0f32, 1.0] {
             self.eye(sc, &xf, side, pt.style, tint, pt.accent);
@@ -6454,10 +6550,11 @@ impl Eyes {
                 sc.poly(pts, GOLD);
             }
             Glyph::Bolt => {
-                let pts: Vec<(f32, f32)> = [(rx * 0.15, -ry * 0.9), (-rx * 0.3, ry * 0.1), (rx * 0.05, ry * 0.1), (-rx * 0.15, ry * 0.9), (rx * 0.35, -ry * 0.15), (0.0, -ry * 0.15)]
-                    .iter()
-                    .map(|&(u, v)| xf.p(ex + u, v))
-                    .collect();
+                let pts: Vec<(f32, f32)> =
+                    [(rx * 0.15, -ry * 0.9), (-rx * 0.3, ry * 0.1), (rx * 0.05, ry * 0.1), (-rx * 0.15, ry * 0.9), (rx * 0.35, -ry * 0.15), (0.0, -ry * 0.15)]
+                        .iter()
+                        .map(|&(u, v)| xf.p(ex + u, v))
+                        .collect();
                 sc.poly(pts, GOLD);
             }
         }
@@ -6653,28 +6750,62 @@ fn bit_weight(r: React, s: &Senses, watching: bool) -> u32 {
         // Skits that hide the face only play to a watching audience —
         // unprompted they just look like the island blinking.
         React::Ninja | React::HideSeek | React::Photobomb => {
-            if watching { 2 } else { 0 }
+            if watching {
+                2
+            } else {
+                0
+            }
         }
         React::Coffee | React::News | React::Letter => {
-            if morning { 6 } else { 1 }
+            if morning {
+                6
+            } else {
+                1
+            }
         }
         React::Jog | React::Workout | React::JumpRope => {
-            if morning { 4 } else { 2 }
+            if morning {
+                4
+            } else {
+                2
+            }
         }
         React::Stargaze | React::Aurora | React::Meteor | React::Lantern => {
-            if night { 7 } else { 0 }
+            if night {
+                7
+            } else {
+                0
+            }
         }
         React::Fireplace | React::Hammock | React::Daydream => {
-            if late { 5 } else { 2 }
+            if late {
+                5
+            } else {
+                2
+            }
         }
         React::Nap | React::Doze => {
-            if late { 5 } else { 1 }
+            if late {
+                5
+            } else {
+                1
+            }
         }
         React::Umbrella => {
-            if rain { 7 } else { 0 }
+            if rain {
+                7
+            } else {
+                0
+            }
         }
         React::Shiver | React::WarmHands => {
-            if snow { 6 } else if rain { 3 } else { 0 }
+            if snow {
+                6
+            } else if rain {
+                3
+            } else {
+                0
+            }
         }
         React::Kite
         | React::Surf
@@ -6689,13 +6820,25 @@ fn bit_weight(r: React, s: &Senses, watching: bool) -> u32 {
         | React::Archery
         | React::Golf
         | React::Bowling => {
-            if night { 1 } else { 4 }
+            if night {
+                1
+            } else {
+                4
+            }
         }
         React::Pizza | React::Snack | React::Popcorn => {
-            if noon { 5 } else { 2 }
+            if noon {
+                5
+            } else {
+                2
+            }
         }
         React::Sing | React::Guitar | React::Cheer | React::Drum | React::Kiss => {
-            if friday_eve { 5 } else { 2 }
+            if friday_eve {
+                5
+            } else {
+                2
+            }
         }
         _ => 3,
     };
@@ -6706,7 +6849,11 @@ fn bit_weight(r: React, s: &Senses, watching: bool) -> u32 {
         6..=8 if matches!(r, React::Surf | React::Swim | React::Kite | React::Bask) => w.max(4),
         _ => w,
     };
-    if !watching && r.duration() > 2.6 { w.min(1) } else { w }
+    if !watching && r.duration() > 2.6 {
+        w.min(1)
+    } else {
+        w
+    }
 }
 
 /// Colour of a work theme's symbols.
@@ -6731,7 +6878,11 @@ fn work_color(c: AppCategory) -> Color {
         Studio => Color::rgb(251, 113, 133),
     };
     // Pastels wash out on a light body.
-    if pal().light { col.mix(Color::rgb(10, 12, 20), 0.30) } else { col }
+    if pal().light {
+        col.mix(Color::rgb(10, 12, 20), 0.30)
+    } else {
+        col
+    }
 }
 
 fn is_birthday(s: &Senses) -> bool {
@@ -6812,10 +6963,7 @@ impl Lid {
     }
 
     fn gap(&self) -> f32 {
-        (0..=16)
-            .filter_map(|i| self.span(-self.rx + 2.0 * self.rx * i as f32 / 16.0))
-            .map(|(t, b)| b - t)
-            .fold(0.0, f32::max)
+        (0..=16).filter_map(|i| self.span(-self.rx + 2.0 * self.rx * i as f32 / 16.0)).map(|(t, b)| b - t).fold(0.0, f32::max)
     }
 }
 

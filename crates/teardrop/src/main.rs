@@ -6,31 +6,45 @@
 //! (music + synced lyrics, focus, water, shelf, tasks, clipboard, today, AI).
 #![windows_subsystem = "windows"]
 
+mod ai;
+#[cfg(windows)]
+mod appicons;
+mod brightness;
+#[cfg(windows)]
+mod btdev;
+mod calendar;
+mod chat;
 #[cfg(windows)]
 mod demo;
 #[cfg(windows)]
 mod drop_target;
-#[cfg(windows)]
-mod share;
-#[cfg(windows)]
-mod shelf_drag;
-mod ai;
-mod calendar;
-mod chat;
 mod http;
+#[cfg(windows)]
+mod launcher;
 mod lyrics_service;
 mod media_smtc;
+mod mesh_ble;
+#[cfg(windows)]
+mod mixer;
 mod paths;
+mod radios;
 mod recur;
 mod render_d2d;
 mod selftest;
 mod services_env;
 mod services_system;
+#[cfg(windows)]
+mod share;
+#[cfg(windows)]
+mod shelf_drag;
+#[cfg(windows)]
+mod shellcatalog;
 mod speedtest;
 mod sqlite;
 mod startup;
 mod state;
 mod store;
+mod sysmon;
 mod tz;
 mod ui;
 mod update;
@@ -42,21 +56,7 @@ mod window;
 #[cfg(windows)]
 mod winreg;
 #[cfg(windows)]
-mod mixer;
-#[cfg(windows)]
-mod launcher;
-#[cfg(windows)]
-mod shellcatalog;
-#[cfg(windows)]
-mod appicons;
-#[cfg(windows)]
 mod winsearch;
-mod sysmon;
-#[cfg(windows)]
-mod btdev;
-mod mesh_ble;
-mod radios;
-mod brightness;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

@@ -130,16 +130,28 @@ impl TextField {
     pub fn move_h(&mut self, dir: i32, word: bool, extend: bool) {
         let target = if !extend {
             if let Some((a, b)) = self.selection() {
-                if dir < 0 { a } else { b }
+                if dir < 0 {
+                    a
+                } else {
+                    b
+                }
             } else if dir < 0 {
-                if word { self.word_left(self.caret) } else { self.caret.saturating_sub(1) }
+                if word {
+                    self.word_left(self.caret)
+                } else {
+                    self.caret.saturating_sub(1)
+                }
             } else if word {
                 self.word_right(self.caret)
             } else {
                 (self.caret + 1).min(self.len())
             }
         } else if dir < 0 {
-            if word { self.word_left(self.caret) } else { self.caret.saturating_sub(1) }
+            if word {
+                self.word_left(self.caret)
+            } else {
+                self.caret.saturating_sub(1)
+            }
         } else if word {
             self.word_right(self.caret)
         } else {

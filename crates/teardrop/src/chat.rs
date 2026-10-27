@@ -311,7 +311,11 @@ pub fn snapshot() -> ChatView {
             status: {
                 let s = crate::mesh_ble::status();
                 if s.is_empty() {
-                    if r.links == 0 { "mesh: idle".into() } else { format!("mesh: {} link{}", r.links, if r.links == 1 { "" } else { "s" }) }
+                    if r.links == 0 {
+                        "mesh: idle".into()
+                    } else {
+                        format!("mesh: {} link{}", r.links, if r.links == 1 { "" } else { "s" })
+                    }
                 } else {
                     s
                 }

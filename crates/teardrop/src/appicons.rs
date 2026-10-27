@@ -70,7 +70,7 @@ fn icon_source(lnk: &str) -> String {
     use windows::core::{Interface, HSTRING};
     use windows::Win32::Storage::FileSystem::WIN32_FIND_DATAW;
     use windows::Win32::System::Com::{CoCreateInstance, IPersistFile, CLSCTX_INPROC_SERVER, STGM_READ};
-    use windows::Win32::UI::Shell::{IShellLinkW, SLGP_RAWPATH, ShellLink};
+    use windows::Win32::UI::Shell::{IShellLinkW, ShellLink, SLGP_RAWPATH};
     unsafe {
         let Ok(link) = CoCreateInstance::<_, IShellLinkW>(&ShellLink, None, CLSCTX_INPROC_SERVER) else {
             return lnk.to_string();
@@ -127,8 +127,8 @@ fn extract(lnk: &str) -> Option<Image> {
     use windows::Win32::Foundation::SIZE;
     use windows::Win32::Graphics::Gdi::{DeleteObject, HPALETTE};
     use windows::Win32::Graphics::Imaging::{
-        CLSID_WICImagingFactory, IWICImagingFactory, IWICPalette, WICBitmapDitherTypeNone, WICBitmapPaletteTypeCustom,
-        WICBitmapUsePremultipliedAlpha, WICRect, GUID_WICPixelFormat32bppPBGRA,
+        CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, IWICImagingFactory, IWICPalette, WICBitmapDitherTypeNone, WICBitmapPaletteTypeCustom,
+        WICBitmapUsePremultipliedAlpha, WICRect,
     };
     use windows::Win32::System::Com::{CoCreateInstance, IBindCtx, CLSCTX_INPROC_SERVER};
     use windows::Win32::UI::Shell::{IShellItem, IShellItemImageFactory, SHCreateItemFromIDList, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK};
@@ -147,11 +147,7 @@ fn extract(lnk: &str) -> Option<Image> {
         };
         // No ICONONLY flag: files that have real thumbnails (images, docs)
         // get them, everything else falls back to its icon.
-        let hbmp = item
-            .cast::<IShellItemImageFactory>()
-            .ok()?
-            .GetImage(SIZE { cx: PX, cy: PX }, SIIGBF_BIGGERSIZEOK)
-            .ok()?;
+        let hbmp = item.cast::<IShellItemImageFactory>().ok()?.GetImage(SIZE { cx: PX, cy: PX }, SIIGBF_BIGGERSIZEOK).ok()?;
         let wic: IWICImagingFactory = CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).ok()?;
         // Shell image-factory bitmaps are already premultiplied BGRA; WIC
         // normalizes whatever it gets to 32bppPBGRA for the D2D painter.

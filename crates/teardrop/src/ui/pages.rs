@@ -67,7 +67,9 @@ fn windows_page(c: &mut Ctx, a: Rect) {
         let fit = (((a.bottom() - 26.0 - y) / 25.0).floor().max(1.0)) as usize + 1;
         let first = (sel + 1).saturating_sub(fit);
         for (i, h) in hits.iter().enumerate().skip(first) {
-            if y > a.bottom() - 26.0 { break; }
+            if y > a.bottom() - 26.0 {
+                break;
+            }
             let row = Rect::new(a.x + 8.0, y, a.w - 16.0, 24.0);
             if c.ui.input.is_some() && i == sel {
                 c.s.rect(row, 9.0, acc.fade(0.22));
@@ -91,19 +93,16 @@ fn windows_page(c: &mut Ctx, a: Rect) {
         }
     }
     let q_lower = q.to_lowercase();
-    let filtered: Vec<(usize, &crate::winreg::WindowInfo)> = c
-        .vm
-        .windows
-        .iter()
-        .enumerate()
-        .filter(|(_, w)| q.is_empty() || w.title.to_lowercase().contains(&q_lower) || w.app.to_lowercase().contains(&q_lower))
-        .collect();
+    let filtered: Vec<(usize, &crate::winreg::WindowInfo)> =
+        c.vm.windows.iter().enumerate().filter(|(_, w)| q.is_empty() || w.title.to_lowercase().contains(&q_lower) || w.app.to_lowercase().contains(&q_lower)).collect();
     let row_h = 26.0;
     let scroll = c.ui.scroll_of(Page::Windows);
     // Group consecutive windows of the same exe under an app header.
     let mut last_exe = String::new();
     for (orig, w) in filtered.iter().skip(scroll) {
-        if y > a.bottom() - 26.0 { break; }
+        if y > a.bottom() - 26.0 {
+            break;
+        }
         if w.exe != last_exe {
             last_exe = w.exe.clone();
             let n = filtered.iter().filter(|(_, x)| x.exe == w.exe).count();
@@ -113,7 +112,14 @@ fn windows_page(c: &mut Ctx, a: Rect) {
                 None => c.s.rect(tile, 5.0, acc.fade(0.2)),
             }
             c.text(w.app.clone(), Rect::new(a.x + 30.0, y, a.w - 130.0, 22.0), 12.5, Weight::Semibold, pal().text, Align::Left);
-            c.text(if n == 1 { "1 window".to_string() } else { format!("{} windows", n) }, Rect::new(a.right() - 120.0, y + 4.0, 112.0, 15.0), 10.0, Weight::Medium, pal().text_3, Align::Right);
+            c.text(
+                if n == 1 { "1 window".to_string() } else { format!("{} windows", n) },
+                Rect::new(a.right() - 120.0, y + 4.0, 112.0, 15.0),
+                10.0,
+                Weight::Medium,
+                pal().text_3,
+                Align::Right,
+            );
             y += 24.0;
             // The app's audio session becomes a slim mixer under its header.
             if let Some(si) = c.vm.audio.iter().position(|s| s.exe == w.exe) {
@@ -123,12 +129,21 @@ fn windows_page(c: &mut Ctx, a: Rect) {
                 c.s.rect(track, 4.0, pal().surface_hover);
                 let fill = (track.w * s.volume).max(4.0);
                 c.s.rect(Rect::new(track.x, track.y, fill, track.h), 4.0, if s.muted { pal().text_3 } else { acc });
-                c.text(if s.muted { "muted".to_string() } else { format!("{:.0}%", s.volume * 100.0) }, Rect::new(a.right() - 104.0, y + 2.0, 96.0, 15.0), 10.5, Weight::Medium, pal().text_3, Align::Right);
+                c.text(
+                    if s.muted { "muted".to_string() } else { format!("{:.0}%", s.volume * 100.0) },
+                    Rect::new(a.right() - 104.0, y + 2.0, 96.0, 15.0),
+                    10.5,
+                    Weight::Medium,
+                    pal().text_3,
+                    Align::Right,
+                );
                 c.hit(Rect::new(track.x - 4.0, track.y - 5.0, track.w + 8.0, track.h + 10.0), Action::MixerVol(si as u16));
                 y += 20.0;
             }
         }
-        if y > a.bottom() - 26.0 { break; }
+        if y > a.bottom() - 26.0 {
+            break;
+        }
         let row = Rect::new(a.x + 34.0, y, a.w - 42.0, row_h - 4.0);
         if c.hov(Action::WinActivate(*orig as u16)) > 0.01 {
             c.s.rect(row, 9.0, pal().surface_hover);
@@ -169,14 +184,21 @@ fn music(c: &mut Ctx, a: Rect) {
     let left_w = (a.w * 0.48).min(320.0);
 
     // App badge (colored dot + source app name)
-    let app_name = if has && !t.app.is_empty() {
-        t.app.clone()
-    } else {
-        "Windows Media".to_string()
-    };
+    let app_name = if has && !t.app.is_empty() { t.app.clone() } else { "Windows Media".to_string() };
 
     // Top strip: source on the left, position/duration on the right.
-    c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, if app_name.to_lowercase().contains("spotify") { Color::rgb(30, 215, 96) } else if has { acc } else { pal().text_3 });
+    c.s.circle(
+        a.x + 4.0,
+        a.y + 7.0,
+        3.5,
+        if app_name.to_lowercase().contains("spotify") {
+            Color::rgb(30, 215, 96)
+        } else if has {
+            acc
+        } else {
+            pal().text_3
+        },
+    );
     let top = if has { format!("NOW PLAYING \u{00b7} {}", app_name.to_uppercase()) } else { "MUSIC".to_string() };
     c.text(top, Rect::new(a.x + 12.0, a.y, a.w - 130.0, 15.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
     if has {
@@ -288,21 +310,15 @@ fn music(c: &mut Ctx, a: Rect) {
         c.text("Lyrics are turned off", Rect::new(lx, a.y + 90.0, lw, 24.0), 13.5, Weight::Regular, pal().text_3, Align::Left);
     } else if let (true, Some(i)) = (has, vm.lyric_idx) {
         let curr_line = vm.lyric_lines.get(i);
-        let curr_sublines = curr_line
-            .map(|l| wrap_lyrics(&l.text, lw, 17.0, true))
-            .unwrap_or_default();
+        let curr_sublines = curr_line.map(|l| wrap_lyrics(&l.text, lw, 17.0, true)).unwrap_or_default();
         let curr_count = curr_sublines.len().max(1);
 
         let prev_line = if i > 0 { vm.lyric_lines.get(i - 1) } else { None };
-        let prev_sublines = prev_line
-            .map(|l| wrap_lyrics(&l.text, lw, 13.0, false))
-            .unwrap_or_default();
+        let prev_sublines = prev_line.map(|l| wrap_lyrics(&l.text, lw, 13.0, false)).unwrap_or_default();
         let prev_count = prev_sublines.len().min(2);
 
         let next_line = vm.lyric_lines.get(i + 1);
-        let next_sublines = next_line
-            .map(|l| wrap_lyrics(&l.text, lw, 13.0, false))
-            .unwrap_or_default();
+        let next_sublines = next_line.map(|l| wrap_lyrics(&l.text, lw, 13.0, false)).unwrap_or_default();
 
         let prev_lh = 19.0;
         let curr_lh = 26.0;
@@ -333,15 +349,7 @@ fn music(c: &mut Ctx, a: Rect) {
             let sweeps = karaoke_subline_progress(&curr_sublines, frac);
             let mut cy = curr_y;
             for (subline, sub_frac) in sweeps {
-                c.s.text_karaoke(
-                    subline.to_string(),
-                    Rect::new(lx, cy, lw, curr_lh),
-                    17.0,
-                    Weight::Bold,
-                    pal().text_2,
-                    WHITE,
-                    sub_frac,
-                );
+                c.s.text_karaoke(subline.to_string(), Rect::new(lx, cy, lw, curr_lh), 17.0, Weight::Bold, pal().text_2, WHITE, sub_frac);
                 cy += curr_lh;
             }
 
@@ -374,11 +382,7 @@ pub fn wrap_lyrics(text: &str, max_w: f32, size: f32, bold: bool) -> Vec<String>
     let mut cur = String::new();
 
     let push_word = |out: &mut Vec<String>, cur: &mut String, word: &str| {
-        let candidate = if cur.is_empty() {
-            word.to_string()
-        } else {
-            format!("{cur} {word}")
-        };
+        let candidate = if cur.is_empty() { word.to_string() } else { format!("{cur} {word}") };
 
         if est_w(&candidate, size) * factor <= max_w {
             *cur = candidate;
@@ -439,10 +443,7 @@ pub fn karaoke_subline_progress<'a>(lines: &'a [String], frac: f32) -> Vec<(&'a 
         return vec![(&lines[0], frac.clamp(0.0, 1.0))];
     }
 
-    let weights: Vec<f32> = lines
-        .iter()
-        .map(|l| (l.chars().count() as f32).max(1.0))
-        .collect();
+    let weights: Vec<f32> = lines.iter().map(|l| (l.chars().count() as f32).max(1.0)).collect();
     let total_weight: f32 = weights.iter().sum();
 
     let mut result = Vec::with_capacity(lines.len());
@@ -608,7 +609,14 @@ fn water(c: &mut Ctx, a: Rect) {
     c.s.ring(ctr.0, ctr.1, r, 2.5, 0.0, 1.0, pal().ink(0.16));
     let pct = (vm.water.progress(day) * 100.0).round() as u32;
     c.text(format!("{pct}%"), Rect::new(ctr.0 - 50.0, ctr.1 - 22.0, 100.0, 32.0), 24.0, Weight::Semibold, WHITE, Align::Center);
-    c.text(format!("{} / {}", teardrop_core::fmt_glasses(today), teardrop_core::glasses_label(goal)), Rect::new(ctr.0 - 60.0, ctr.1 + 10.0, 120.0, 16.0), 10.5, Weight::Medium, WHITE.fade(0.85), Align::Center);
+    c.text(
+        format!("{} / {}", teardrop_core::fmt_glasses(today), teardrop_core::glasses_label(goal)),
+        Rect::new(ctr.0 - 60.0, ctr.1 + 10.0, 120.0, 16.0),
+        10.5,
+        Weight::Medium,
+        WHITE.fade(0.85),
+        Align::Center,
+    );
 
     let x = a.x + 148.0;
     let w = a.right() - x;
@@ -637,7 +645,14 @@ fn water(c: &mut Ctx, a: Rect) {
             c.s.rect(Rect::new(bx, base - hh, bw, hh), 5.0, if is_today { acc } else { acc.fade(0.5) });
         }
         let letter: String = d.format("%a").to_string().chars().take(1).collect();
-        c.text(letter, Rect::new(bx - 3.0, base + 3.0, bw + 6.0, 13.0), 10.0, if is_today { Weight::Semibold } else { Weight::Regular }, if is_today { pal().text } else { pal().text_3 }, Align::Center);
+        c.text(
+            letter,
+            Rect::new(bx - 3.0, base + 3.0, bw + 6.0, 13.0),
+            10.0,
+            if is_today { Weight::Semibold } else { Weight::Regular },
+            if is_today { pal().text } else { pal().text_3 },
+            Align::Center,
+        );
     }
 }
 
@@ -1066,45 +1081,17 @@ fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
         let full_date = format_note_date(note.updated_at, vm.now);
         let right_reserved = if hv > 0.05 { 190.0 } else { 160.0 };
 
-        c.text(
-            one_line(&title),
-            Rect::new(r.x + 12.0, r.y + 3.0, (r.w - right_reserved - 16.0).max(60.0), 18.0),
-            13.5,
-            Weight::Semibold,
-            pal().text,
-            Align::Left,
-        );
+        c.text(one_line(&title), Rect::new(r.x + 12.0, r.y + 3.0, (r.w - right_reserved - 16.0).max(60.0), 18.0), 13.5, Weight::Semibold, pal().text, Align::Left);
         if !preview.is_empty() {
-            c.text(
-                one_line(&preview),
-                Rect::new(r.x + 12.0, r.y + 20.0, (r.w - right_reserved - 16.0).max(60.0), 14.0),
-                11.0,
-                Weight::Regular,
-                pal().text_3,
-                Align::Left,
-            );
+            c.text(one_line(&preview), Rect::new(r.x + 12.0, r.y + 20.0, (r.w - right_reserved - 16.0).max(60.0), 14.0), 11.0, Weight::Regular, pal().text_3, Align::Left);
         }
 
         // Full formatted date badge
         let date_w = 110.0;
         let date_x = r.right() - (if hv > 0.05 { 40.0 + date_w } else { 12.0 + date_w });
-        c.text(
-            full_date,
-            Rect::new(date_x, r.y + 4.0, date_w, 15.0),
-            11.0,
-            Weight::Medium,
-            pal().text_2,
-            Align::Right,
-        );
+        c.text(full_date, Rect::new(date_x, r.y + 4.0, date_w, 15.0), 11.0, Weight::Medium, pal().text_2, Align::Right);
         // Relative age tag underneath
-        c.text(
-            note_age(note.updated_at, vm.now),
-            Rect::new(date_x, r.y + 19.0, date_w, 13.0),
-            10.0,
-            Weight::Regular,
-            pal().text_3,
-            Align::Right,
-        );
+        c.text(note_age(note.updated_at, vm.now), Rect::new(date_x, r.y + 19.0, date_w, 13.0), 10.0, Weight::Regular, pal().text_3, Align::Right);
 
         c.hit(Rect::new(r.x, r.y, r.w - 36.0, r.h), open);
         if hv > 0.05 {
@@ -1113,7 +1100,11 @@ fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
     }
 
     let count_text = if n == total_notes {
-        if n == 1 { "1 note".to_string() } else { format!("{n} notes") }
+        if n == 1 {
+            "1 note".to_string()
+        } else {
+            format!("{n} notes")
+        }
     } else {
         format!("{n} of {total_notes} notes ({})", date_filter.label())
     };
@@ -1193,14 +1184,7 @@ fn note_editor(c: &mut Ctx, a: Rect, acc: Color) {
         }
     }
     if text.is_empty() {
-        c.text(
-            "Start typing \u{2014} Enter starts a new line",
-            Rect::new(body.x + 12.0, body.y + 10.0, inner_w, line_h),
-            13.5,
-            Weight::Regular,
-            pal().text_3,
-            Align::Left,
-        );
+        c.text("Start typing \u{2014} Enter starts a new line", Rect::new(body.x + 12.0, body.y + 10.0, inner_w, line_h), 13.5, Weight::Regular, pal().text_3, Align::Left);
         if blink {
             c.s.rect(Rect::new(body.x + 12.0, body.y + 12.0, 1.6, 16.0), 0.8, acc);
         }
@@ -1275,10 +1259,7 @@ pub fn shown_year_month(today: NaiveDate, cal_offset: i32) -> (i32, u32) {
 
 /// Active list of events on `Page::Today`: either the events occurring on
 /// `selected_day` or the upcoming agenda when no day is selected.
-pub fn active_calendar_events<'a>(
-    vm: &'a crate::viewmodel::ViewModel,
-    selected_day: Option<(i32, u32, u32)>,
-) -> Vec<&'a crate::calendar::Event> {
+pub fn active_calendar_events<'a>(vm: &'a crate::viewmodel::ViewModel, selected_day: Option<(i32, u32, u32)>) -> Vec<&'a crate::calendar::Event> {
     match selected_day {
         Some((y, m, d)) => vm.calendar.events_on_day(y, m, d),
         None => vm.calendar.agenda(vm.now.timestamp(), 15),
@@ -1296,7 +1277,14 @@ fn today(c: &mut Ctx, a: Rect) {
     let date = now.date();
 
     c.s.circle(a.x + 4.0, a.y + 7.0, 3.5, acc);
-    c.text(format!("TODAY \u{00b7} {}", date.format("%a %d %b").to_string().to_uppercase()), Rect::new(a.x + 12.0, a.y, 220.0, 15.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
+    c.text(
+        format!("TODAY \u{00b7} {}", date.format("%a %d %b").to_string().to_uppercase()),
+        Rect::new(a.x + 12.0, a.y, 220.0, 15.0),
+        10.5,
+        Weight::Semibold,
+        pal().text_3,
+        Align::Left,
+    );
 
     // Month grid (Monday first), shifted by the browsing offset.
     let off_m = c.ui.cal_offset;
@@ -1440,7 +1428,11 @@ fn agenda(c: &mut Ctx, r: Rect, items: &[&crate::calendar::Event], acc: Color) {
             time_range_label(ev)
         } else {
             let day = day_label(ev, now);
-            if ev.all_day { format!("{day} \u{00b7} All day") } else { format!("{day} {}", clock_label(ev)) }
+            if ev.all_day {
+                format!("{day} \u{00b7} All day")
+            } else {
+                format!("{day} {}", clock_label(ev))
+            }
         };
         let tail = match (&ev.join, i) {
             (Some(j), _) => format!(" \u{00b7} {}", j.platform),
@@ -1515,13 +1507,7 @@ fn event_detail(c: &mut Ctx, r: Rect, ev_idx: usize, ev: &crate::calendar::Event
     }
 
     if let Some(j) = &ev.join {
-        c.pill(
-            Rect::new(ix, card.bottom() - 28.0, iw, 22.0),
-            Action::Join(ev_idx as u8),
-            &format!("Join {}", j.platform),
-            Some(acc),
-            10.5,
-        );
+        c.pill(Rect::new(ix, card.bottom() - 28.0, iw, 22.0), Action::Join(ev_idx as u8), &format!("Join {}", j.platform), Some(acc), 10.5);
     }
 }
 
@@ -1653,7 +1639,13 @@ fn usage_bar(c: &mut Ctx, r: Rect, label: &str, w: Option<&crate::usage::Window>
     match w {
         Some(w) => {
             let used = w.used_now(now);
-            let col = if used > 85.0 { pal().red } else if used > 65.0 { pal().amber } else { acc };
+            let col = if used > 85.0 {
+                pal().red
+            } else if used > 65.0 {
+                pal().amber
+            } else {
+                acc
+            };
             c.text(format!("{used:.0}%"), Rect::new(r.right() - 40.0, r.y - 1.0, 40.0, 16.0), 12.0, Weight::Semibold, pal().text, Align::Right);
             if used > 0.0 {
                 c.s.rect(Rect::new(bar.x, bar.y, (bar.w * used / 100.0).max(6.0), 6.0), 3.0, col);
@@ -1668,7 +1660,13 @@ fn limits_card(c: &mut Ctx, r: Rect, name: &str, l: &crate::usage::Limits, loade
     let head = if l.plan.is_empty() { name.to_string() } else { format!("{name}  \u{00b7}  {}", l.plan) };
     c.text(head, Rect::new(r.x + 12.0, r.y + 7.0, r.w - 24.0, 18.0), 13.0, Weight::Semibold, pal().text, Align::Left);
     if !l.has_data() {
-        let msg = if !loaded { "Reading\u{2026}" } else if l.note.is_empty() { "No data yet" } else { l.note.as_str() };
+        let msg = if !loaded {
+            "Reading\u{2026}"
+        } else if l.note.is_empty() {
+            "No data yet"
+        } else {
+            l.note.as_str()
+        };
         c.text(msg, Rect::new(r.x + 12.0, r.y + 28.0, r.w - 24.0, 18.0), 11.5, Weight::Regular, pal().text_3, Align::Left);
         return;
     }
@@ -1708,9 +1706,16 @@ fn usage(c: &mut Ctx, a: Rect) {
         c.text("No OpenCode activity in the last 7 days", Rect::new(r.x + 12.0, r.y + 28.0, r.w - 24.0, 18.0), 11.5, Weight::Regular, pal().text_3, Align::Left);
     } else {
         let money = |v: f64| if v > 0.0 { format!(" \u{00b7} ${v:.2}") } else { String::new() };
-        let line = format!("Today {} tokens{}    Week {} tokens{}", crate::usage::compact_count(o.today_tokens), money(o.today_cost), crate::usage::compact_count(o.week_tokens), money(o.week_cost));
+        let line = format!(
+            "Today {} tokens{}    Week {} tokens{}",
+            crate::usage::compact_count(o.today_tokens),
+            money(o.today_cost),
+            crate::usage::compact_count(o.week_tokens),
+            money(o.week_cost)
+        );
         c.text(line, Rect::new(r.x + 12.0, r.y + 26.0, r.w - 24.0, 18.0), 12.0, Weight::Medium, pal().text, Align::Left);
-        let top = o.top.iter().map(|s| format!("{} {}", s.label.rsplit('/').next().unwrap_or(&s.label), crate::usage::compact_count(s.tokens))).collect::<Vec<_>>().join("  \u{00b7}  ");
+        let top =
+            o.top.iter().map(|s| format!("{} {}", s.label.rsplit('/').next().unwrap_or(&s.label), crate::usage::compact_count(s.tokens))).collect::<Vec<_>>().join("  \u{00b7}  ");
         if !top.is_empty() {
             c.text(top, Rect::new(r.x + 12.0, r.y + 45.0, r.w - 24.0, 16.0), 10.5, Weight::Regular, pal().text_3, Align::Left);
         }
@@ -1783,11 +1788,7 @@ pub fn wrap_lines(text: &str, max_w: f32, size: f32) -> Vec<String> {
         }
         let mut cur = String::new();
         for word in para.split_whitespace() {
-            let candidate = if cur.is_empty() {
-                word.to_string()
-            } else {
-                format!("{cur} {word}")
-            };
+            let candidate = if cur.is_empty() { word.to_string() } else { format!("{cur} {word}") };
             if est_w(&candidate, size) * 1.12 <= max_w || cur.is_empty() {
                 cur = candidate;
             } else {
@@ -1871,14 +1872,7 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
             );
             if ai.chatgpt_login_busy {
                 if !ai.chatgpt_user_code.is_empty() {
-                    c.text(
-                        format!("Code: {}", ai.chatgpt_user_code),
-                        Rect::new(card.x + 12.0, card.y + 27.0, card.w - 176.0, 22.0),
-                        13.5,
-                        Weight::Bold,
-                        acc,
-                        Align::Left,
-                    );
+                    c.text(format!("Code: {}", ai.chatgpt_user_code), Rect::new(card.x + 12.0, card.y + 27.0, card.w - 176.0, 22.0), 13.5, Weight::Bold, acc, Align::Left);
                     c.pill(Rect::new(card.right() - 156.0, card.y + 26.0, 92.0, 24.0), Action::AiChatGptCopyCode, "Copy & Open", Some(acc), 11.0);
                     c.pill(Rect::new(card.right() - 58.0, card.y + 26.0, 50.0, 24.0), Action::AiChatGptSignIn, "Cancel", None, 11.0);
                 } else {
@@ -1894,14 +1888,7 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
                 }
             } else if ai.chatgpt_signed_in {
                 c.s.circle(card.x + 17.0, card.y + 37.0, 3.8, pal().green);
-                c.text(
-                    "Connected (DPAPI OAuth token)",
-                    Rect::new(card.x + 26.0, card.y + 27.0, card.w - 186.0, 20.0),
-                    11.5,
-                    Weight::Medium,
-                    pal().text_2,
-                    Align::Left,
-                );
+                c.text("Connected (DPAPI OAuth token)", Rect::new(card.x + 26.0, card.y + 27.0, card.w - 186.0, 20.0), 11.5, Weight::Medium, pal().text_2, Align::Left);
                 c.pill(Rect::new(card.right() - 152.0, card.y + 26.0, 80.0, 24.0), Action::AiRefreshModels, "Sync models", None, 10.5);
                 c.pill(Rect::new(card.right() - 66.0, card.y + 26.0, 58.0, 24.0), Action::AiChatGptSignOut, "Sign out", None, 10.5);
             } else {
@@ -1913,13 +1900,7 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
                     pal().text_3,
                     Align::Left,
                 );
-                c.pill(
-                    Rect::new(card.right() - 148.0, card.y + 25.0, 140.0, 25.0),
-                    Action::AiChatGptSignIn,
-                    "Sign in with ChatGPT",
-                    Some(acc),
-                    11.0,
-                );
+                c.pill(Rect::new(card.right() - 148.0, card.y + 25.0, 140.0, 25.0), Action::AiChatGptSignIn, "Sign in with ChatGPT", Some(acc), 11.0);
             }
         }
         AiProvider::OpenCodeGo => {
@@ -1931,11 +1912,7 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
                 pal().text,
                 Align::Left,
             );
-            let sub = if ai.configured {
-                "Key saved (DPAPI) \u{00b7} Responses / Messages / Chat"
-            } else {
-                "Copy your OpenCode Go API key, then click Paste Key"
-            };
+            let sub = if ai.configured { "Key saved (DPAPI) \u{00b7} Responses / Messages / Chat" } else { "Copy your OpenCode Go API key, then click Paste Key" };
             c.text(sub, Rect::new(card.x + 12.0, card.y + 28.0, card.w - 176.0, 20.0), 11.0, Weight::Regular, if ai.configured { pal().text_2 } else { pal().text_3 }, Align::Left);
             c.pill(Rect::new(card.right() - 158.0, card.y + 25.0, 74.0, 25.0), Action::AiPasteKey, "Paste Key", (!ai.configured).then_some(acc), 11.0);
             c.pill(Rect::new(card.right() - 78.0, card.y + 25.0, 70.0, 25.0), Action::AiRefreshModels, "Sync models", None, 10.5);
@@ -1959,21 +1936,14 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
             c.pill(Rect::new(card.right() - 158.0, card.y + 6.0, 72.0, 22.0), Action::AiPasteUrl, "Paste URL", None, 10.5);
             c.pill(Rect::new(card.right() - 80.0, card.y + 6.0, 72.0, 22.0), Action::AiPasteKey, "Paste Key", (!ai.configured).then_some(acc), 10.5);
 
-            let note = if ai.configured {
-                "API key saved (DPAPI) \u{00b7} OpenAI / OpenRouter / Groq / vLLM"
-            } else {
-                "Key optional for local servers \u{00b7} Paste Key for cloud APIs"
-            };
+            let note =
+                if ai.configured { "API key saved (DPAPI) \u{00b7} OpenAI / OpenRouter / Groq / vLLM" } else { "Key optional for local servers \u{00b7} Paste Key for cloud APIs" };
             c.text(note, Rect::new(card.x + 12.0, card.y + 32.0, card.w - 86.0, 18.0), 10.5, Weight::Regular, pal().text_3, Align::Left);
             c.pill(Rect::new(card.right() - 68.0, card.y + 31.0, 60.0, 20.0), Action::AiRefreshModels, "Sync", None, 10.0);
         }
         AiProvider::Gemini | AiProvider::Claude => {
             c.text(prov.full_name(), Rect::new(card.x + 12.0, card.y + 6.0, card.w - 110.0, 18.0), 12.0, Weight::Semibold, pal().text, Align::Left);
-            let sub = if ai.configured {
-                "API key saved (encrypted with Windows DPAPI)"
-            } else {
-                "Copy your API key to the clipboard, then click Paste Key"
-            };
+            let sub = if ai.configured { "API key saved (encrypted with Windows DPAPI)" } else { "Copy your API key to the clipboard, then click Paste Key" };
             c.text(sub, Rect::new(card.x + 12.0, card.y + 28.0, card.w - 110.0, 20.0), 11.0, Weight::Regular, if ai.configured { pal().text_2 } else { pal().text_3 }, Align::Left);
             c.pill(Rect::new(card.right() - 90.0, card.y + 15.0, 82.0, 26.0), Action::AiPasteKey, "Paste Key", (!ai.configured).then_some(acc), 11.0);
         }
@@ -2034,14 +2004,7 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
 
     // 4. Share my day toggle + learned memories badge.
     let sy = a.y + 156.0;
-    c.text(
-        "Share my day (calendar, tasks, water, focus, PC stats)",
-        Rect::new(a.x, sy, a.w - 52.0, 22.0),
-        12.0,
-        Weight::Regular,
-        pal().text,
-        Align::Left,
-    );
+    c.text("Share my day (calendar, tasks, water, focus, PC stats)", Rect::new(a.x, sy, a.w - 52.0, 22.0), 12.0, Weight::Regular, pal().text, Align::Left);
     c.switch(Rect::new(a.right() - 42.0, sy, 42.0, 22.0), SettingKey::AiShareDay, acc);
 
     // 5. Status / footer note.
@@ -2051,14 +2014,7 @@ fn ai_setup(c: &mut Ctx, a: Rect, acc: Color) {
     } else if !ai.status_note.is_empty() {
         (ai.status_note.clone(), acc)
     } else {
-        (
-            format!(
-                "Secrets encrypted with Windows DPAPI \u{00b7} {} learned memor{}",
-                ai.memories_count,
-                if ai.memories_count == 1 { "y" } else { "ies" }
-            ),
-            pal().text_3,
-        )
+        (format!("Secrets encrypted with Windows DPAPI \u{00b7} {} learned memor{}", ai.memories_count, if ai.memories_count == 1 { "y" } else { "ies" }), pal().text_3)
     };
     c.text(foot, Rect::new(a.x, fy, a.w, 18.0), 10.5, Weight::Medium, col, Align::Left);
 }
@@ -2113,11 +2069,7 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
     }
     icons::draw(&mut c.s, Icon::Sparkle, field.x + 16.0, field.cy(), 14.0, if typing { acc } else { pal().text_3 });
     let tr = Rect::new(field.x + 32.0, field.y, field.w - 42.0, field.h);
-    let shown = if typing {
-        c.ui.input.as_ref().map(|f| f.as_str()).unwrap_or("")
-    } else {
-        ai.input.as_str()
-    };
+    let shown = if typing { c.ui.input.as_ref().map(|f| f.as_str()).unwrap_or("") } else { ai.input.as_str() };
     if !shown.is_empty() {
         if typing {
             let f = c.ui.input.as_ref().unwrap();
@@ -2127,11 +2079,7 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
             c.text(shown.to_string(), tr, 12.5, Weight::Regular, pal().text, Align::Left);
         }
     } else {
-        let placeholder = if ai.busy {
-            "Thinking\u{2026}"
-        } else {
-            "Ask anything, add a task, or plan your day\u{2026}"
-        };
+        let placeholder = if ai.busy { "Thinking\u{2026}" } else { "Ask anything, add a task, or plan your day\u{2026}" };
         c.text(placeholder, tr, 12.5, Weight::Regular, pal().text_3, Align::Left);
         if typing && (c.ui.clock_s * 1.8) % 2.0 < 1.0 {
             c.s.rect(Rect::new(tr.x, field.cy() - 8.0, 1.5, 16.0), 0.7, acc);
@@ -2160,11 +2108,7 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
                 _ => "Add your API key in Setup to start chatting",
             };
             c.text(msg, Rect::new(ban.x + 12.0, ban.y, ban.w - 134.0, ban.h), 11.5, Weight::Medium, pal().text, Align::Left);
-            let (cta_act, cta_lbl) = if prov == AiProvider::ChatGpt {
-                (Action::AiChatGptSignIn, "Sign in")
-            } else {
-                (Action::AiToggleSetup, "Open Setup")
-            };
+            let (cta_act, cta_lbl) = if prov == AiProvider::ChatGpt { (Action::AiChatGptSignIn, "Sign in") } else { (Action::AiToggleSetup, "Open Setup") };
             c.pill(Rect::new(ban.right() - 112.0, ban.y + 4.0, 104.0, 24.0), cta_act, cta_lbl, Some(acc), 11.0);
             grid_y += 38.0;
             card_h = 56.0;
@@ -2208,13 +2152,7 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
             Role::Assistant => {
                 items.push(RowItem::Assistant { msg_idx: mi, md: super::markdown::laid(&m.text, md_w) });
                 for (ai_idx, act) in m.actions.iter().enumerate() {
-                    items.push(RowItem::ActionRow {
-                        msg_idx: mi,
-                        act_idx: ai_idx,
-                        label: act.label.clone(),
-                        can_undo: act.can_undo(),
-                        undone: act.undone,
-                    });
+                    items.push(RowItem::ActionRow { msg_idx: mi, act_idx: ai_idx, label: act.label.clone(), can_undo: act.can_undo(), undone: act.undone });
                 }
             }
         }
@@ -2242,11 +2180,7 @@ fn ai_chat(c: &mut Ctx, a: Rect, acc: Color) {
     let total_h: f32 = items.iter().map(&item_h).sum();
     let max_scroll = (total_h - body.h).max(0.0);
     let scroll_px = (ai.scroll as f32 * 24.0).min(max_scroll);
-    let mut y = if total_h <= body.h {
-        body.y
-    } else {
-        body.bottom() - total_h + scroll_px
-    };
+    let mut y = if total_h <= body.h { body.y } else { body.bottom() - total_h + scroll_px };
 
     let avatar = |c: &mut Ctx, x: f32, y: f32, pulse: f32| {
         c.s.circle(x + 11.0, y + 11.0, 11.0, acc.fade(0.16));
@@ -2431,7 +2365,13 @@ fn qs_tile(c: &mut Ctx, r: Rect, icon: Icon, name: &str, sub: &str, on: Option<b
     } else {
         c.s.rect(r, 12.0, pal().surface.mix(pal().surface_hover, h * if dead { 0.4 } else { 1.0 }));
     }
-    let ink = if lit { ON_ACCENT } else if dead { pal().text_3.fade(0.6) } else { pal().text };
+    let ink = if lit {
+        ON_ACCENT
+    } else if dead {
+        pal().text_3.fade(0.6)
+    } else {
+        pal().text
+    };
     let sub_ink = if lit { ON_ACCENT.fade(0.65) } else { pal().text_3.fade(if dead { 0.6 } else { 1.0 }) };
     icons::draw(&mut c.s, icon, r.x + 15.0, r.y + 14.0, 15.0, ink);
     c.text(name, Rect::new(r.x + 9.0, r.bottom() - 28.0, r.w - 16.0, 14.0), 11.0, Weight::Semibold, ink, Align::Left);
@@ -2527,14 +2467,7 @@ fn qs_list(c: &mut Ctx, a: Rect, top_off: f32, acc: Color) {
     let scroll = c.ui.scroll_of(Page::Quick).min(nrows.saturating_sub(visible));
     c.s.clip(list);
     if nrows == 0 {
-        c.text(
-            if wifi { "No networks found" } else { "No devices found" },
-            Rect::new(list.x, list.y + 12.0, list.w, 18.0),
-            11.0,
-            Weight::Regular,
-            pal().text_3,
-            Align::Left,
-        );
+        c.text(if wifi { "No networks found" } else { "No devices found" }, Rect::new(list.x, list.y + 12.0, list.w, 18.0), 11.0, Weight::Regular, pal().text_3, Align::Left);
     }
     for vi in 0..visible.min(nrows.saturating_sub(scroll)) {
         let i = scroll + vi;
@@ -2567,7 +2500,15 @@ fn qs_wifi_row(c: &mut Ctx, r: Rect, n: &teardrop_core::WifiNet, i: usize, acc: 
     }
     let ink = if n.connected { pal().text } else { pal().text_2 };
     c.text(n.ssid.clone(), Rect::new(r.x + 28.0, r.y, r.w - 28.0 - 104.0, r.h), 11.5, Weight::Medium, ink, Align::Left);
-    let status = if n.connected { "Connected" } else if n.has_profile { "Saved" } else if n.secured { "Secured" } else { "Open" };
+    let status = if n.connected {
+        "Connected"
+    } else if n.has_profile {
+        "Saved"
+    } else if n.secured {
+        "Secured"
+    } else {
+        "Open"
+    };
     c.text(status, Rect::new(r.right() - 96.0, r.y, 96.0, r.h), 10.0, Weight::Regular, if n.connected { acc } else { pal().text_3 }, Align::Right);
     c.hit(r, act);
 }
@@ -2582,7 +2523,13 @@ fn qs_bt_row(c: &mut Ctx, r: Rect, d: &teardrop_core::BtDev, i: usize, acc: Colo
     icons::draw(&mut c.s, Icon::Bt, r.x + 11.0, r.cy(), 12.0, ic);
     let ink = if d.connected { pal().text } else { pal().text_2 };
     c.text(d.name.clone(), Rect::new(r.x + 28.0, r.y, r.w - 28.0 - 104.0, r.h), 11.5, Weight::Medium, ink, Align::Left);
-    let status = if d.connected { "Connected" } else if d.paired { "Paired" } else { "Pair" };
+    let status = if d.connected {
+        "Connected"
+    } else if d.paired {
+        "Paired"
+    } else {
+        "Pair"
+    };
     c.text(status, Rect::new(r.right() - 96.0, r.y, 96.0, r.h), 10.0, Weight::Regular, if d.connected { acc } else { pal().text_3 }, Align::Right);
     c.hit(r, act);
 }
@@ -2838,7 +2785,6 @@ fn style_tile(c: &mut Ctx, r: Rect, style: IslandStyle, on: bool, gap: f32) {
     c.hit(r, act);
 }
 
-
 // -------------------------------------------------------------------- chat
 
 /// Max message-scroll in message units (0 = pinned to the newest).
@@ -2972,9 +2918,7 @@ fn chat(c: &mut Ctx, a: Rect) {
                 break;
             }
             let who = if m.mine { "you".to_string() } else { m.who.clone() };
-            let when = chrono::DateTime::from_timestamp_millis(m.ts)
-                .map(|t| local_naive(t).format("%H:%M").to_string())
-                .unwrap_or_default();
+            let when = chrono::DateTime::from_timestamp_millis(m.ts).map(|t| local_naive(t).format("%H:%M").to_string()).unwrap_or_default();
             let mut meta = who.clone();
             if m.mine {
                 if m.failed {
@@ -2987,7 +2931,13 @@ fn chat(c: &mut Ctx, a: Rect) {
                     meta.push_str(" \u{00b7} \u{2026}");
                 }
             }
-            let meta_col = if m.failed { pal().red } else if m.mine { acc } else { pal().text_3 };
+            let meta_col = if m.failed {
+                pal().red
+            } else if m.mine {
+                acc
+            } else {
+                pal().text_3
+            };
             c.text(meta, Rect::new(list.x + 2.0, cy, list.w - 60.0, 14.0), 10.0, Weight::Semibold, meta_col, Align::Left);
             c.text(when, Rect::new(list.right() - 58.0, cy, 56.0, 14.0), 10.0, Weight::Regular, pal().text_3, Align::Right);
             let mut ly = cy + 15.0;

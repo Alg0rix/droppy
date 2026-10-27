@@ -32,14 +32,14 @@ pub fn set(pct: u8) -> bool {
 mod imp {
     use windows::core::w;
     use windows::Win32::Devices::Display::{
-        DestroyPhysicalMonitor, GetMonitorBrightness, GetNumberOfPhysicalMonitorsFromHMONITOR, GetPhysicalMonitorsFromHMONITOR, SetMonitorBrightness,
-        DISPLAY_BRIGHTNESS, IOCTL_VIDEO_QUERY_DISPLAY_BRIGHTNESS, IOCTL_VIDEO_SET_DISPLAY_BRIGHTNESS, PHYSICAL_MONITOR,
+        DestroyPhysicalMonitor, GetMonitorBrightness, GetNumberOfPhysicalMonitorsFromHMONITOR, GetPhysicalMonitorsFromHMONITOR, SetMonitorBrightness, DISPLAY_BRIGHTNESS,
+        IOCTL_VIDEO_QUERY_DISPLAY_BRIGHTNESS, IOCTL_VIDEO_SET_DISPLAY_BRIGHTNESS, PHYSICAL_MONITOR,
     };
     use windows::Win32::Foundation::{CloseHandle, HANDLE};
     use windows::Win32::Graphics::Gdi::{MonitorFromWindow, HMONITOR, MONITOR_DEFAULTTOPRIMARY};
     use windows::Win32::Storage::FileSystem::{CreateFileW, FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING};
-    use windows::Win32::System::IO::DeviceIoControl;
     use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+    use windows::Win32::System::IO::DeviceIoControl;
     use windows::Win32::UI::WindowsAndMessaging::GetDesktopWindow;
 
     /// `\\.\LCD` is the display driver's brightness alias on internal panels.
@@ -91,17 +91,9 @@ mod imp {
             // Policy 0 = explicit level; set both AC and DC so it applies on
             // whichever power source is live right now.
             let mut io = DISPLAY_BRIGHTNESS { ucDisplayPolicy: 0, ucACBrightness: pct, ucDCBrightness: pct };
-            let ok = DeviceIoControl(
-                h,
-                IOCTL_VIDEO_SET_DISPLAY_BRIGHTNESS,
-                Some(&mut io as *mut _ as *const _),
-                std::mem::size_of::<DISPLAY_BRIGHTNESS>() as u32,
-                None,
-                0,
-                None,
-                None,
-            )
-            .is_ok();
+            let ok =
+                DeviceIoControl(h, IOCTL_VIDEO_SET_DISPLAY_BRIGHTNESS, Some(&mut io as *mut _ as *const _), std::mem::size_of::<DISPLAY_BRIGHTNESS>() as u32, None, 0, None, None)
+                    .is_ok();
             let _ = CloseHandle(h);
             ok
         }

@@ -83,10 +83,7 @@ fn build_apps() -> Vec<(String, String)> {
 /// name these items produce (`::{CLSID}\0\::{CLSID}\{id}`) can't be re-parsed
 /// by SHParseDisplayName, so the launch/icon code needs the real PIDL.
 pub fn task_pidl(path: &str) -> *mut windows::Win32::UI::Shell::Common::ITEMIDLIST {
-    TASK_PIDLS
-        .get()
-        .and_then(|v| v.iter().find(|(p, _)| p == path).map(|(_, p)| *p as *mut _))
-        .unwrap_or(std::ptr::null_mut())
+    TASK_PIDLS.get().and_then(|v| v.iter().find(|(p, _)| p == path).map(|(_, p)| *p as *mut _)).unwrap_or(std::ptr::null_mut())
 }
 
 fn build_tasks() -> Vec<(String, String)> {
@@ -123,9 +120,7 @@ fn build_tasks() -> Vec<(String, String)> {
 /// `shell:AppsFolder\<parsing name>` so ShellExecuteW can open them.
 fn apps_folder_items() -> Vec<(String, String)> {
     use windows::Win32::Foundation::HANDLE;
-    use windows::Win32::UI::Shell::{
-        FOLDERID_AppsFolder, IShellItem, KF_FLAG_DEFAULT, SHGetKnownFolderItem, SIGDN_NORMALDISPLAY, SIGDN_PARENTRELATIVEPARSING,
-    };
+    use windows::Win32::UI::Shell::{FOLDERID_AppsFolder, IShellItem, SHGetKnownFolderItem, KF_FLAG_DEFAULT, SIGDN_NORMALDISPLAY, SIGDN_PARENTRELATIVEPARSING};
     unsafe {
         let folder: IShellItem = match SHGetKnownFolderItem(&FOLDERID_AppsFolder, KF_FLAG_DEFAULT, HANDLE::default()) {
             Ok(f) => f,
@@ -240,13 +235,7 @@ fn build_settings() -> Vec<SettingEntry> {
             if name.is_empty() {
                 continue;
             }
-            let keywords = raw
-                .keywords_refs
-                .iter()
-                .map(|r| resolve_indirect(r))
-                .filter(|k| !k.is_empty())
-                .collect::<Vec<_>>()
-                .join(";");
+            let keywords = raw.keywords_refs.iter().map(|r| resolve_indirect(r)).filter(|k| !k.is_empty()).collect::<Vec<_>>().join(";");
             if !seen_names.insert(name.to_lowercase()) {
                 continue;
             }
@@ -269,13 +258,7 @@ pub fn parse_settings_xml(text: &str) -> Vec<RawSetting> {
         let Some(filename) = tag_text(chunk, "Filename") else { continue };
         let Some(description) = tag_text(chunk, "Description") else { continue };
         let kw = tag_text(chunk, "HighKeywords").or_else(|| tag_text(chunk, "Keywords")).unwrap_or_default();
-        out.push(RawSetting {
-            filename,
-            description_ref: description,
-            keywords_refs: keyword_refs(&kw),
-            page_id: page_id_of(chunk),
-            host_id: tag_text(chunk, "HostID"),
-        });
+        out.push(RawSetting { filename, description_ref: description, keywords_refs: keyword_refs(&kw), page_id: page_id_of(chunk), host_id: tag_text(chunk, "HostID") });
     }
     out
 }
@@ -603,10 +586,7 @@ mod tests {
     #[test]
     fn maps_page_uris() {
         assert_eq!(page_uri(Some("SettingsPageTaskbar"), None), "ms-settings:taskbar");
-        assert_eq!(
-            page_uri(Some("{BB06C0E4-D293-4F75-8A90-CB05B6477EEE}"), None),
-            "shell:::{BB06C0E4-D293-4F75-8A90-CB05B6477EEE}"
-        );
+        assert_eq!(page_uri(Some("{BB06C0E4-D293-4F75-8A90-CB05B6477EEE}"), None), "shell:::{BB06C0E4-D293-4F75-8A90-CB05B6477EEE}");
         assert_eq!(page_uri(Some("{6E6DDBCB-9C89-434B-A994-D5F22239523B}"), None), "windowsdefender:");
         assert_eq!(page_uri(Some("SettingsPageNetworkFirewall"), None), "windowsdefender://network");
         assert_eq!(page_uri(Some("SettingsPagePrivacyWebcam"), None), "ms-settings:privacy-webcam");

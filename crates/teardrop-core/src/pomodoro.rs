@@ -4,7 +4,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Phase { Idle, Focus, ShortBreak, LongBreak }
+pub enum Phase {
+    Idle,
+    Focus,
+    ShortBreak,
+    LongBreak,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pomodoro {
@@ -27,7 +32,12 @@ impl Default for Pomodoro {
 
 impl Pomodoro {
     pub fn phase_len_ms(&self, phase: Phase) -> u64 {
-        let m = match phase { Phase::Focus => self.focus_min, Phase::ShortBreak => self.short_min, Phase::LongBreak => self.long_min, Phase::Idle => 0 };
+        let m = match phase {
+            Phase::Focus => self.focus_min,
+            Phase::ShortBreak => self.short_min,
+            Phase::LongBreak => self.long_min,
+            Phase::Idle => 0,
+        };
         m as u64 * 60_000
     }
 
@@ -62,11 +72,17 @@ impl Pomodoro {
     /// Advance on expiry; returns the new phase if it changed.
     pub fn tick(&mut self, now: DateTime<Utc>) -> Option<Phase> {
         let end = self.ends_at?;
-        if now < end { return None; }
+        if now < end {
+            return None;
+        }
         let next = match self.phase {
             Phase::Focus => {
                 self.completed_focus += 1;
-                if self.completed_focus % self.sessions_before_long == 0 { Phase::LongBreak } else { Phase::ShortBreak }
+                if self.completed_focus % self.sessions_before_long == 0 {
+                    Phase::LongBreak
+                } else {
+                    Phase::ShortBreak
+                }
             }
             Phase::ShortBreak | Phase::LongBreak => Phase::Focus,
             Phase::Idle => return None,

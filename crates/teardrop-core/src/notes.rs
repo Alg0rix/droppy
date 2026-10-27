@@ -16,12 +16,7 @@ pub enum NoteDateFilter {
 }
 
 impl NoteDateFilter {
-    pub const ALL: [NoteDateFilter; 4] = [
-        NoteDateFilter::All,
-        NoteDateFilter::Today,
-        NoteDateFilter::Week,
-        NoteDateFilter::Month,
-    ];
+    pub const ALL: [NoteDateFilter; 4] = [NoteDateFilter::All, NoteDateFilter::Today, NoteDateFilter::Week, NoteDateFilter::Month];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -84,10 +79,7 @@ impl NoteList {
     /// Insert a new note at the top (newest first) and return it.
     pub fn add(&mut self, text: &str, now: DateTime<Utc>) -> &Note {
         let id = format!("{}-{}", now.timestamp_millis(), self.notes.len());
-        self.notes.insert(
-            0,
-            Note { id, text: text.to_string(), created_at: now, updated_at: now },
-        );
+        self.notes.insert(0, Note { id, text: text.to_string(), created_at: now, updated_at: now });
         &self.notes[0]
     }
 
@@ -121,11 +113,7 @@ impl NoteList {
 
 /// First non-empty line, trimmed — the row title.
 pub fn title_of(text: &str) -> String {
-    text.lines()
-        .map(str::trim)
-        .find(|l| !l.is_empty())
-        .unwrap_or("")
-        .to_string()
+    text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("").to_string()
 }
 
 /// Everything after the title line, whitespace-collapsed — the row preview.
@@ -279,12 +267,7 @@ mod tests {
         let subseq = fuzzy_score("rt", "rust").unwrap();
         assert!(exact > subseq);
 
-        let note = Note {
-            id: "1".into(),
-            text: "Grocery List\nMilk, eggs, and bread".into(),
-            created_at: t(100),
-            updated_at: t(100),
-        };
+        let note = Note { id: "1".into(), text: "Grocery List\nMilk, eggs, and bread".into(), created_at: t(100), updated_at: t(100) };
         assert!(note.match_query("groc").is_some());
         assert!(note.match_query("milk").is_some());
         assert!(note.match_query("bread").is_some());

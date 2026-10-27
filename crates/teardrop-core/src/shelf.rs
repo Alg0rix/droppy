@@ -31,7 +31,9 @@ impl Shelf {
     }
 
     pub fn add(&mut self, path: &str, now: DateTime<Utc>) -> bool {
-        if self.items.iter().any(|i| i.path == path) { return false; }
+        if self.items.iter().any(|i| i.path == path) {
+            return false;
+        }
         self.items.push(ShelfItem { path: path.to_string(), name: Self::file_name_of(path), pinned_at: now });
         while self.items.len() > self.max_items {
             self.items.remove(0);

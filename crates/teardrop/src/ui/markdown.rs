@@ -35,9 +35,16 @@ pub enum Block {
     Heading(u8, Vec<Span>),
     Para(Vec<Span>),
     /// `marker` is empty for a bullet dot, else the number ("1.").
-    Item { depth: u8, marker: String, spans: Vec<Span> },
+    Item {
+        depth: u8,
+        marker: String,
+        spans: Vec<Span>,
+    },
     Quote(Vec<Span>),
-    Code { lang: String, lines: Vec<String> },
+    Code {
+        lang: String,
+        lines: Vec<String>,
+    },
     Rule,
 }
 
@@ -454,7 +461,13 @@ fn runs_of(runs: &[(String, Style)], base: Color, weight: Weight, acc: Color) ->
             weight: if st.bold { Weight::Bold } else { weight },
             italic: st.italic,
             mono: st.code,
-            color: if st.link { acc } else if st.code { pal().text } else { base },
+            color: if st.link {
+                acc
+            } else if st.code {
+                pal().text
+            } else {
+                base
+            },
             underline: st.link,
             chip: st.code.then(|| pal().ink(0.11)),
         })

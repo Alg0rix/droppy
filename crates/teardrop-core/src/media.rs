@@ -3,7 +3,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Playback { Playing, Paused, Stopped }
+pub enum Playback {
+    Playing,
+    Paused,
+    Stopped,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Track {
@@ -24,11 +28,19 @@ impl Default for Track {
 
 impl Track {
     pub fn display_artist(&self) -> &str {
-        if self.artist.is_empty() { &self.app } else { &self.artist }
+        if self.artist.is_empty() {
+            &self.app
+        } else {
+            &self.artist
+        }
     }
 
     pub fn progress(&self) -> f32 {
-        if self.duration_ms == 0 { 0.0 } else { (self.position_ms as f32 / self.duration_ms as f32).clamp(0.0, 1.0) }
+        if self.duration_ms == 0 {
+            0.0
+        } else {
+            (self.position_ms as f32 / self.duration_ms as f32).clamp(0.0, 1.0)
+        }
     }
 
     /// Fake equalizer heights (5 bars) driven by wall-clock so the island

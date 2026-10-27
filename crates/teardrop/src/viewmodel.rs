@@ -169,15 +169,7 @@ impl ViewModel {
             notes,
             shelf,
             clipboard,
-            system: SystemSnapshot {
-                cpu_pct: 18.0,
-                mem_used_gb: 9.8,
-                mem_total_gb: 16.0,
-                disk_used_gb: 310.0,
-                disk_total_gb: 512.0,
-                battery_pct: Some(87),
-                charging: false,
-            },
+            system: SystemSnapshot { cpu_pct: 18.0, mem_used_gb: 9.8, mem_total_gb: 16.0, disk_used_gb: 310.0, disk_total_gb: 512.0, battery_pct: Some(87), charging: false },
             hud: None,
             idle_look: IdleLook::Clock,
             env: Ambient::default(),
@@ -234,9 +226,31 @@ impl ViewModel {
                 sel: None,
                 sel_nick: "#room".into(),
                 msgs: vec![
-                    crate::chat::Msg { id: "a".into(), who: "bob".into(), text: "anyone on this mesh?".into(), ts: now.timestamp_millis() - 120_000, mine: false, ..Default::default() },
-                    crate::chat::Msg { id: "b".into(), who: "me".into(), text: "yep — droppy mesh is up".into(), ts: now.timestamp_millis() - 90_000, mine: true, delivered: Some(true), ..Default::default() },
-                    crate::chat::Msg { id: "c".into(), who: "carol".into(), text: "no internet needed, nice".into(), ts: now.timestamp_millis() - 30_000, mine: false, ..Default::default() },
+                    crate::chat::Msg {
+                        id: "a".into(),
+                        who: "bob".into(),
+                        text: "anyone on this mesh?".into(),
+                        ts: now.timestamp_millis() - 120_000,
+                        mine: false,
+                        ..Default::default()
+                    },
+                    crate::chat::Msg {
+                        id: "b".into(),
+                        who: "me".into(),
+                        text: "yep — droppy mesh is up".into(),
+                        ts: now.timestamp_millis() - 90_000,
+                        mine: true,
+                        delivered: Some(true),
+                        ..Default::default()
+                    },
+                    crate::chat::Msg {
+                        id: "c".into(),
+                        who: "carol".into(),
+                        text: "no internet needed, nice".into(),
+                        ts: now.timestamp_millis() - 30_000,
+                        mine: false,
+                        ..Default::default()
+                    },
                 ],
                 unread_room: 0,
                 unread_total: 2,
@@ -298,11 +312,7 @@ impl ViewModel {
                 .iter()
                 .map(|ev| {
                     let day = crate::calendar::day_label(ev, now_ts);
-                    let when = if ev.all_day {
-                        format!("{day} All day")
-                    } else {
-                        format!("{day} {}", crate::calendar::clock_label(ev))
-                    };
+                    let when = if ev.all_day { format!("{day} All day") } else { format!("{day} {}", crate::calendar::clock_label(ev)) };
                     format!("{} ({})", ev.title, when)
                 })
                 .collect();
@@ -327,7 +337,11 @@ impl ViewModel {
                 .take(3)
                 .map(|n| {
                     let t = teardrop_core::title_of(&n.text);
-                    if t.is_empty() { "(untitled)".to_string() } else { t.chars().take(60).collect() }
+                    if t.is_empty() {
+                        "(untitled)".to_string()
+                    } else {
+                        t.chars().take(60).collect()
+                    }
                 })
                 .collect();
             lines.push(format!("Notes: {} saved ({})", self.notes.notes.len(), titles.join(", ")));
@@ -336,7 +350,12 @@ impl ViewModel {
         // Water
         let day = self.day();
         let today_ml = self.water.today(day);
-        lines.push(format!("Water today: {} / {} (1 glass = {} ml)", teardrop_core::fmt_glasses(today_ml), teardrop_core::glasses_label(self.water.goal_ml), teardrop_core::GLASS_ML));
+        lines.push(format!(
+            "Water today: {} / {} (1 glass = {} ml)",
+            teardrop_core::fmt_glasses(today_ml),
+            teardrop_core::glasses_label(self.water.goal_ml),
+            teardrop_core::GLASS_ML
+        ));
 
         // Pomodoro
         let pomo_state = match self.pomo.phase {
@@ -359,14 +378,7 @@ impl ViewModel {
         // System stats
         let sys = &self.system;
         let free_disk = (sys.disk_total_gb - sys.disk_used_gb).max(0.0);
-        let mut sys_line = format!(
-            "PC: CPU {:.0}%, RAM {:.1}/{:.1} GB ({:.0}%), Free Disk {:.0} GB",
-            sys.cpu_pct,
-            sys.mem_used_gb,
-            sys.mem_total_gb,
-            sys.mem_pct(),
-            free_disk
-        );
+        let mut sys_line = format!("PC: CPU {:.0}%, RAM {:.1}/{:.1} GB ({:.0}%), Free Disk {:.0} GB", sys.cpu_pct, sys.mem_used_gb, sys.mem_total_gb, sys.mem_pct(), free_disk);
         if let Some(bat) = sys.battery_pct {
             sys_line.push_str(&format!(", Battery {bat}%{}", if sys.charging { " (charging)" } else { "" }));
         }

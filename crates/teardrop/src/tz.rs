@@ -146,7 +146,9 @@ mod os {
         };
         let mut utc = SYSTEMTIME::default();
         unsafe { TzSpecificLocalTimeToSystemTimeEx(Some(dtzi), &local, &mut utc) }.ok()?;
-        NaiveDate::from_ymd_opt(utc.wYear as i32, utc.wMonth as u32, utc.wDay as u32)?.and_hms_opt(utc.wHour as u32, utc.wMinute as u32, utc.wSecond as u32).map(|d| d.and_utc().timestamp())
+        NaiveDate::from_ymd_opt(utc.wYear as i32, utc.wMonth as u32, utc.wDay as u32)?
+            .and_hms_opt(utc.wHour as u32, utc.wMinute as u32, utc.wSecond as u32)
+            .map(|d| d.and_utc().timestamp())
     }
 }
 
@@ -158,12 +160,7 @@ mod os {
 
     /// IANA name, or a Windows zone name mapped through the table's first alias.
     fn as_tz(name: &str) -> Option<Tz> {
-        name.parse::<Tz>().ok().or_else(|| {
-            super::TABLE
-                .iter()
-                .find(|(_, w)| w.eq_ignore_ascii_case(name))
-                .and_then(|(aliases, _)| aliases.first()?.parse().ok())
-        })
+        name.parse::<Tz>().ok().or_else(|| super::TABLE.iter().find(|(_, w)| w.eq_ignore_ascii_case(name)).and_then(|(aliases, _)| aliases.first()?.parse().ok()))
     }
 
     /// `Zone::Win` here indexes `TZ_VARIANTS`, which is stable for the process.
@@ -173,11 +170,7 @@ mod os {
     }
 
     pub fn to_utc_secs(i: u16, n: NaiveDateTime) -> Option<i64> {
-        chrono_tz::TZ_VARIANTS
-            .get(i as usize)?
-            .from_local_datetime(&n)
-            .earliest()
-            .map(|d| d.timestamp())
+        chrono_tz::TZ_VARIANTS.get(i as usize)?.from_local_datetime(&n).earliest().map(|d| d.timestamp())
     }
 }
 

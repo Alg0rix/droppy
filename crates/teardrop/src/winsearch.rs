@@ -25,8 +25,8 @@ pub fn search(q: &str, max: i32) -> Vec<Row> {
 }
 
 unsafe fn inner(q: &str, max: i32) -> windows::core::Result<Vec<Row>> {
-    use windows::core::Interface;
     use windows::core::IUnknown;
+    use windows::core::Interface;
     use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_INPROC_SERVER, CLSCTX_LOCAL_SERVER};
     use windows::Win32::System::Search::*;
     unsafe {
@@ -56,13 +56,7 @@ unsafe fn inner(q: &str, max: i32) -> windows::core::Result<Vec<Row>> {
         // Provider: "Provider=Search.CollatorDSO.1" == SystemIndex catalog.
         let dli: IDataInitialize = CoCreateInstance(&DataLinks, None, CLSCTX_INPROC_SERVER)?;
         let mut ds: Option<IUnknown> = None;
-        dli.GetDataSource(
-            None::<&IUnknown>,
-            CLSCTX_INPROC_SERVER.0 as u32,
-            &HSTRING::from(conn.as_str()),
-            &IDBInitialize::IID,
-            &mut ds,
-        )?;
+        dli.GetDataSource(None::<&IUnknown>, CLSCTX_INPROC_SERVER.0 as u32, &HSTRING::from(conn.as_str()), &IDBInitialize::IID, &mut ds)?;
         let Some(ds) = ds else { return Ok(Vec::new()) };
         let dbinit: IDBInitialize = ds.cast()?;
         dbinit.Initialize()?;

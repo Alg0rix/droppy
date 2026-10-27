@@ -144,8 +144,7 @@ impl IslandState {
         self.card_a = (self.card_a + if td > 0.5 { up } else { -down }).clamp(0.0, 1.0);
         moving |= self.compact_a != tc || self.glance_a != tg || self.card_a != td;
 
-        let settled =
-            (self.w.value - tw).abs() < 0.75 && (self.h.value - th).abs() < 0.75 && self.w.velocity.abs() < 20.0 && self.h.velocity.abs() < 20.0;
+        let settled = (self.w.value - tw).abs() < 0.75 && (self.h.value - th).abs() < 0.75 && self.w.velocity.abs() < 20.0 && self.h.velocity.abs() < 20.0;
         match self.mode {
             IslandMode::Glancing if settled => self.mode = IslandMode::Glance,
             IslandMode::Opening if settled => self.mode = IslandMode::Open,
@@ -179,15 +178,7 @@ impl IslandState {
 
     /// Snapshot for the renderer: live size, content alphas, derived progress.
     pub fn view(&self) -> IslandView {
-        IslandView {
-            geom: self.geom,
-            open: self.open(),
-            w: self.w.value,
-            h: self.h.value,
-            compact_a: self.compact_a,
-            glance_a: self.glance_a,
-            card_a: self.card_a,
-        }
+        IslandView { geom: self.geom, open: self.open(), w: self.w.value, h: self.h.value, compact_a: self.compact_a, glance_a: self.glance_a, card_a: self.card_a }
     }
 }
 

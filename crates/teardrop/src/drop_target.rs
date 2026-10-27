@@ -4,14 +4,12 @@
 //! `IDropTarget` is told when a drag enters and leaves, so the island can
 //! react to a file being carried over it before it is dropped.
 
-use windows::core::{implement, Result, w};
+use windows::core::{implement, w, Result};
 use windows::Win32::Foundation::{HWND, POINTL};
 use windows::Win32::System::Com::{IDataObject, DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL};
 use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
 use windows::Win32::System::Memory::{GlobalLock, GlobalUnlock};
-use windows::Win32::System::Ole::{
-    IDropTarget, IDropTarget_Impl, ReleaseStgMedium, CF_HDROP, CF_UNICODETEXT, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_NONE,
-};
+use windows::Win32::System::Ole::{IDropTarget, IDropTarget_Impl, ReleaseStgMedium, CF_HDROP, CF_UNICODETEXT, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_NONE};
 use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
 use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
 
@@ -100,7 +98,9 @@ fn virtual_files(data: &IDataObject) -> Vec<(String, Vec<u8>)> {
         let name_bytes = desc.get(off + 76..off + 76 + 520).unwrap_or(&[]);
         let name = String::from_utf16_lossy(unsafe { std::slice::from_raw_parts(name_bytes.as_ptr() as *const u16, 260) });
         let name = name.trim_matches(char::from(0)).replace([char::from(47), char::from(92)], "_").trim().to_string();
-        if name.is_empty() { continue; }
+        if name.is_empty() {
+            continue;
+        }
         if let Some(bytes) = hglobal_bytes(data, fc_cf, i as i32) {
             out.push((name, bytes));
         }
@@ -124,7 +124,8 @@ fn image_blobs(data: &IDataObject) -> Vec<(String, Vec<u8>)> {
             let off_bits = 14 + 40 + clr_used * 4;
             let size = (dib.len() + 14) as u32;
             let mut head = [0u8; 14];
-            head[0] = 66; head[1] = 77;
+            head[0] = 66;
+            head[1] = 77;
             head[2..6].copy_from_slice(&size.to_le_bytes());
 
             head[10..14].copy_from_slice(&(off_bits as u32).to_le_bytes());
@@ -163,7 +164,9 @@ fn hglobal_text(data: &IDataObject, cf: u32) -> Option<String> {
         if !base.is_null() {
             let ptr = base as *const u16;
             let mut n = 0usize;
-            while *ptr.add(n) != 0 && n < 16384 { n += 1; }
+            while *ptr.add(n) != 0 && n < 16384 {
+                n += 1;
+            }
             s = String::from_utf16_lossy(std::slice::from_raw_parts(ptr, n));
             let _ = GlobalUnlock(medium.u.hGlobal);
         }
@@ -198,18 +201,18 @@ fn paths_of(data: &IDataObject) -> Vec<String> {
 #[allow(non_snake_case)]
 impl IDropTarget_Impl for DropTarget_Impl {
     fn DragEnter(&self, pdataobj: Option<&IDataObject>, _keys: MODIFIERKEYS_FLAGS, pt: &POINTL, pdweffect: *mut DROPEFFECT) -> Result<()> {
-        let n = pdataobj.map(|d| {
-            let files = paths_of(d).len();
-            if files > 0 {
-                files
-            } else {
-                virtual_files(d).len()
-                    + image_blobs(d).len()
-                    + usize::from(hglobal_text(d, CF_UNICODETEXT.0 as u32).is_some()
-                        || hglobal_text(d, inet_url_cf()).is_some()
-                        || html_payload(d).is_some())
-            }
-        }).unwrap_or(0) as u32;
+        let n = pdataobj
+            .map(|d| {
+                let files = paths_of(d).len();
+                if files > 0 {
+                    files
+                } else {
+                    virtual_files(d).len()
+                        + image_blobs(d).len()
+                        + usize::from(hglobal_text(d, CF_UNICODETEXT.0 as u32).is_some() || hglobal_text(d, inet_url_cf()).is_some() || html_payload(d).is_some())
+                }
+            })
+            .unwrap_or(0) as u32;
         unsafe { *pdweffect = if n > 0 { DROPEFFECT_COPY } else { DROPEFFECT_NONE } };
         if n > 0 {
             self.emit(DropEvent::Enter(n, pt.x, pt.y));
@@ -241,9 +244,7 @@ impl IDropTarget_Impl for DropTarget_Impl {
                         if !img.is_empty() {
                             (None, img)
                         } else {
-                            let t = hglobal_text(d, inet_url_cf())
-                                .or_else(|| hglobal_text(d, CF_UNICODETEXT.0 as u32))
-                                .or_else(|| html_payload(d));
+                            let t = hglobal_text(d, inet_url_cf()).or_else(|| hglobal_text(d, CF_UNICODETEXT.0 as u32)).or_else(|| html_payload(d));
                             (t, Vec::new())
                         }
                     }

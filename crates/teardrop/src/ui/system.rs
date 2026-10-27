@@ -96,20 +96,20 @@ fn chips(c: &mut Ctx, a: Rect, cur: SysTab) {
             ("\u{2014}".into(), vec![], 100.0)
         } else {
             match t {
-            SysTab::Cpu => (format!("{:.0}%", s.cpu.total), vec![&s.cpu.history], 100.0),
-            SysTab::Gpu if s.gpu.available => (format!("{:.0}%", s.gpu.util), vec![&s.gpu.history], 100.0),
-            SysTab::Gpu => ("\u{2014}".into(), vec![], 100.0),
-            SysTab::Memory => (format!("{:.0}%", s.mem.pct()), vec![&s.mem.history], 100.0),
-            SysTab::Drives => {
-                let pk = s.drives.read_hist.peak().max(s.drives.write_hist.peak()).max(1.0e6);
-                (sysmon::fmt_rate(s.drives.read_bps + s.drives.write_bps), vec![&s.drives.read_hist, &s.drives.write_hist], pk)
-            }
-            SysTab::Network => {
-                let pk = s.net.down_hist.peak().max(s.net.up_hist.peak()).max(1.0e5);
-                (sysmon::fmt_rate(s.net.down_bps + s.net.up_bps), vec![&s.net.down_hist, &s.net.up_hist], pk)
-            }
-            SysTab::Battery if s.battery.present => (format!("{:.0}%", s.battery.pct), vec![&s.battery.history], 100.0),
-            SysTab::Battery => ("AC".into(), vec![], 100.0),
+                SysTab::Cpu => (format!("{:.0}%", s.cpu.total), vec![&s.cpu.history], 100.0),
+                SysTab::Gpu if s.gpu.available => (format!("{:.0}%", s.gpu.util), vec![&s.gpu.history], 100.0),
+                SysTab::Gpu => ("\u{2014}".into(), vec![], 100.0),
+                SysTab::Memory => (format!("{:.0}%", s.mem.pct()), vec![&s.mem.history], 100.0),
+                SysTab::Drives => {
+                    let pk = s.drives.read_hist.peak().max(s.drives.write_hist.peak()).max(1.0e6);
+                    (sysmon::fmt_rate(s.drives.read_bps + s.drives.write_bps), vec![&s.drives.read_hist, &s.drives.write_hist], pk)
+                }
+                SysTab::Network => {
+                    let pk = s.net.down_hist.peak().max(s.net.up_hist.peak()).max(1.0e5);
+                    (sysmon::fmt_rate(s.net.down_bps + s.net.up_bps), vec![&s.net.down_hist, &s.net.up_hist], pk)
+                }
+                SysTab::Battery if s.battery.present => (format!("{:.0}%", s.battery.pct), vec![&s.battery.history], 100.0),
+                SysTab::Battery => ("AC".into(), vec![], 100.0),
             }
         };
         c.text(t.label(), Rect::new(r.x + 10.0, r.y + 6.0, r.w - 20.0, 14.0), 10.0, Weight::Medium, if on { col } else { pal().text_3 }, Align::Left);
@@ -141,11 +141,7 @@ fn cols(body: Rect) -> [Rect; 3] {
     let l = 214.0;
     let r = (body.w * 0.30).clamp(170.0, 214.0);
     let m = body.w - l - r - 2.0 * GAP;
-    [
-        Rect::new(body.x, body.y, l, body.h),
-        Rect::new(body.x + l + GAP, body.y, m, body.h),
-        Rect::new(body.x + l + m + 2.0 * GAP, body.y, r, body.h),
-    ]
+    [Rect::new(body.x, body.y, l, body.h), Rect::new(body.x + l + GAP, body.y, m, body.h), Rect::new(body.x + l + m + 2.0 * GAP, body.y, r, body.h)]
 }
 
 /// Track ring with stacked coloured arcs (fractions of a full turn).
@@ -165,10 +161,7 @@ fn pts_of(r: Rect, s: &Series, max: f32) -> Vec<(f32, f32)> {
     let v: Vec<f32> = s.iter().collect();
     let dx = r.w / (sysmon::HISTORY - 1) as f32;
     let n = v.len();
-    v.iter()
-        .enumerate()
-        .map(|(i, &x)| (r.right() - (n - 1 - i) as f32 * dx, r.bottom() - (x / max.max(1e-3)).clamp(0.0, 1.0) * (r.h - 2.0) - 1.0))
-        .collect()
+    v.iter().enumerate().map(|(i, &x)| (r.right() - (n - 1 - i) as f32 * dx, r.bottom() - (x / max.max(1e-3)).clamp(0.0, 1.0) * (r.h - 2.0) - 1.0)).collect()
 }
 
 fn spark(c: &mut Ctx, r: Rect, s: &Series, max: f32, col: Color) {
@@ -259,7 +252,11 @@ fn proc_list(c: &mut Ctx, r: Rect, items: &[ProcLoad], fmt: fn(f32) -> String, c
 }
 
 fn pct1(v: f32) -> String {
-    if v >= 10.0 { format!("{v:.0}%") } else { format!("{v:.1}%") }
+    if v >= 10.0 {
+        format!("{v:.0}%")
+    } else {
+        format!("{v:.1}%")
+    }
 }
 
 fn small_pill(c: &mut Ctx, r: Rect, label: &str, col: Color) {
@@ -282,7 +279,14 @@ fn cpu_view(c: &mut Ctx, body: Rect) {
     c.text(format!("{:.0}%", cpu.total), Rect::new(cx - 40.0, cy - 17.0, 80.0, 28.0), 24.0, Weight::Semibold, pal().text, Align::Center);
     c.text("in use", Rect::new(cx - 40.0, cy + 10.0, 80.0, 14.0), 10.0, Weight::Regular, pal().text_3, Align::Center);
     let mut y = cy + rad + 12.0;
-    c.text(if cpu.name.is_empty() { "Processor".to_string() } else { cpu.name.clone() }, Rect::new(inner.x - 4.0, y, inner.w + 8.0, 14.0), 10.5, Weight::Medium, pal().text_2, Align::Center);
+    c.text(
+        if cpu.name.is_empty() { "Processor".to_string() } else { cpu.name.clone() },
+        Rect::new(inner.x - 4.0, y, inner.w + 8.0, 14.0),
+        10.5,
+        Weight::Medium,
+        pal().text_2,
+        Align::Center,
+    );
     y += 15.0;
     let threads = cpu.cores.len();
     let sub = if cpu.physical > 0 { format!("{} cores \u{00b7} {threads} threads", cpu.physical) } else { format!("{threads} threads") };
@@ -291,7 +295,16 @@ fn cpu_view(c: &mut Ctx, body: Rect) {
     // Temperature and clock chips.
     let mut chips: Vec<(String, Color)> = Vec::new();
     if let Some(t) = cpu.temp_c {
-        chips.push((format!("{t:.0}\u{00b0}C"), if t >= 85.0 { pal().red } else if t >= 70.0 { pal().amber } else { pal().green }));
+        chips.push((
+            format!("{t:.0}\u{00b0}C"),
+            if t >= 85.0 {
+                pal().red
+            } else if t >= 70.0 {
+                pal().amber
+            } else {
+                pal().green
+            },
+        ));
     }
     if cpu.ghz > 0.0 {
         chips.push((format!("{:.2} GHz", cpu.ghz), INDIGO));
@@ -322,11 +335,7 @@ fn cpu_view(c: &mut Ctx, body: Rect) {
     let bot = Rect::new(m.x, m.y + top_h + 4.0, m.w, body.h - top_h - 4.0);
     let hybrid = cpu.is_hybrid();
     let aside = if hybrid {
-        format!(
-            "E {:.0}%  \u{00b7}  P {:.0}%",
-            cpu.class_load(CoreClass::Efficiency).unwrap_or(0.0),
-            cpu.class_load(CoreClass::Performance).unwrap_or(0.0)
-        )
+        format!("E {:.0}%  \u{00b7}  P {:.0}%", cpu.class_load(CoreClass::Efficiency).unwrap_or(0.0), cpu.class_load(CoreClass::Performance).unwrap_or(0.0))
     } else {
         String::new()
     };
@@ -415,11 +424,9 @@ fn mem_view(c: &mut Ctx, body: Rect) {
     c.text(format!("{:.0}%", mem.pct()), Rect::new(cx - 40.0, cy - 17.0, 80.0, 28.0), 24.0, Weight::Semibold, pal().text, Align::Center);
     c.text(format!("of {}", sysmon::fmt_gb(mem.total_gb)), Rect::new(cx - 44.0, cy + 10.0, 88.0, 14.0), 10.0, Weight::Regular, pal().text_3, Align::Center);
     let mut y = cy + rad + 14.0;
-    for (swatch, label, v) in [
-        (VIOLET, "In use", sysmon::fmt_gb(mem.used_gb)),
-        (pal().ink(0.28), "Available", sysmon::fmt_gb(mem.available_gb)),
-        (INDIGO, "Cached", sysmon::fmt_gb(mem.cached_gb)),
-    ] {
+    for (swatch, label, v) in
+        [(VIOLET, "In use", sysmon::fmt_gb(mem.used_gb)), (pal().ink(0.28), "Available", sysmon::fmt_gb(mem.available_gb)), (INDIGO, "Cached", sysmon::fmt_gb(mem.cached_gb))]
+    {
         row(c, Rect::new(inner.x, y, inner.w, 17.0), Some(swatch), label, &v);
         y += 19.0;
     }
@@ -554,7 +561,13 @@ fn battery_view(c: &mut Ctx, body: Rect) {
     } else {
         c.text("remaining", Rect::new(cx - 40.0, cy + 10.0, 80.0, 14.0), 10.0, Weight::Regular, pal().text_3, Align::Center);
     }
-    let status = if b.charging { "Charging" } else if b.on_ac { "Plugged in" } else { "On battery" };
+    let status = if b.charging {
+        "Charging"
+    } else if b.on_ac {
+        "Plugged in"
+    } else {
+        "On battery"
+    };
     small_pill(c, Rect::new(inner.x, cy + rad + 16.0, inner.w, 22.0), status, col);
 
     let inner = card(c, m, "Power", "");

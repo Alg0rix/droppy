@@ -334,12 +334,10 @@ impl Node {
 
     fn process(&mut self, link: LinkId, pkt: Packet, now_ms: u64) -> (Vec<Op>, Vec<Event>) {
         match pkt.ptype {
-            PacketType::Fragment => {
-                match self.reasm.feed(pkt.sender, &pkt.payload, now_ms) {
-                    Some(frame) => self.on_frame(link, &frame, now_ms),
-                    None => (vec![], vec![]),
-                }
-            }
+            PacketType::Fragment => match self.reasm.feed(pkt.sender, &pkt.payload, now_ms) {
+                Some(frame) => self.on_frame(link, &frame, now_ms),
+                None => (vec![], vec![]),
+            },
             PacketType::Announce => self.on_announce(pkt, now_ms),
             PacketType::Message => self.on_message(pkt, now_ms),
             PacketType::Leave => {
@@ -384,18 +382,7 @@ impl Node {
                 changed
             }
             None => {
-                self.peers.insert(
-                    pkt.sender,
-                    Peer {
-                        noise_pk: npk,
-                        sign_pk: spk,
-                        nick,
-                        last_seen: now_ms,
-                        neighbors: nb,
-                        session: None,
-                        queue: Vec::new(),
-                    },
-                );
+                self.peers.insert(pkt.sender, Peer { noise_pk: npk, sign_pk: spk, nick, last_seen: now_ms, neighbors: nb, session: None, queue: Vec::new() });
                 // A newcomer may have missed our announce (link raced the
                 // subscription): answer soon so presence is symmetric.
                 self.next_announce = self.next_announce.min(now_ms + 200 + self.rng.gen_range(0..300));
@@ -426,7 +413,17 @@ impl Node {
         // No wire id or nick in the payload: id = dedup key, nick = announce.
         let id = format!("{:x}", u64::from_be_bytes(pkt.dedup_key()[..8].try_into().unwrap_or_default()));
         let nick = self.nick_of(&pkt.sender).unwrap_or_else(|| nick);
-        (vec![], vec![Event::Public { from: pkt.sender, nick: if nick.is_empty() { format!("anon{}", &pkt.sender.hex()[..8]) } else { nick }, id, text, ts: pkt.timestamp, mine: false }])
+        (
+            vec![],
+            vec![Event::Public {
+                from: pkt.sender,
+                nick: if nick.is_empty() { format!("anon{}", &pkt.sender.hex()[..8]) } else { nick },
+                id,
+                text,
+                ts: pkt.timestamp,
+                mine: false,
+            }],
+        )
     }
 
     fn on_handshake(&mut self, pkt: Packet, now_ms: u64) -> (Vec<Op>, Vec<Event>) {
@@ -550,11 +547,7 @@ impl Node {
         // ours) — kick a fresh XX handshake to resync rather than drop.
         // Note: decrypt mutates the transport counter, so try it exactly once.
         let no_session = self.peers.get(&from).map(|p| p.session.is_none()).unwrap_or(true);
-        let plain = if no_session {
-            None
-        } else {
-            self.peers.get_mut(&from).unwrap().session.as_mut().unwrap().s.decrypt(&pkt.payload)
-        };
+        let plain = if no_session { None } else { self.peers.get_mut(&from).unwrap().session.as_mut().unwrap().s.decrypt(&pkt.payload) };
         let Some(plain) = plain else {
             evs.push(Event::Log(format!("mesh: undecryptable from {from} — re-handshaking")));
             self.ensure_handshake(from, now_ms, &mut ops, &mut evs);
@@ -588,10 +581,7 @@ impl Node {
         self.seen.arrive(pkt.dedup_key(), now_ms);
         self.remember(&pkt, now_ms);
         let wire = pkt.encode();
-        (
-            vec![Op::Send { to: SendTo::All, bytes: wire }],
-            Event::Public { from: self.peer_id(), nick: self.nick.clone(), id, text: text.to_string(), ts: now_ms, mine: true },
-        )
+        (vec![Op::Send { to: SendTo::All, bytes: wire }], Event::Public { from: self.peer_id(), nick: self.nick.clone(), id, text: text.to_string(), ts: now_ms, mine: true })
     }
 
     /// Private message; starts a Noise XX session when none exists and
@@ -734,13 +724,8 @@ impl Node {
 
     /// Broadcast (TTL 0) REQUEST_SYNC advertising what we already hold.
     fn request_sync(&mut self, now_ms: u64) -> Op {
-        let mut cands: Vec<(u64, [u8; 16])> = self
-            .history
-            .iter()
-            .map(|s| &s.pkt)
-            .chain(self.announces.values().map(|s| &s.pkt))
-            .map(|p| (p.timestamp, sync::packet_id(p)))
-            .collect();
+        let mut cands: Vec<(u64, [u8; 16])> =
+            self.history.iter().map(|s| &s.pkt).chain(self.announces.values().map(|s| &s.pkt)).map(|p| (p.timestamp, sync::packet_id(p))).collect();
         cands.sort_by(|a, b| b.0.cmp(&a.0)); // newest first
         let ids: Vec<[u8; 16]> = cands.iter().map(|c| c.1).collect();
         let p = sync::derive_p(GCS_FPR);
@@ -822,11 +807,7 @@ impl Node {
         // Presence: every 4 s isolated, 15–30 s (jittered) when meshed.
         if now_ms >= self.next_announce {
             ops.push(self.announce(now_ms));
-            let interval = if self.peers.values().any(|p| now_ms.saturating_sub(p.last_seen) <= PEER_FRESH_MS) {
-                self.rng.gen_range(15_000..30_000)
-            } else {
-                4_000
-            };
+            let interval = if self.peers.values().any(|p| now_ms.saturating_sub(p.last_seen) <= PEER_FRESH_MS) { self.rng.gen_range(15_000..30_000) } else { 4_000 };
             self.next_announce = now_ms + interval;
         }
 
@@ -882,13 +863,7 @@ impl Node {
     }
 
     fn announce(&mut self, now_ms: u64) -> Op {
-        let nb: Vec<PeerId> = self
-            .peers
-            .iter()
-            .filter(|(_, p)| now_ms.saturating_sub(p.last_seen) <= PEER_FRESH_MS)
-            .take(10)
-            .map(|(id, _)| *id)
-            .collect();
+        let nb: Vec<PeerId> = self.peers.iter().filter(|(_, p)| now_ms.saturating_sub(p.last_seen) <= PEER_FRESH_MS).take(10).map(|(id, _)| *id).collect();
         let body = announce_encode(&self.nick, &self.id.noise_pk, &self.id.sign_pk, &nb);
         let mut pkt = Packet::new(PacketType::Announce, self.peer_id(), now_ms, body);
         pkt.sign(&self.id.signing_key());
@@ -906,15 +881,7 @@ impl Node {
 
 impl Peer {
     fn placeholder(id: PeerId, now_ms: u64) -> Peer {
-        Peer {
-            noise_pk: [0; 32],
-            sign_pk: [0; 32],
-            nick: format!("peer-{}", &id.hex()[..8]),
-            last_seen: now_ms,
-            neighbors: Vec::new(),
-            session: None,
-            queue: Vec::new(),
-        }
+        Peer { noise_pk: [0; 32], sign_pk: [0; 32], nick: format!("peer-{}", &id.hex()[..8]), last_seen: now_ms, neighbors: Vec::new(), session: None, queue: Vec::new() }
     }
 }
 
@@ -947,16 +914,24 @@ mod tests {
             for bytes in qa.drain(..) {
                 let (ops, e) = b.on_frame(LB, &bytes, t);
                 bev.extend(e);
-                qb.extend(ops.into_iter().filter_map(|o| match o {
-                    Op::Send { bytes, .. } => Some(bytes),
-                }).collect::<Vec<_>>());
+                qb.extend(
+                    ops.into_iter()
+                        .filter_map(|o| match o {
+                            Op::Send { bytes, .. } => Some(bytes),
+                        })
+                        .collect::<Vec<_>>(),
+                );
             }
             for bytes in qb.drain(..) {
                 let (ops, e) = a.on_frame(LA, &bytes, t);
                 aev.extend(e);
-                qa.extend(ops.into_iter().filter_map(|o| match o {
-                    Op::Send { bytes, .. } => Some(bytes),
-                }).collect::<Vec<_>>());
+                qa.extend(
+                    ops.into_iter()
+                        .filter_map(|o| match o {
+                            Op::Send { bytes, .. } => Some(bytes),
+                        })
+                        .collect::<Vec<_>>(),
+                );
             }
         }
     }

@@ -153,7 +153,10 @@ mod tests {
                 let lib = LoadLibraryW(w!("winsqlite3.dll")).unwrap();
                 load(lib, s!("sqlite3_exec")).unwrap()
             };
-            let sql = CString::new("CREATE TABLE m(t INTEGER, data TEXT); INSERT INTO m VALUES (10, '{\"cost\":0.5,\"tokens\":{\"total\":42}}'), (99, '{\"cost\":1.5,\"tokens\":{\"total\":8}}');").unwrap();
+            let sql = CString::new(
+                "CREATE TABLE m(t INTEGER, data TEXT); INSERT INTO m VALUES (10, '{\"cost\":0.5,\"tokens\":{\"total\":42}}'), (99, '{\"cost\":1.5,\"tokens\":{\"total\":8}}');",
+            )
+            .unwrap();
             assert_eq!(exec(db, sql.as_ptr(), std::ptr::null(), std::ptr::null(), std::ptr::null_mut()), 0);
             (api.close)(db);
         }

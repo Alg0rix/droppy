@@ -69,12 +69,7 @@ impl Identity {
     /// Rebuild from stored secrets (validates the pairing).
     pub fn from_secrets(noise_sk: [u8; 32], sign_sk: [u8; 32]) -> Option<Self> {
         let signing = SigningKey::from_bytes(&sign_sk);
-        Some(Self {
-            noise_sk,
-            noise_pk: noise_pubkey(&noise_sk),
-            sign_sk,
-            sign_pk: signing.verifying_key().to_bytes(),
-        })
+        Some(Self { noise_sk, noise_pk: noise_pubkey(&noise_sk), sign_sk, sign_pk: signing.verifying_key().to_bytes() })
     }
 
     pub fn peer_id(&self) -> PeerId {
@@ -89,9 +84,7 @@ impl Identity {
 /// X25519 public key for a private key, via snow's DH resolver.
 fn noise_pubkey(sk: &[u8; 32]) -> [u8; 32] {
     use snow::resolvers::CryptoResolver;
-    let mut dh = snow::resolvers::DefaultResolver
-        .resolve_dh(&snow::params::DHChoice::Curve25519)
-        .expect("resolver must offer 25519");
+    let mut dh = snow::resolvers::DefaultResolver.resolve_dh(&snow::params::DHChoice::Curve25519).expect("resolver must offer 25519");
     dh.set(sk);
     let mut pk = [0u8; 32];
     pk.copy_from_slice(dh.pubkey());

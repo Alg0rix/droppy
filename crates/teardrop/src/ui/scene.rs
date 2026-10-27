@@ -26,12 +26,7 @@ impl Color {
 
     pub fn mix(self, o: Color, t: f32) -> Self {
         let t = t.clamp(0.0, 1.0);
-        Self {
-            r: self.r + (o.r - self.r) * t,
-            g: self.g + (o.g - self.g) * t,
-            b: self.b + (o.b - self.b) * t,
-            a: self.a + (o.a - self.a) * t,
-        }
+        Self { r: self.r + (o.r - self.r) * t, g: self.g + (o.g - self.g) * t, b: self.b + (o.b - self.b) * t, a: self.a + (o.a - self.a) * t }
     }
 }
 
@@ -172,15 +167,58 @@ pub enum Cmd {
     /// The island silhouette: soft shadow, body fill, 1px rim light. `sheen`
     /// (alpha 0 = off) is a specular top-light filled inside the silhouette —
     /// the liquid-glass highlight.
-    Body { pts: Vec<(f32, f32)>, fill: Fill, rim: Color, shadow: f32, sheen: Color },
-    Rect { r: Rect, radius: f32, fill: Fill },
-    Stroke { r: Rect, radius: f32, width: f32, color: Color, dashed: bool },
-    Circle { cx: f32, cy: f32, r: f32, fill: Fill },
+    Body {
+        pts: Vec<(f32, f32)>,
+        fill: Fill,
+        rim: Color,
+        shadow: f32,
+        sheen: Color,
+    },
+    Rect {
+        r: Rect,
+        radius: f32,
+        fill: Fill,
+    },
+    Stroke {
+        r: Rect,
+        radius: f32,
+        width: f32,
+        color: Color,
+        dashed: bool,
+    },
+    Circle {
+        cx: f32,
+        cy: f32,
+        r: f32,
+        fill: Fill,
+    },
     /// Arc stroke. `from`/`to` are turns (0..1) clockwise from 12 o'clock.
-    Ring { cx: f32, cy: f32, r: f32, width: f32, from: f32, to: f32, color: Color },
-    Line { x1: f32, y1: f32, x2: f32, y2: f32, width: f32, color: Color },
-    Poly { pts: Vec<(f32, f32)>, fill: Fill },
-    Polyline { pts: Vec<(f32, f32)>, width: f32, color: Color },
+    Ring {
+        cx: f32,
+        cy: f32,
+        r: f32,
+        width: f32,
+        from: f32,
+        to: f32,
+        color: Color,
+    },
+    Line {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        color: Color,
+    },
+    Poly {
+        pts: Vec<(f32, f32)>,
+        fill: Fill,
+    },
+    Polyline {
+        pts: Vec<(f32, f32)>,
+        width: f32,
+        color: Color,
+    },
     /// Single-line text, vertically centred in `r`, ellipsised on overflow.
     /// `karaoke` overpaints the first `frac` of the text in a second colour.
     Text {
@@ -196,10 +234,19 @@ pub enum Cmd {
     },
     /// One line of styled runs laid left to right inside `r` (vertically
     /// centred). The renderer measures each run, so mixed styles never overlap.
-    Runs { r: Rect, size: f32, runs: Vec<Run> },
+    Runs {
+        r: Rect,
+        size: f32,
+        runs: Vec<Run>,
+    },
     /// Raster image stretched to `r`; `img` holds premultiplied BGRA pixels.
     /// `radius` > 0 clips it to a rounded rect.
-    Image { r: Rect, radius: f32, img: std::sync::Arc<Image>, opacity: f32 },
+    Image {
+        r: Rect,
+        radius: f32,
+        img: std::sync::Arc<Image>,
+        opacity: f32,
+    },
     Clip(Rect),
     PopClip,
 }
@@ -338,11 +385,14 @@ impl Scene {
             return;
         }
         let r = self.r(r);
-        let runs = runs.into_iter().map(|mut u| {
-            u.color = self.c(u.color);
-            u.chip = u.chip.map(|c| self.c(c));
-            u
-        }).collect();
+        let runs = runs
+            .into_iter()
+            .map(|mut u| {
+                u.color = self.c(u.color);
+                u.chip = u.chip.map(|c| self.c(c));
+                u
+            })
+            .collect();
         self.cmds.push(Cmd::Runs { r, size, runs });
     }
 
@@ -374,15 +424,8 @@ impl Scene {
     pub fn shift_y(&mut self, dy: f32) {
         for cmd in self.cmds.iter_mut() {
             match cmd {
-                Cmd::Body { pts, .. } | Cmd::Poly { pts, .. } | Cmd::Polyline { pts, .. } => {
-                    pts.iter_mut().for_each(|p| p.1 += dy)
-                }
-                Cmd::Rect { r, .. }
-                | Cmd::Stroke { r, .. }
-                | Cmd::Text { r, .. }
-                | Cmd::Runs { r, .. }
-                | Cmd::Image { r, .. }
-                | Cmd::Clip(r) => r.y += dy,
+                Cmd::Body { pts, .. } | Cmd::Poly { pts, .. } | Cmd::Polyline { pts, .. } => pts.iter_mut().for_each(|p| p.1 += dy),
+                Cmd::Rect { r, .. } | Cmd::Stroke { r, .. } | Cmd::Text { r, .. } | Cmd::Runs { r, .. } | Cmd::Image { r, .. } | Cmd::Clip(r) => r.y += dy,
                 Cmd::Circle { cy, .. } | Cmd::Ring { cy, .. } => *cy += dy,
                 Cmd::Line { y1, y2, .. } => {
                     *y1 += dy;

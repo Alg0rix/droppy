@@ -93,11 +93,7 @@ pub mod sys {
             let Some(root) = open(HKEY_CURRENT_USER, &path) else { return false };
             let busy = subkeys(root).iter().any(|name| {
                 let Some(k) = open(root, name) else { return false };
-                let hit = if name == "NonPackaged" {
-                    subkeys(k).iter().any(|n| open(k, n).map(|kk| in_use(kk, true)).unwrap_or(false))
-                } else {
-                    in_use(k, false)
-                };
+                let hit = if name == "NonPackaged" { subkeys(k).iter().any(|n| open(k, n).map(|kk| in_use(kk, true)).unwrap_or(false)) } else { in_use(k, false) };
                 let _ = RegCloseKey(k);
                 hit
             });

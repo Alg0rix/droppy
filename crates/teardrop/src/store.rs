@@ -8,10 +8,7 @@ fn file(data_dir: &std::path::Path, name: &str) -> PathBuf {
 }
 
 pub fn load<T: DeserializeOwned + Default>(data_dir: &std::path::Path, name: &str) -> T {
-    std::fs::read(file(data_dir, name))
-        .ok()
-        .and_then(|b| serde_json::from_slice(&b).ok())
-        .unwrap_or_default()
+    std::fs::read(file(data_dir, name)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
 }
 
 pub fn save<T: Serialize>(data_dir: &std::path::Path, name: &str, value: &T) {
