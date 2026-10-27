@@ -258,7 +258,7 @@ mod imp {
                     dedicated_gb: d.DedicatedVideoMemory as f32 / GB,
                     shared_gb: d.SharedSystemMemory as f32 / GB,
                 };
-                if best.as_ref().map_or(true, |b| g.dedicated_gb > b.dedicated_gb) {
+                if best.as_ref().is_none_or(|b| g.dedicated_gb > b.dedicated_gb) {
                     best = Some(g);
                 }
             }
@@ -355,8 +355,7 @@ mod imp {
                                 }
                                 seen.insert(pid, total);
                             }
-                            let mut mc = PROCESS_MEMORY_COUNTERS::default();
-                            mc.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+                            let mut mc = PROCESS_MEMORY_COUNTERS { cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32, ..Default::default() };
                             let mem = if K32GetProcessMemoryInfo(h, &mut mc, mc.cb).as_bool() { mc.WorkingSetSize as f32 / GB } else { 0.0 };
                             let _ = CloseHandle(h);
                             out.push(ProcSample { pid, exe, cpu: cpu.clamp(0.0, 100.0), mem_gb: mem });
@@ -588,7 +587,7 @@ mod imp {
                 e.2 += gpu_procs.get(&p.pid).copied().unwrap_or(0.0);
             }
             let mut top = |pick: fn(&(f32, f32, f32, u32)) -> f32, min: f32, n: usize| -> Vec<ProcLoad> {
-                let mut v: Vec<(&String, &(f32, f32, f32, u32))> = by_exe.iter().filter(|(_, e)| pick(e) > min).collect();
+                let mut v: Vec<_> = by_exe.iter().filter(|(_, e)| pick(e) > min).collect();
                 v.sort_by(|a, b| pick(b.1).partial_cmp(&pick(a.1)).unwrap_or(std::cmp::Ordering::Equal));
                 v.truncate(n);
                 v.into_iter()
@@ -659,7 +658,7 @@ mod imp {
                     v.battery.pct = if ps.BatteryLifePercent <= 100 { ps.BatteryLifePercent as f32 } else { 0.0 };
                     v.battery.charging = ps.BatteryFlag & 8 != 0;
                     v.battery.on_ac = ps.ACLineStatus == 1;
-                    v.battery.mins_left = (ps.BatteryLifeTime != u32::MAX).then(|| ps.BatteryLifeTime / 60);
+                    v.battery.mins_left = (ps.BatteryLifeTime != u32::MAX).then_some(ps.BatteryLifeTime / 60);
                     v.battery.saver = ps.SystemStatusFlag == 1;
                     let bp = v.battery.pct;
                     v.battery.history.push(bp);

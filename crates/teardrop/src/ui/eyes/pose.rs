@@ -261,7 +261,7 @@ impl Eyes {
         let ph = b.phase(t);
         let ease = ph * ph * (3.0 - 2.0 * ph);
         let arc = (ph * PI).sin();
-        let side = if b.count % 2 == 0 { 1.0 } else { -1.0 };
+        let side = if b.count.is_multiple_of(2) { 1.0 } else { -1.0 };
         let sw = b.sway(t);
         let step = b.count.wrapping_sub(self.dance_from);
         match self.dance {
@@ -381,7 +381,7 @@ impl Eyes {
                 lv.rot = (t * 0.7).sin() * 0.06;
             }
             Move::Lean => {
-                let l = if (step / 4) % 2 == 0 { 1.0 } else { -1.0 };
+                let l = if (step / 4).is_multiple_of(2) { 1.0 } else { -1.0 };
                 p.open = 0.6;
                 p.happy = 0.6;
                 *look = Some((l * 0.6, -0.2));

@@ -5,12 +5,15 @@ pub(super) fn load_app_icon() -> Option<HICON> {
     unsafe {
         let inst = GetModuleHandleW(None).ok()?;
         let hinst: windows::Win32::Foundation::HINSTANCE = inst.into();
+        // MAKEINTRESOURCE(1): the app icon resource id, not a pointer to deref.
+        #[allow(clippy::manual_dangling_ptr)]
         let res = LoadImageW(hinst, windows::core::PCWSTR(1 as *const u16), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), IMAGE_FLAGS(0));
         if let Ok(handle) = res {
             if !handle.is_invalid() {
                 return Some(HICON(handle.0));
             }
         }
+        #[allow(clippy::manual_dangling_ptr)]
         LoadIconW(hinst, windows::core::PCWSTR(1 as *const u16)).ok()
     }
 }
@@ -24,7 +27,7 @@ fn make_tray_icon() -> Option<HICON> {
     icons::draw(&mut s, icons::Icon::Drop, 16.0, 16.0, 20.0, Color::rgb(255, 255, 255));
     let (pw, ph, mut px) = render_offscreen(&s, (32.0, 32.0), 1.0)?;
     // Premultiplied -> straight alpha for the icon bitmap.
-    for p in px.chunks_exact_mut(4) {
+    for p in px.as_chunks_mut::<4>().0 {
         let a = p[3] as f32 / 255.0;
         if a > 0.0 {
             for c in &mut p[..3] {

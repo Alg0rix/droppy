@@ -56,7 +56,7 @@ unsafe fn inner(q: &str, max: i32) -> windows::core::Result<Vec<Row>> {
         // Provider: "Provider=Search.CollatorDSO.1" == SystemIndex catalog.
         let dli: IDataInitialize = CoCreateInstance(&DataLinks, None, CLSCTX_INPROC_SERVER)?;
         let mut ds: Option<IUnknown> = None;
-        dli.GetDataSource(None::<&IUnknown>, CLSCTX_INPROC_SERVER.0 as u32, &HSTRING::from(conn.as_str()), &IDBInitialize::IID, &mut ds)?;
+        dli.GetDataSource(None::<&IUnknown>, CLSCTX_INPROC_SERVER.0, &HSTRING::from(conn.as_str()), &IDBInitialize::IID, &mut ds)?;
         let Some(ds) = ds else { return Ok(Vec::new()) };
         let dbinit: IDBInitialize = ds.cast()?;
         dbinit.Initialize()?;
@@ -160,7 +160,7 @@ const SLOT: usize = 520;
 /// Decode one bound column: inline DBTYPE_WSTR (130), else a VARIANT.
 fn slot_str(buf: &[u8; SLOT], wtype: u16) -> String {
     if wtype == 130 {
-        let w: Vec<u16> = buf.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&c| c != 0).collect();
+        let w: Vec<u16> = buf.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&c| c != 0).collect();
         return String::from_utf16_lossy(&w);
     }
     let v = unsafe { std::ptr::read_unaligned(buf.as_ptr().cast::<OleVar>()) };

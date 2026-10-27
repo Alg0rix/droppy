@@ -200,7 +200,7 @@ mod tests {
         let (pw, ph, px) = crate::render_d2d::d2d::render_offscreen(&s, (40.0, 40.0), 1.0).expect("offscreen render");
         let hit = (0..ph as usize).any(|y| {
             (0..pw as usize).any(|x| {
-                let inside = x >= 4 && x < 36 && y >= 4 && y < 36;
+                let inside = (4..36).contains(&x) && (4..36).contains(&y);
                 inside && px[(y * pw as usize + x) * 4 + 3] > 0
             })
         });

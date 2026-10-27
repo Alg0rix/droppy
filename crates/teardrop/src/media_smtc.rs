@@ -444,7 +444,7 @@ mod tests {
             // Opaque colour, wide aspect like a YouTube thumbnail.
             let (w, h) = (32u32, 18u32);
             let mut px = vec![0u8; (w * h * 4) as usize];
-            for p in px.chunks_exact_mut(4) {
+            for p in px.as_chunks_mut::<4>().0 {
                 p.copy_from_slice(&[10, 20, 30, 255]);
             }
             let bmp = wic.CreateBitmapFromMemory(w, h, &GUID_WICPixelFormat32bppPBGRA, w * 4, &px).expect("bmp");

@@ -105,8 +105,12 @@ impl<'a> Ctx<'a> {
     /// Soft-surface background that brightens on hover and press.
     pub fn surface_fill(&self, a: Action) -> Color {
         let h = self.hov(a);
-        let base = if self.pressed(a) { pal().surface_press } else { pal().surface.mix(pal().surface_hover, h) };
-        base
+
+        if self.pressed(a) {
+            pal().surface_press
+        } else {
+            pal().surface.mix(pal().surface_hover, h)
+        }
     }
 
     /// Round icon button.
@@ -349,11 +353,8 @@ fn header(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
     c.s.text(date_str, tr, 11.5, Weight::Medium, pal().text_2, Align::Left);
 
     // Page tabs centred in the card; the active one widens to show its label.
-    let widths: Vec<f32> = visible_pages(c.set)
-        .iter()
-        .enumerate()
-        .map(|(_, &p)| TAB_W + (tab_label_w(p) - TAB_W) * c.ui.tab_amt[super::state::page_index(p).min(super::state::PAGE_SLOTS - 1)])
-        .collect();
+    let widths: Vec<f32> =
+        visible_pages(c.set).iter().map(|&p| TAB_W + (tab_label_w(p) - TAB_W) * c.ui.tab_amt[super::state::page_index(p).min(super::state::PAGE_SLOTS - 1)]).collect();
     let total: f32 = widths.iter().sum::<f32>() + (widths.len() - 1) as f32 * 2.0;
     let mut x = card_x + (geom.card_w - total) / 2.0;
     for (i, &p) in visible_pages(c.set).iter().enumerate() {
@@ -835,7 +836,7 @@ fn glance_notes(c: &mut Ctx, r: Rect, cy: f32) {
     let vm = c.vm;
     icons::draw(&mut c.s, tab_icon(Page::Notes), r.x + 28.0, cy, 17.0, acc);
     if let Some(note) = vm.notes.notes.last() {
-        let (first, rest) = note.text.split_once('\n').map(|(a, b)| (a, b)).unwrap_or((note.text.as_str(), ""));
+        let (first, rest) = note.text.split_once('\n').unwrap_or((note.text.as_str(), ""));
         c.text(first.to_string(), Rect::new(r.x + 46.0, cy - 14.0, r.w - 190.0, 18.0), 13.5, Weight::Semibold, pal().text, Align::Left);
         c.text(rest.trim().to_string(), Rect::new(r.x + 46.0, cy + 3.0, r.w - 190.0, 14.0), 10.5, Weight::Regular, pal().text_3, Align::Left);
         c.text(format!("{} notes", vm.notes.notes.len()), Rect::new(r.right() - 140.0, cy - 22.0, 130.0, 16.0), 11.0, Weight::Medium, pal().text_3, Align::Right);

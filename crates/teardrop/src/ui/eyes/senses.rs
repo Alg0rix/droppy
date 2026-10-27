@@ -417,7 +417,7 @@ impl Eyes {
         if h == 0 || (mo == 10 && d == 31 && h >= 18) {
             return Mood::Spooky;
         }
-        if h >= 22 || h < 5 {
+        if !(5..22).contains(&h) {
             return Mood::Sleepy;
         }
         if h == 12 {

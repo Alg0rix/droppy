@@ -338,7 +338,7 @@ fn spend_since(db: &crate::sqlite::Conn, since_ms: i64) -> Result<Vec<Spend>, cr
 /// Fold per-model rows into totals and the busiest few.
 pub fn summarize(today: &[Spend], week: &[Spend]) -> OpenCode {
     let mut top = week.to_vec();
-    top.sort_by(|a, b| b.tokens.cmp(&a.tokens));
+    top.sort_by_key(|e| std::cmp::Reverse(e.tokens));
     top.truncate(3);
     OpenCode {
         today_tokens: today.iter().map(|s| s.tokens).sum(),

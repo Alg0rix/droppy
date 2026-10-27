@@ -1502,7 +1502,7 @@ impl Eyes {
                 p.size = [0.85, 1.15, 1.0, 0.9][((h >> 2) % 4) as usize];
                 *look = Some(([-0.7, 0.7, 0.0, -0.4][((h >> 4) % 4) as usize], [-0.5, 0.3, -0.8, 0.5][((h >> 6) % 4) as usize]));
                 lv.dx = (e * 90.0).sin() * 1.0;
-                if snap % 3 == 0 {
+                if snap.is_multiple_of(3) {
                     x.glyph = Glyph::Cross;
                 }
             }

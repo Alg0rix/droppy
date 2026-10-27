@@ -147,7 +147,7 @@ fn note_list(c: &mut Ctx, a: Rect, acc: Color) {
         }
     }
     if !query.is_empty() {
-        matched.sort_by(|a, b| b.2.cmp(&a.2));
+        matched.sort_by_key(|m| std::cmp::Reverse(m.2));
     }
 
     let n = matched.len();

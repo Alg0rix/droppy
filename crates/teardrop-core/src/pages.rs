@@ -1,9 +1,10 @@
 //! Page model: order, scroll-switching, badges.
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Page {
+    #[default]
     Music,
     Focus,
     Water,
@@ -26,12 +27,6 @@ pub enum Page {
     Windows,
     /// Reached from the gear in the header; not part of the tab cycle.
     Settings,
-}
-
-impl Default for Page {
-    fn default() -> Self {
-        Page::Music
-    }
 }
 
 impl Page {

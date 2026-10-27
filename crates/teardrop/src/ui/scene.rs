@@ -322,6 +322,7 @@ impl Scene {
         self.cmds.push(Cmd::Circle { cx: cx + self.dx, cy: cy + self.dy, r, fill });
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn ring(&mut self, cx: f32, cy: f32, r: f32, width: f32, from: f32, to: f32, color: Color) {
         if to - from <= 0.0001 {
             return;
@@ -371,6 +372,7 @@ impl Scene {
         self.cmds.push(Cmd::Text { s: s.into(), r, size, weight, color, align: Align::Left, karaoke: None, edit: Some(edit) });
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn text_karaoke(&mut self, s: impl Into<String>, r: Rect, size: f32, weight: Weight, base: Color, lit: Color, frac: f32) {
         if self.alpha <= 0.003 {
             return;

@@ -344,7 +344,7 @@ fn pad_frame(out: &mut Vec<u8>) {
 /// Strip a valid pad tail; return the frame unchanged when absent.
 fn unpad_frame(bytes: &[u8]) -> Vec<u8> {
     let n = *bytes.last().unwrap_or(&0) as usize;
-    if n >= 1 && n <= 255 && n <= bytes.len() && bytes[bytes.len() - n..].iter().all(|&b| b as usize == n) {
+    if (1..=255).contains(&n) && n <= bytes.len() && bytes[bytes.len() - n..].iter().all(|&b| b as usize == n) {
         bytes[..bytes.len() - n].to_vec()
     } else {
         bytes.to_vec()

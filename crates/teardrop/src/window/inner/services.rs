@@ -237,7 +237,7 @@ pub(super) fn sync_ai() {
     let snap = crate::ai::snapshot(prov);
     let ai_done = VIEW.with(|v| {
         let mut vm = v.borrow_mut();
-        let done = (vm.ai.busy && !snap.busy).then(|| snap.error.is_empty());
+        let done = (vm.ai.busy && !snap.busy).then_some(snap.error.is_empty());
         vm.ai = snap;
         done
     });
@@ -330,7 +330,7 @@ fn poll_quick(n: u32) {
         vm.quick.wifi_ssid = snap.ssid;
         vm.quick.wifi_nets = snap.wifi_nets;
         vm.quick.bt_devs = snap.bt_devs;
-        if vm.page == Page::Quick || n % 10 == 0 {
+        if vm.page == Page::Quick || n.is_multiple_of(10) {
             vm.quick.mic_muted = volume::mic_muted();
             vm.quick.brightness = crate::brightness::get();
         }
@@ -377,7 +377,7 @@ pub(super) fn brightness_changed(pct: u8) -> bool {
 
 /// Slower ambient signals, only sampled while the eyes are the idle look.
 fn poll_env(n: u32) {
-    if n % 3 == 0 {
+    if n.is_multiple_of(3) {
         let (mic, cam) = env::mic_cam();
         VIEW.with(|v| {
             let mut vm = v.borrow_mut();
@@ -386,7 +386,7 @@ fn poll_env(n: u32) {
             vm.env.camera = cam;
         });
     }
-    if n % 5 == 0 {
+    if n.is_multiple_of(5) {
         let weather_on = SETTINGS.with(|s| s.borrow().weather_mood);
         let (online, quiet) = (env::online(), env::quiet());
         VIEW.with(|v| {
@@ -395,7 +395,7 @@ fn poll_env(n: u32) {
             vm.env.quiet = quiet;
             vm.env.weather = if weather_on { env::weather() } else { Weather::Unknown };
         });
-        if weather_on && n % 1800 == 0 {
+        if weather_on && n.is_multiple_of(1800) {
             env::refresh_weather();
         }
     }
@@ -473,7 +473,7 @@ pub(super) fn slow_tick(hwnd: HWND) {
     VIEW.with(|v| {
         let mut vm = v.borrow_mut();
         vm.now = now;
-        if n % 3 == 0 {
+        if n.is_multiple_of(3) {
             CPU.with(|c| vm.system = sample_all(&mut c.borrow_mut(), &vm.system));
         }
         if vm.pomo.ends_at.is_some() {
@@ -500,9 +500,7 @@ pub(super) fn slow_tick(hwnd: HWND) {
     poll_focus_app(hwnd);
     poll_volume();
     poll_quick(n);
-    if VIEW.with(|v| v.borrow().page) == Page::Usage && !USAGE_STARTED.replace(true) {
-        crate::usage::refresh();
-    } else if USAGE_STARTED.get() && n % 300 == 0 {
+    if (VIEW.with(|v| v.borrow().page) == Page::Usage && !USAGE_STARTED.replace(true)) || (USAGE_STARTED.get() && n.is_multiple_of(300)) {
         crate::usage::refresh();
     }
     calendar_tick(hwnd, ms);
@@ -515,7 +513,7 @@ pub(super) fn slow_tick(hwnd: HWND) {
     // Cheap: reads the published slot, which extrapolates the position.
     poll_smtc();
     lyrics_tick();
-    if n % 30 == 0 {
+    if n.is_multiple_of(30) {
         save_all();
     }
     wake(hwnd);

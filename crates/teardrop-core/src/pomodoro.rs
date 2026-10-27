@@ -78,7 +78,7 @@ impl Pomodoro {
         let next = match self.phase {
             Phase::Focus => {
                 self.completed_focus += 1;
-                if self.completed_focus % self.sessions_before_long == 0 {
+                if self.completed_focus.is_multiple_of(self.sessions_before_long) {
                     Phase::LongBreak
                 } else {
                     Phase::ShortBreak

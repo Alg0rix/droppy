@@ -80,7 +80,7 @@ fn set_status(s: impl Into<String>) {
     let s = s.into();
     let (_d, cache) = crate::paths::ensure_dirs();
     crate::store::log_line(&cache, &s);
-    *STATUS.lock().unwrap() = s.into();
+    *STATUS.lock().unwrap() = s;
     notify();
 }
 
@@ -596,16 +596,16 @@ mod imp {
         }
         let dev = BluetoothLEDevice::FromBluetoothAddressWithBluetoothAddressTypeAsync(addr, atype).map_err(|e| step("connect", e))?.get().map_err(|e| step("connect-await", e))?;
         // Uncached: without it, unpaired devices return empty service lists.
-        let services = match dev.GetGattServicesForUuidWithCacheModeAsync(SERVICE, BluetoothCacheMode::Uncached).map_err(|e| step("services", e)) {
-            Ok(op) => op.get().or_else(|e| {
+        let services = {
+            let op = dev.GetGattServicesForUuidWithCacheModeAsync(SERVICE, BluetoothCacheMode::Uncached).map_err(|e| step("services", e))?;
+            op.get().or_else(|e| {
                 // Some stacks reject Uncached outright — retry Cached once.
                 let first = format!("{e}");
                 match dev.GetGattServicesForUuidWithCacheModeAsync(SERVICE, BluetoothCacheMode::Cached) {
                     Ok(op2) => op2.get().map_err(|e2| step(format!("services-await ({first}) / cached"), e2)),
                     Err(e2) => Err(step(format!("services ({first}) / cached"), e2)),
                 }
-            })?,
-            Err(e) => return Err(e),
+            })?
         };
         let svc = services.Services().map_err(|e| step("svc-list", e))?.GetAt(0).map_err(|e| step("svc-none", e))?;
         let chars =

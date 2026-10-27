@@ -37,8 +37,7 @@ pub(super) fn chat(c: &mut Ctx, a: Rect) {
     if editing {
         c.s.stroke(nick_r, 9.0, 1.4, acc.fade(0.85));
     }
-    if editing && c.ui.input.is_some() {
-        let f = c.ui.input.as_ref().unwrap();
+    if let (true, Some(f)) = (editing, c.ui.input.as_ref()) {
         let ed = field_edit(c, f, acc);
         c.s.text_edit(f.as_str().to_string(), Rect::new(nick_r.x + 10.0, nick_r.y, nick_r.w - 16.0, nick_r.h), 12.0, Weight::Medium, pal().text, ed);
     } else {

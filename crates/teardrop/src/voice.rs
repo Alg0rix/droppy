@@ -162,9 +162,9 @@ pub fn to_pcm16(raw: &[u8], kind: Sample, out: &mut Vec<u8>) -> f32 {
         out.extend_from_slice(&v.to_le_bytes());
     };
     match kind {
-        Sample::F32 => raw.chunks_exact(4).for_each(|b| push(f32_to_i16(f32::from_le_bytes([b[0], b[1], b[2], b[3]])))),
-        Sample::I16 => raw.chunks_exact(2).for_each(|b| push(i16::from_le_bytes([b[0], b[1]]))),
-        Sample::I32 => raw.chunks_exact(4).for_each(|b| push((i32::from_le_bytes([b[0], b[1], b[2], b[3]]) >> 16) as i16)),
+        Sample::F32 => raw.as_chunks::<4>().0.iter().for_each(|b| push(f32_to_i16(f32::from_le_bytes([b[0], b[1], b[2], b[3]])))),
+        Sample::I16 => raw.as_chunks::<2>().0.iter().for_each(|b| push(i16::from_le_bytes([b[0], b[1]]))),
+        Sample::I32 => raw.as_chunks::<4>().0.iter().for_each(|b| push((i32::from_le_bytes([b[0], b[1], b[2], b[3]]) >> 16) as i16)),
     }
     peak
 }
@@ -401,7 +401,7 @@ mod live {
         if r.is_ok() {
             let b = std::fs::read(&path).unwrap();
             let data = u32::from_le_bytes([b[40], b[41], b[42], b[43]]) as usize;
-            let peak = b[44..].chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]]).unsigned_abs()).max().unwrap_or(0);
+            let peak = b[44..].as_chunks::<2>().0.iter().map(|c| i16::from_le_bytes([c[0], c[1]]).unsigned_abs()).max().unwrap_or(0);
             println!(
                 "file {} bytes, data {} bytes, channels {}, rate {}, peak {}",
                 b.len(),

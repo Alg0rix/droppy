@@ -224,6 +224,7 @@ fn call_provider(provider: AiProvider, model: &str, base_url: &str, sec: &mut Se
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn call_responses_endpoint(
     url: &str,
     bearer: &str,

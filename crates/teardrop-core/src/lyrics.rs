@@ -11,8 +11,7 @@ pub fn parse_lrc(input: &str) -> Vec<LyricLine> {
         // One line may carry several [mm:ss.xx] tags.
         let mut rest = raw;
         let mut tags = Vec::new();
-        loop {
-            let Some(open) = rest.find('[') else { break };
+        while let Some(open) = rest.find('[') {
             let Some(close_rel) = rest[open..].find(']') else { break };
             let close = open + close_rel;
             let tag = &rest[open + 1..close];

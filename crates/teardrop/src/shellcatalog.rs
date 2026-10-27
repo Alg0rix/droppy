@@ -75,7 +75,7 @@ fn build_apps() -> Vec<(String, String)> {
             out.push((name, path));
         }
     }
-    out.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    out.sort_by_key(|a| a.0.to_lowercase());
     out
 }
 
@@ -242,7 +242,7 @@ fn build_settings() -> Vec<SettingEntry> {
             out.push(SettingEntry { name, keywords, uri: page_uri(raw.page_id.as_deref(), raw.host_id.as_deref()) });
         }
     }
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|a| a.name.to_lowercase());
     out
 }
 

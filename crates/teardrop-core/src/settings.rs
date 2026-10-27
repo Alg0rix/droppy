@@ -3,19 +3,14 @@ use crate::apps::EyeTheme;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum IdleLook {
+    #[default]
     Clock,
     Eyes,
     Minimal,
     Hidden,
-}
-
-impl Default for IdleLook {
-    fn default() -> Self {
-        IdleLook::Clock
-    }
 }
 
 /// How the idle eyes are drawn.

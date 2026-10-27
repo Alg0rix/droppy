@@ -81,11 +81,9 @@ pub mod sys {
             let mut free_avail: u64 = 0;
             let mut total: u64 = 0;
             let mut total_free: u64 = 0;
-            if GetDiskFreeSpaceExW(PCWSTR::from_raw(wide.as_ptr()), Some(&mut free_avail), Some(&mut total), Some(&mut total_free)).is_ok() {
-                if total > 0 {
-                    out.disk_total_gb = total as f32 / 1_073_741_824.0;
-                    out.disk_used_gb = (total.saturating_sub(total_free)) as f32 / 1_073_741_824.0;
-                }
+            if GetDiskFreeSpaceExW(PCWSTR::from_raw(wide.as_ptr()), Some(&mut free_avail), Some(&mut total), Some(&mut total_free)).is_ok() && total > 0 {
+                out.disk_total_gb = total as f32 / 1_073_741_824.0;
+                out.disk_used_gb = (total.saturating_sub(total_free)) as f32 / 1_073_741_824.0;
             }
             let mut st = std::mem::zeroed::<windows::Win32::System::Power::SYSTEM_POWER_STATUS>();
             if GetSystemPowerStatus(&mut st).is_ok() {

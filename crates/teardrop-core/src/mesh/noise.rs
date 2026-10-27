@@ -6,6 +6,7 @@ use snow::{HandshakeState, TransportState};
 
 const PATTERN: &str = "Noise_XX_25519_ChaChaPoly_SHA256";
 
+#[allow(clippy::large_enum_variant)]
 enum Inner {
     Hs(HandshakeState),
     Ts(TransportState),

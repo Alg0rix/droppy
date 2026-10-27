@@ -184,10 +184,10 @@ impl Eyes {
             self.jig.wobble(w);
         }
         let amp = self.beat.hit;
-        let side = if c % 2 == 0 { 1.0 } else { -1.0 };
+        let side = if c.is_multiple_of(2) { 1.0 } else { -1.0 };
         let step = c.wrapping_sub(self.dance_from);
         match self.dance {
-            Move::Hop if step % 2 == 0 => self.jig.hop(20.0 + 40.0 * amp),
+            Move::Hop if step.is_multiple_of(2) => self.jig.hop(20.0 + 40.0 * amp),
             Move::Bounce => self.jig.hop(10.0 + 18.0 * amp),
             Move::Bang | Move::Thrash => self.jig.squish(15.0 + 25.0 * amp),
             Move::SideBang => self.jig.wobble(side * 2.5 * amp),
@@ -196,7 +196,7 @@ impl Eyes {
             Move::Kick | Move::Vibrate => self.jig.hop(6.0 + 14.0 * amp),
             _ => {}
         }
-        if s.visible && c % 2 == 0 {
+        if s.visible && c.is_multiple_of(2) {
             let (ax, ay) = s.area;
             let side = if self.rand() < 0.5 { -1.0 } else { 1.0 };
             let size = 7.5 + 2.0 * amp;
@@ -394,7 +394,7 @@ pub(super) fn bit_weight(r: React, s: &Senses, watching: bool) -> u32 {
     let night = !(6..20).contains(&h);
     let morning = (5..11).contains(&h);
     let noon = (11..14).contains(&h);
-    let late = h >= 22 || h < 5;
+    let late = !(5..22).contains(&h);
     let rain = matches!(s.env.weather, Weather::Rain | Weather::Storm);
     let snow = s.env.weather == Weather::Snow;
     let friday_eve = s.local.weekday() == Weekday::Fri && h >= 17;

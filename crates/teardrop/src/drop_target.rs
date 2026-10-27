@@ -39,6 +39,7 @@ pub struct DropTarget {
 }
 
 impl DropTarget {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(hwnd: HWND, cb: fn(HWND, DropEvent)) -> IDropTarget {
         DropTarget { hwnd: hwnd.0 as isize, cb }.into()
     }

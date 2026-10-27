@@ -258,7 +258,7 @@ impl Request {
             }
         }
         let (p, m, data) = (p?, m?, data?);
-        if p < 1 || p > MAX_P || m == 0 {
+        if !(1..=MAX_P).contains(&p) || m == 0 {
             return None;
         }
         Some(Request { p, m, data, types, since })

@@ -106,7 +106,7 @@ pub(super) fn render(hwnd: HWND) {
 fn perf_note(render_ms: f32) {
     thread_local! {
         static ON: bool = std::env::var_os("TEARDROP_PERF").is_some();
-        static ST: Cell<(u32, f32, Option<Instant>)> = Cell::new((0, 0.0, None));
+        static ST: Cell<(u32, f32, Option<Instant>)> = const { Cell::new((0, 0.0, None)) };
     }
     if !ON.with(|o| *o) {
         return;

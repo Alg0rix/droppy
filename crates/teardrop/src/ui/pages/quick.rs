@@ -20,7 +20,8 @@ pub(super) fn quick(c: &mut Ctx, a: Rect) {
     // Sound's opens Windows sound settings.
     let wifi_sec = q.wifi.map(|_| Action::QsExpand(QsSection::Wifi));
     let bt_sec = q.bluetooth.map(|_| Action::QsExpand(QsSection::Bt));
-    let tiles: [(Icon, &str, String, Option<bool>, Action, Option<Action>); 4] = [
+    type Tile = (Icon, &'static str, String, Option<bool>, Action, Option<Action>);
+    let tiles: [Tile; 4] = [
         (Icon::Wifi, "Wi-Fi", q.wifi_label(), q.wifi, Action::QsWifi, wifi_sec),
         (Icon::Bt, "Bluetooth", q.bt_label(), q.bluetooth, Action::QsBt, bt_sec),
         (Icon::Speaker, "Sound", if q.muted { "Muted" } else { "On" }.to_string(), Some(!q.muted), Action::QsMute, Some(Action::QsLink(QsLink::Sound))),
@@ -81,6 +82,7 @@ pub(super) fn quick(c: &mut Ctx, a: Rect) {
 /// Windows 11-style toggle tile: accent when on, dim when off, ghosted when
 /// the hardware isn't there. `link` adds a corner chevron (expands the
 /// tile's list or opens its Settings page).
+#[allow(clippy::too_many_arguments)]
 fn qs_tile(c: &mut Ctx, r: Rect, icon: Icon, name: &str, sub: &str, on: Option<bool>, act: Action, link: Option<Action>, acc: Color) {
     let h = c.hov(act);
     let lit = on == Some(true);
@@ -131,6 +133,7 @@ fn qs_link_tile(c: &mut Ctx, r: Rect, icon: Icon, name: &str, l: QsLink, acc: Co
 }
 
 /// Slider row: clickable icon at the left, drag/click track, % at the right.
+#[allow(clippy::too_many_arguments)]
 fn qs_slider(c: &mut Ctx, r: Rect, icon: Icon, icon_act: Action, track_act: Action, frac: f32, acc: Color, value: &str) {
     c.icon_btn(Rect::new(r.x, r.y + 2.0, 26.0, 26.0), icon_act, icon, 14.0, pal().text_2);
     let tx = r.x + 36.0;
@@ -221,7 +224,7 @@ fn qs_wifi_row(c: &mut Ctx, r: Rect, n: &teardrop_core::WifiNet, i: usize, acc: 
         c.s.rect(r, 8.0, if c.pressed(act) { pal().surface_press } else { pal().surface_hover.fade(h) });
     }
     // Signal bars: four steps rising right, lit by link quality.
-    let bars = ((n.quality as u16 * 4 + 99) / 100).min(4) as usize;
+    let bars = (n.quality as u16 * 4).div_ceil(100).min(4) as usize;
     for b in 0..4 {
         let bh = 3.0 + b as f32 * 2.4;
         let col = if b < bars { pal().text_2 } else { pal().text_3.fade(0.3) };

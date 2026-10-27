@@ -261,7 +261,7 @@ pub fn wrap_lyrics(text: &str, max_w: f32, size: f32, bold: bool) -> Vec<String>
 }
 
 /// Compute subline sweep progress fractions (0.0..=1.0) across wrapped lines.
-pub fn karaoke_subline_progress<'a>(lines: &'a [String], frac: f32) -> Vec<(&'a str, f32)> {
+pub fn karaoke_subline_progress(lines: &[String], frac: f32) -> Vec<(&str, f32)> {
     if lines.is_empty() {
         return Vec::new();
     }

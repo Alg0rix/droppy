@@ -23,7 +23,7 @@ pub fn windows_max_scroll(n: usize) -> usize {
 }
 
 pub fn shelf_max_scroll(n: usize) -> usize {
-    let rows = (n + SHELF_COLS - 1) / SHELF_COLS;
+    let rows = n.div_ceil(SHELF_COLS);
     rows.saturating_sub(SHELF_ROWS)
 }
 

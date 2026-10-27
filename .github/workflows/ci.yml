@@ -9,6 +9,7 @@ on:
       - "crates/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "rustfmt.toml"
       - "installer/**"
       - "tools/**"
       - ".github/workflows/ci.yml"
@@ -17,6 +18,7 @@ on:
       - "crates/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "rustfmt.toml"
       - "installer/**"
       - "tools/**"
       - ".github/workflows/ci.yml"
@@ -33,12 +35,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      # Targeted lint: only the lint groups that point at real bugs fail the
-      # build (correctness and suspicious). Style lints are reported, not gated.
-      - name: Lint (clippy, bug classes)
-        run: cargo clippy --workspace --all-targets -- -D clippy::correctness -D clippy::suspicious
+      - name: Format (rustfmt)
+        run: cargo fmt --all -- --check
+      # All lints gate: the codebase is kept warning-free.
+      - name: Lint (clippy)
+        run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace
       - name: Release build
@@ -53,9 +56,35 @@ jobs:
           Get-Item dist/droppy-setup-0.0.0.exe | Select-Object Name, Length
       - name: Selftest (renders every state headless)
         run: ./target/release/droppy.exe --selftest dist/selftest
-        continue-on-error: true
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: selftest-screenshots
           path: dist/selftest
           if-no-files-found: ignore
+
+  # teardrop-core is pure logic; keeping it clean on Linux catches
+  # Windows-only leakage and runs its tests without a GPU.
+  core-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Lint (clippy)
+        run: cargo clippy -p teardrop-core --all-targets -- -D warnings
+      - name: Test
+        run: cargo test -p teardrop-core
+
+  # Flag known-vulnerable dependency versions.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Audit
+        run: cargo audit

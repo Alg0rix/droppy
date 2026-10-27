@@ -33,7 +33,7 @@ pub fn set_notify(f: impl Fn() + Send + Sync + 'static) {
 
 /// Newest connection since the last call, if any.
 pub fn take() -> Option<BtEvent> {
-    PENDING.lock().unwrap().drain(..).last()
+    PENDING.lock().unwrap().drain(..).next_back()
 }
 
 /// Check right now instead of waiting out the poll interval (a device-arrival
@@ -130,7 +130,8 @@ mod imp {
                     }
                     let mut nbuf = [0u8; 512];
                     if SetupDiGetDevicePropertyW(set, &data, &NAME_KEY, &mut ty, Some(&mut nbuf), Some(&mut need), 0).is_ok() {
-                        let w: Vec<u16> = nbuf[..(need as usize).min(nbuf.len())].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&c| c != 0).collect();
+                        let w: Vec<u16> =
+                            nbuf[..(need as usize).min(nbuf.len())].as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&c| c != 0).collect();
                         let name = String::from_utf16_lossy(&w);
                         if !name.is_empty() {
                             out.insert(name, pct);

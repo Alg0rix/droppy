@@ -233,7 +233,7 @@ mod tests {
         assert!(header.fWide.as_bool());
         assert!(!header.fNC.as_bool());
 
-        let units: Vec<u16> = bytes[header.pFiles as usize..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        let units: Vec<u16> = bytes[header.pFiles as usize..].as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
         let mut found = Vec::new();
         let mut start = 0;
         for (i, ch) in units.iter().enumerate() {

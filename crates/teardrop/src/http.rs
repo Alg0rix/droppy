@@ -13,10 +13,9 @@ pub fn host_is(url: &str, host: &str) -> bool {
 pub fn split_url(url: &str) -> Option<(bool, &str, u16, &str)> {
     let (https, rest, default_port) = if let Some(r) = url.strip_prefix("https://") {
         (true, r, 443u16)
-    } else if let Some(r) = url.strip_prefix("http://") {
-        (false, r, 80u16)
     } else {
-        return None;
+        let r = url.strip_prefix("http://")?;
+        (false, r, 80u16)
     };
     let (authority, path) = match rest.find('/') {
         Some(i) => (&rest[..i], &rest[i..]),

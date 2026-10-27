@@ -679,6 +679,7 @@ impl Eyes {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn spawn(&mut self, kind: Kind, x: f32, y: f32, vx: f32, vy: f32, life: f32, size: f32) {
         if self.parts.len() >= 48 {
             self.parts.remove(0);

@@ -267,6 +267,7 @@ pub enum Action {
     /// Copy assistant message text at `msg_idx`.
     AiCopyReply(u16),
     /// Undo an AI-performed action `(msg_idx, action_idx)`.
+    #[allow(clippy::enum_variant_names)]
     AiUndoAction(u16, u8),
     /// Quick page: toggle the Wi-Fi radio.
     QsWifi,

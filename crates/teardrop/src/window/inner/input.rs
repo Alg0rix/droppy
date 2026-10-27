@@ -37,11 +37,9 @@ fn qs_apply_slider(a: Action, x: f32) {
                 });
             }
         }
-        Action::QsBright => {
-            if crate::brightness::set(pct) {
-                LAST_BRIGHT.set(Some(pct));
-                VIEW.with(|v| v.borrow_mut().quick.brightness = Some(pct));
-            }
+        Action::QsBright if crate::brightness::set(pct) => {
+            LAST_BRIGHT.set(Some(pct));
+            VIEW.with(|v| v.borrow_mut().quick.brightness = Some(pct));
         }
         _ => {}
     }
@@ -182,7 +180,7 @@ fn on_wheel(hwnd: HWND, wp: WPARAM) {
         return;
     }
     if page == Page::Today && in_content && LAST_MOUSE.get().0 < 20.0 + 20.0 + 214.0 + 20.0 {
-        UI.with(|u| u.borrow_mut().cal_offset += dir as i32);
+        UI.with(|u| u.borrow_mut().cal_offset += dir);
         wake(hwnd);
         return;
     }

@@ -1224,7 +1224,7 @@ impl Beat {
 
     fn sway(&self, t: f32) -> f32 {
         let ph = ((t - self.last) / self.period).clamp(0.0, 1.0);
-        let side = if self.count % 2 == 0 { 1.0 } else { -1.0 };
+        let side = if self.count.is_multiple_of(2) { 1.0 } else { -1.0 };
         side * (ph * PI).sin()
     }
 }

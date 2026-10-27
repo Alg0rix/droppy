@@ -106,15 +106,17 @@ fn announce_encode(nick: &str, npk: &[u8; 32], spk: &[u8; 32], nb: &[PeerId]) ->
     d
 }
 
-fn announce_decode(d: &[u8]) -> Option<(String, [u8; 32], [u8; 32], Vec<PeerId>)> {
+type Announce = (String, [u8; 32], [u8; 32], Vec<PeerId>);
+
+fn announce_decode(d: &[u8]) -> Option<Announce> {
     let (mut nick, mut npk, mut spk, mut nb) = (None, None, None, Vec::new());
     tlv_each(d, |t, v| match t {
         0x01 => nick = std::str::from_utf8(v).ok().map(String::from),
         0x02 if v.len() == 32 => npk = Some(<[u8; 32]>::try_from(v).unwrap()),
         0x03 if v.len() == 32 => spk = Some(<[u8; 32]>::try_from(v).unwrap()),
         0x04 => {
-            for c in v.chunks_exact(8).take(10) {
-                nb.push(PeerId(c.try_into().unwrap()));
+            for c in v.as_chunks::<8>().0.iter().take(10) {
+                nb.push(PeerId(*c));
             }
         }
         _ => {}
@@ -412,7 +414,7 @@ impl Node {
         self.remember(&pkt, now_ms);
         // No wire id or nick in the payload: id = dedup key, nick = announce.
         let id = format!("{:x}", u64::from_be_bytes(pkt.dedup_key()[..8].try_into().unwrap_or_default()));
-        let nick = self.nick_of(&pkt.sender).unwrap_or_else(|| nick);
+        let nick = self.nick_of(&pkt.sender).unwrap_or(nick);
         (
             vec![],
             vec![Event::Public {
@@ -448,9 +450,7 @@ impl Node {
         let mut evs = Vec::new();
         evs.append(&mut evs0);
 
-        if !self.peers.contains_key(&from) {
-            self.peers.insert(from, Peer::placeholder(from, now_ms));
-        }
+        self.peers.entry(from).or_insert_with(|| Peer::placeholder(from, now_ms));
         {
             let peer = self.peers.get(&from).unwrap();
             if let Some(ps) = &peer.session {
@@ -539,9 +539,7 @@ impl Node {
         let from = pkt.sender;
         let mut ops = Vec::new();
         let mut evs = Vec::new();
-        if !self.peers.contains_key(&from) {
-            self.peers.insert(from, Peer::placeholder(from, now_ms));
-        }
+        self.peers.entry(from).or_insert_with(|| Peer::placeholder(from, now_ms));
         // BitChat handshake recovery: a ciphertext we can't decrypt means the
         // sessions have drifted (stale session on their side, restart on
         // ours) — kick a fresh XX handshake to resync rather than drop.
@@ -590,9 +588,7 @@ impl Node {
         if to == self.peer_id() {
             return (vec![], vec![]);
         }
-        if !self.peers.contains_key(&to) {
-            self.peers.insert(to, Peer::placeholder(to, now_ms));
-        }
+        self.peers.entry(to).or_insert_with(|| Peer::placeholder(to, now_ms));
         let id = wire_id(&mut self.rng);
         let echo = Event::Private { from: self.peer_id(), to, id: id.clone(), text: text.to_string(), ts: now_ms, mine: true };
         let inner = private_encode(&id, text);
@@ -726,7 +722,7 @@ impl Node {
     fn request_sync(&mut self, now_ms: u64) -> Op {
         let mut cands: Vec<(u64, [u8; 16])> =
             self.history.iter().map(|s| &s.pkt).chain(self.announces.values().map(|s| &s.pkt)).map(|p| (p.timestamp, sync::packet_id(p))).collect();
-        cands.sort_by(|a, b| b.0.cmp(&a.0)); // newest first
+        cands.sort_by_key(|c| std::cmp::Reverse(c.0)); // newest first
         let ids: Vec<[u8; 16]> = cands.iter().map(|c| c.1).collect();
         let p = sync::derive_p(GCS_FPR);
         let take = ids.len().min(sync::estimate_max_elements(GCS_MAX_BYTES, p)).min(HISTORY_CAP);
@@ -897,14 +893,14 @@ mod tests {
     fn shuttle(a: &mut Node, b: &mut Node, t: u64, seed_a: Vec<Op>, seed_b: Vec<Op>, aev: &mut Vec<Event>, bev: &mut Vec<Event>) {
         let mut qa: Vec<Vec<u8>> = seed_a
             .into_iter()
-            .filter_map(|o| match o {
-                Op::Send { bytes, .. } => Some(bytes),
+            .map(|o| match o {
+                Op::Send { bytes, .. } => bytes,
             })
             .collect();
         let mut qb: Vec<Vec<u8>> = seed_b
             .into_iter()
-            .filter_map(|o| match o {
-                Op::Send { bytes, .. } => Some(bytes),
+            .map(|o| match o {
+                Op::Send { bytes, .. } => bytes,
             })
             .collect();
         for _ in 0..24 {
@@ -916,8 +912,8 @@ mod tests {
                 bev.extend(e);
                 qb.extend(
                     ops.into_iter()
-                        .filter_map(|o| match o {
-                            Op::Send { bytes, .. } => Some(bytes),
+                        .map(|o| match o {
+                            Op::Send { bytes, .. } => bytes,
                         })
                         .collect::<Vec<_>>(),
                 );
@@ -927,8 +923,8 @@ mod tests {
                 aev.extend(e);
                 qa.extend(
                     ops.into_iter()
-                        .filter_map(|o| match o {
-                            Op::Send { bytes, .. } => Some(bytes),
+                        .map(|o| match o {
+                            Op::Send { bytes, .. } => bytes,
                         })
                         .collect::<Vec<_>>(),
                 );

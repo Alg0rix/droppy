@@ -64,12 +64,10 @@ impl Eyes {
                     self.spawn(Kind::Drool, 3.0, 10.0, 0.0, 1.2, 2.2, 1.0);
                 }
             }
-            Party => {
-                if self.due(T_CONFETTI, 0.9) {
-                    let x = self.range(-ax, ax);
-                    let vy = self.range(8.0, 12.0);
-                    self.spawn(Kind::Confetti, x, -ay, 0.0, vy, 2.0 * ay / vy, 1.0);
-                }
+            Party if self.due(T_CONFETTI, 0.9) => {
+                let x = self.range(-ax, ax);
+                let vy = self.range(8.0, 12.0);
+                self.spawn(Kind::Confetti, x, -ay, 0.0, vy, 2.0 * ay / vy, 1.0);
             }
             _ => {}
         }
@@ -193,14 +191,14 @@ impl Eyes {
                 self.spawn(Kind::Firework, x, ay * 0.4, vx, vy, 1.6, 1.0);
             }
             Chat => {
-                let side = if (self.t / 1.3) as u32 % 2 == 0 { -1.0 } else { 1.0 };
+                let side = if ((self.t / 1.3) as u32).is_multiple_of(2) { -1.0 } else { 1.0 };
                 self.jig.hop(8.0);
                 self.spawn(Kind::Sym("\u{2026}"), side * edge, -6.0, 0.0, -5.0, 1.2, 7.0);
             }
             Email => self.spawn(Kind::Sym(pick(r, &["@", "\u{2709}"])), side * edge, -2.0, 0.0, -6.0, 1.6, 6.5),
             Meeting => {
                 // Someone is talking on one side.
-                let side = if (self.t / 6.0) as u32 % 2 == 0 { -1.0 } else { 1.0 };
+                let side = if ((self.t / 6.0) as u32).is_multiple_of(2) { -1.0 } else { 1.0 };
                 self.spawn(Kind::Wave, side * 20.0, 0.0, side, 0.0, 0.6, 1.0);
             }
             Learning => {

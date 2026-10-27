@@ -696,14 +696,16 @@ pub mod d2d {
     }
 
     unsafe fn make_dib(dc: HDC, w: i32, h: i32) -> Option<(HBITMAP, HGDIOBJ)> {
-        let mut bi = BITMAPINFO::default();
-        bi.bmiHeader = BITMAPINFOHEADER {
-            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-            biWidth: w,
-            biHeight: -h, // top-down
-            biPlanes: 1,
-            biBitCount: 32,
-            biCompression: BI_RGB.0,
+        let bi = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: w,
+                biHeight: -h, // top-down
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();

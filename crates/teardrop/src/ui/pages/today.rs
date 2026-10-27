@@ -15,7 +15,7 @@ pub fn shown_year_month(today: NaiveDate, cal_offset: i32) -> (i32, u32) {
 
 /// Active list of events on `Page::Today`: either the events occurring on
 /// `selected_day` or the upcoming agenda when no day is selected.
-pub fn active_calendar_events<'a>(vm: &'a crate::viewmodel::ViewModel, selected_day: Option<(i32, u32, u32)>) -> Vec<&'a crate::calendar::Event> {
+pub fn active_calendar_events(vm: &crate::viewmodel::ViewModel, selected_day: Option<(i32, u32, u32)>) -> Vec<&crate::calendar::Event> {
     match selected_day {
         Some((y, m, d)) => vm.calendar.events_on_day(y, m, d),
         None => vm.calendar.agenda(vm.now.timestamp(), 15),

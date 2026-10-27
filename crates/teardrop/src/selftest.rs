@@ -1140,9 +1140,7 @@ pub fn run(dir: &str) -> i32 {
         failures.push("eq_bars static over time".to_string());
     }
     render.push(json!({"check": "eq_bars", "animated": bars_a != bars_b}));
-    let mut t = teardrop_core::media::Track::default();
-    t.duration_ms = 60_000;
-    t.position_ms = 90_000; // clamped by progress()
+    let t = teardrop_core::media::Track { duration_ms: 60_000, position_ms: 90_000, ..Default::default() }; // clamped by progress()
     if (t.progress() - 1.0).abs() > 0.001 {
         failures.push("progress clamp wrong".to_string());
     }

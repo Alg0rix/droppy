@@ -503,7 +503,7 @@ pub fn shift_birthday((m, d): (u8, u8), days: i64) -> (u8, u8) {
 }
 
 pub fn mmss(ms: u64) -> String {
-    let secs = (ms + 999) / 1000;
+    let secs = ms.div_ceil(1000);
     format!("{:02}:{:02}", secs / 60, secs % 60)
 }
 
