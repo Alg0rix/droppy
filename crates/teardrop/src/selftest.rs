@@ -267,44 +267,6 @@ fn shots() -> Vec<Shot> {
             },
             ..shot("04-collapsed-eyes", 0.0, Page::Music)
         },
-        Shot {
-            setup: |vm, set, ui, _| {
-                // A pointer circling just above the pill (outside the
-                // ripple's near band): a calm, idle face slides up until its
-                // pupils straddle the island's top rim.
-                eyes(vm, set, EyeStyle::Round, false);
-                ui.mouse = Some((84.0, -95.0));
-            },
-            ticks: 210,
-            ..shot("04b-eyes-peek-rim", 0.0, Page::Music)
-        },
-        Shot {
-            setup: |vm, set, ui, ms| {
-                // Typing burst + the OS caret down-left of the island: the
-                // gaze shadows the caret itself, not the pointer.
-                eyes(vm, set, EyeStyle::Round, false);
-                vm.env.caret = Some((34.0, 200.0));
-                for _ in 0..150 {
-                    ui.tick(1.0 / 60.0, vm, set, ms); // play out the startup stretch
-                }
-                for _ in 0..8 {
-                    ui.eyes.typed();
-                }
-            },
-            ticks: 60,
-            ..shot("04c-eyes-caret", 0.0, Page::Music)
-        },
-        Shot {
-            setup: |vm, _, ui, _| {
-                // The pointer just slipped into the near band under the
-                // pill: one ripple pings off the rim, then quiets (it never
-                // loops).
-                vm.track.playback = teardrop_core::Playback::Stopped;
-                ui.mouse = Some((60.0, 60.0));
-            },
-            ticks: 15,
-            ..shot("04d-fx-ripple", 0.0, Page::Music)
-        },
         Shot { setup: |vm, _, _, ms| vm.hud = Some(hud_volume(64, false, ms)), ..shot("05-hud-volume", 0.0, Page::Music) },
         Shot { setup: |vm, _, _, ms| vm.hud = Some(crate::viewmodel::hud_bluetooth("Sound Buds", Some(80), ms)), ..shot("05b-hud-bluetooth", 0.0, Page::Music) },
         Shot { setup: |vm, _, _, ms| vm.hud = Some(crate::viewmodel::hud_bluetooth("Keychron K3 Pro", None, ms)), ..shot("05c-hud-bluetooth-nobattery", 0.0, Page::Music) },
@@ -319,24 +281,6 @@ fn shots() -> Vec<Shot> {
             ..shot("05e-hud-bluetooth-eyes", 0.0, Page::Music)
         },
         Shot { setup: |vm, _, _, ms| vm.hud = Some(hud_water_due(ms)), ..shot("06-hud-water", 0.0, Page::Music) },
-        // The drip: a droplet pinches off the island's bottom tip (water
-        // reminder, download done, AI answer landed, update found).
-        Shot {
-            setup: |_, _, ui, _| ui.fx.drip(),
-            ticks: 19, // the nub swells under the tip, not yet detached
-            ..shot("06d-fx-drip-pinch", 0.0, Page::Music)
-        },
-        Shot {
-            setup: |vm, _, ui, _| {
-                vm.track.playback = teardrop_core::Playback::Stopped;
-                ui.fx.drip();
-            },
-            ticks: 33, // detached mid-fall inside the pad, edge still shuddering
-            ..shot("06e-fx-drip-fall", 0.0, Page::Music)
-        },
-        // A real external event breathes rings off the rim (device plugged,
-        // Bluetooth link, mesh message, power change, update found).
-        Shot { setup: |_, _, ui, _| ui.fx.pulse(crate::ui::theme::accent(Page::System)), ticks: 45, ..shot("06f-fx-pulse", 0.0, Page::Music) },
         Shot { setup: |vm, _, _, ms| vm.hud = Some(Hud::transient(HudKind::Charging, "Charging", "87%", ms, 5000)), ..shot("07-hud-charging", 0.0, Page::Music) },
         Shot {
             setup: |vm, _, _, _| {
@@ -496,17 +440,6 @@ fn shots() -> Vec<Shot> {
             ..shot("26k-hud-meeting", 0.0, Page::Music)
         },
         Shot {
-            setup: |vm, set, _, _| {
-                // Design review is 12 min out: too far for the countdown pill
-                // or the Gasp, but the calm face is already antsy — fidgeting,
-                // glancing at the corner where the countdown will appear.
-                demo_calendar(vm, set, &mut UiState::new(Page::Music), 0);
-                eyes(vm, set, EyeStyle::Round, false);
-            },
-            ticks: 250, // lands inside a glance window of the tension cycle
-            ..shot("26k2-eyes-meeting-tension", 0.0, Page::Music)
-        },
-        Shot {
             setup: |vm, _, _, _| {
                 use crate::usage::{Limits, OpenCode, Spend, UsageView, Window};
                 let now = chrono::Utc::now().timestamp();
@@ -646,26 +579,6 @@ fn shots() -> Vec<Shot> {
                 ui.absorb_zone = 1;
             },
             ..shot("23d-drop-phone-burst", 1.0, Page::Shelf)
-        },
-        // Files carried over the collapsed pill: the silhouette itself
-        // inhales wider and taller, bracing for the drop.
-        Shot {
-            setup: |_, _, ui, _| {
-                ui.drag_files = 3;
-                ui.drop_amt = 1.0;
-            },
-            ticks: 14,
-            ..shot("23e-pill-inhale", 0.0, Page::Music)
-        },
-        // A drop landing: the pill squashes down with a burst ring in the
-        // drop zone's colour — the island swallowing what it caught.
-        Shot {
-            setup: |_, _, ui, _| {
-                ui.absorb_t = 0.6;
-                ui.absorb_zone = 0;
-            },
-            ticks: 10,
-            ..shot("23f-pill-settle", 0.0, Page::Music)
         },
         shot("26b-page-speed", 1.0, Page::Speed),
         Shot {
@@ -1024,20 +937,6 @@ pub fn run(dir: &str) -> i32 {
         if set.idle_look == IdleLook::Eyes {
             entry["eyes"] = json!({"mood": format!("{:?}", ui.eyes.mood), "react": format!("{:?}", ui.eyes.current())});
         }
-        // Island-level fx state at the frozen frame (the demos below).
-        let meeting = vm.calendar.next(vm.now.timestamp()).map(|e| super::ui::fx::meeting_tension(e.start - vm.now.timestamp())).unwrap_or(0.0);
-        if ui.fx.alive() || ui.drop_amt > 0.01 || ui.absorb_t > 0.01 || ui.eyes.rim_peek_amt() > 0.02 || vm.env.caret.is_some() || meeting > 0.01 {
-            entry["fx"] = json!({
-                "drip_t": ui.fx.drip,
-                "pulse": ui.fx.pulse.is_some(),
-                "ripple": ui.fx.ripple.is_some(),
-                "drop_amt": (ui.drop_amt * 100.0).round() / 100.0,
-                "absorb_t": (ui.absorb_t * 100.0).round() / 100.0,
-                "rim_peek": (ui.eyes.rim_peek_amt() * 100.0).round() / 100.0,
-                "caret": vm.env.caret.is_some(),
-                "meeting": (meeting * 100.0).round() / 100.0,
-            });
-        }
         #[cfg(windows)]
         match crate::render_d2d::d2d::render_offscreen(&frame.scene, (frame.w, frame.h), scale) {
             Some((pw, ph, bgra)) => {
@@ -1256,18 +1155,6 @@ pub fn run(dir: &str) -> i32 {
         "ok": failures.is_empty(),
         "dpi": dpi,
         "frames": frames,
-        // Context-driven island effects: which PNG proves each behaviour.
-        "fx": {
-            "drip": ["06d-fx-drip-pinch.png", "06e-fx-drip-fall.png"],
-            "pulse": "06f-fx-pulse.png",
-            "ripple": "04d-fx-ripple.png",
-            "inhale": "23e-pill-inhale.png",
-            "settle": "23f-pill-settle.png",
-            "peek_over_rim": "04b-eyes-peek-rim.png",
-            "caret_shadow": "04c-eyes-caret.png",
-            "meeting_tension": "26k2-eyes-meeting-tension.png",
-            "sheen": "time-of-day band on the body (no dedicated shot; unit-tested)",
-        },
         "interactions": interactions,
         "lyrics": lyrics,
         "smtc": smtc,

@@ -73,7 +73,6 @@ impl Eyes {
             skip_until: -1.0,
             work: None,
             listen_lvl: 0.0,
-            rim_peek: 0.0,
         }
     }
 
@@ -254,24 +253,6 @@ impl Eyes {
     /// A water reminder fired: look pleading until something gets logged.
     pub fn water_due(&mut self) {
         self.pleading_until = self.t + 120.0;
-    }
-
-    /// A keystroke landed while the pointer stood still (the island's own
-    /// fields, or a test driving the typing sense directly): counts toward
-    /// the typing burst, so the caret shadow can take the gaze.
-    pub fn typed(&mut self) {
-        self.keys.push_back(self.t);
-        while self.keys.len() > 40 {
-            self.keys.pop_front();
-        }
-        if self.keys.len() >= 5 && self.typing_since.is_none() {
-            self.typing_since = Some(self.t);
-        }
-    }
-
-    /// 0..1 slide toward peeking over the rim (selftest metadata).
-    pub fn rim_peek_amt(&self) -> f32 {
-        self.rim_peek
     }
 
     /// Being petted (pointer rubbing back and forth over the island).

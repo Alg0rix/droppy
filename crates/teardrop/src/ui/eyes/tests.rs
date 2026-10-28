@@ -8,9 +8,7 @@ struct World {
     set: Settings,
     local: NaiveDateTime,
     mouse: Option<(f32, f32)>,
-    caret: Option<(f32, f32)>,
     hovering: bool,
-    meeting: f32,
     music: bool,
     water: f32,
 }
@@ -26,9 +24,7 @@ impl World {
             set: Settings::default(),
             local,
             mouse: None,
-            caret: None,
             hovering: false,
-            meeting: 0.0,
             music: false,
             water: 0.0,
         }
@@ -39,9 +35,7 @@ impl World {
             local: self.local,
             visible: true,
             mouse: self.mouse,
-            caret: self.caret,
             hovering: self.hovering,
-            meeting: self.meeting,
             track: &self.track,
             music: self.music,
             focus: None,
@@ -904,66 +898,4 @@ fn every_new_reaction_plays_and_draws() {
         assert!(e.pose() != &rest || e.jig != Jiggle::default(), "{r:?} did nothing");
         run(&mut e, &w, 0.5);
     }
-}
-
-#[test]
-fn typing_shadows_the_caret() {
-    let (mut e, mut w) = settled();
-    // A typing burst with the caret far left and low: the gaze should go
-    // to the caret, not to a mouse that is somewhere else entirely.
-    for _ in 0..8 {
-        e.typed();
-    }
-    w.caret = Some((-90.0, 120.0));
-    w.mouse = Some((220.0, -60.0));
-    run(&mut e, &w, 0.8);
-    assert_eq!(e.mood, Mood::Typing);
-    assert!(e.pose().look.0 < -0.6, "gaze tracks the caret left: {:?}", e.pose().look);
-    assert!(e.pose().look.1 > 0.6, "gaze tracks the caret down: {:?}", e.pose().look);
-    // Typing stops: the caret loses the gaze, the pointer wins it back.
-    run(&mut e, &w, 3.0);
-    assert_ne!(e.mood, Mood::Typing);
-    assert!(e.pose().look.0 > 0.4, "back to the pointer: {:?}", e.pose().look);
-}
-
-#[test]
-fn calm_face_peeks_over_the_rim_only_nearby() {
-    let (mut e, mut w) = settled();
-    // Circling in the near band but not on the island: slide up and peek.
-    w.mouse = Some((60.0, -80.0));
-    run(&mut e, &w, 1.5);
-    assert!(e.rim_peek_amt() > 0.8, "peeked: {}", e.rim_peek_amt());
-    assert!(e.pose().dy < -8.0, "slid up over the rim");
-    // Resting on the island itself is a delight, not a peek.
-    w.hovering = true;
-    run(&mut e, &w, 0.6);
-    assert!(e.rim_peek_amt() < 0.1, "back inside: {}", e.rim_peek_amt());
-    // The pointer leaving drops it too.
-    w.hovering = false;
-    w.mouse = None;
-    e.tick(1.0 / 60.0, &w.senses());
-    assert!(e.rim_peek_amt() < 1.0);
-}
-
-#[test]
-fn a_near_meeting_makes_the_calm_face_antsy() {
-    let (mut e, mut w) = settled();
-    // High tension (a meeting ~12 min out): between glances the face
-    // fidgets, and in the glance window it stares at the countdown corner.
-    w.meeting = 0.88;
-    let mut fidget = false;
-    let mut glanced = false;
-    for i in 0..(10.0 * 60.0) as usize {
-        e.tick(1.0 / 60.0, &w.senses());
-        fidget |= e.live.dx.abs() > 0.1;
-        glanced |= e.pose().look.0 > 0.7 && e.pose().brow > 0.5;
-        let _ = i;
-    }
-    assert!(fidget, "the waiting shows in the body");
-    assert!(glanced, "it keeps checking the corner");
-    // No meeting on the books: a plain idle afternoon, no nerves.
-    w.meeting = 0.0;
-    let mut e2 = Eyes::new(7);
-    run(&mut e2, &w, 4.0);
-    assert!(e2.pose().look.0.abs() < 0.9 && e2.pose().brow < 0.5);
 }

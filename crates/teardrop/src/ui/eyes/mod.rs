@@ -96,13 +96,8 @@ pub struct Senses<'a> {
     pub visible: bool,
     /// Pointer relative to the face centre, logical px.
     pub mouse: Option<(f32, f32)>,
-    /// The OS text caret, face units relative to the face centre — the
-    /// "caret shadow" the eyes track while a typing burst is live.
-    pub caret: Option<(f32, f32)>,
     /// Pointer rests on the collapsed island.
     pub hovering: bool,
-    /// Anticipation for the next calendar event 0..1 (`fx::meeting_tension`).
-    pub meeting: f32,
     pub track: &'a Track,
     pub music: bool,
     /// Some while the face sits next to the focus ring.
@@ -1328,9 +1323,6 @@ pub struct Eyes {
     work: Option<AppTheme>,
     /// Eased mic level while recording.
     listen_lvl: f32,
-    /// Eased 0..1 slide toward peeking over the island's top rim (only a
-    /// calm, idle face with a nearby pointer).
-    rim_peek: f32,
 }
 #[cfg(test)]
 mod tests;

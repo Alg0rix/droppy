@@ -437,10 +437,6 @@ pub struct UiState {
     pub zone_amt: f32,
     /// The half the last drop landed on (for the burst colour).
     pub absorb_zone: u8,
-    /// Transient island-level effects (drip, pulse, pointer ripple).
-    pub fx: super::fx::Fx,
-    /// Was the pointer inside the near band last tick (ripple edge detect).
-    near_was: bool,
     /// Recent microphone levels for the recorder's waveform (oldest first).
     pub voice_bars: [f32; 40],
     voice_acc: f32,
@@ -499,8 +495,6 @@ impl UiState {
             drag_zone: 0,
             zone_amt: 0.0,
             absorb_zone: 0,
-            fx: super::fx::Fx::default(),
-            near_was: false,
             voice_bars: [0.0; 40],
             voice_acc: 0.0,
             qs_section: QsSection::None,
@@ -553,13 +547,6 @@ impl UiState {
 
     pub fn toast(&mut self, msg: &str, now_ms: u64) {
         self.toast = Some((msg.to_string(), now_ms + 1600));
-    }
-
-    /// True for exactly one call after the drip's droplet detaches — the
-    /// shell kicks the island springs for the letting-go flinch (this state
-    /// can't reach them itself).
-    pub fn take_detach(&mut self) -> bool {
-        std::mem::replace(&mut self.fx.detach, false)
     }
 
     /// Compact (collapsed) size the island wants right now.
@@ -631,13 +618,12 @@ impl UiState {
                 Page::Usage => vm.usage.refreshing,
                 Page::Ai => vm.ai.busy || vm.ai.chatgpt_login_busy || vm.ai.models_loading || self.input.is_some(),
                 _ => false,
-            } || self.toast.is_some()
-                || self.fx.alive();
+            } || self.toast.is_some();
         }
         if vm.live_hud(now_ms).is_some() {
             return true;
         }
-        vm.voice.phase == crate::voice::VoicePhase::Recording || (vm.music_active() && vm.hud.is_none()) || s.idle_look == IdleLook::Eyes || self.fx.alive()
+        vm.voice.phase == crate::voice::VoicePhase::Recording || (vm.music_active() && vm.hud.is_none()) || s.idle_look == IdleLook::Eyes
     }
 
     /// Where the eyes sit on the collapsed island right now, if anywhere.
@@ -725,17 +711,11 @@ impl UiState {
         let body = self.compact_body();
         let collapsed = self.island_open < 0.12;
         let (fx, fy, k) = eyes::place(spot.unwrap_or(Spot::Idle), body);
-        // The next meeting's approach window, as 0..1 anticipation for the
-        // face (the countdown pill and the Gasp own the final stretch).
-        let now_ts = vm.now.timestamp();
-        let meeting = vm.calendar.next(now_ts).map(|e| super::fx::meeting_tension(e.start - now_ts)).unwrap_or(0.0);
         let senses = Senses {
             local: local_naive(vm.now),
             visible: spot.is_some() && collapsed,
             mouse: self.mouse.map(|(x, y)| ((x - fx) / k, (y - fy) / k)),
-            caret: vm.env.caret.map(|(x, y)| ((x - fx) / k, (y - fy) / k)),
             hovering: collapsed && self.hover == Some(Action::Island),
-            meeting,
             track: &vm.track,
             music: vm.music_active(),
             focus: (spot == Some(Spot::Focus)).then_some(vm.pomo.phase),
@@ -849,27 +829,6 @@ impl UiState {
             self.absorb_t = (self.absorb_t - dt / 0.8).max(0.0);
             moving = true;
         }
-
-        // Island-level effects (drip, pulse, ripple) keep frames alive.
-        moving |= self.fx.tick(dt);
-        // Pointer-neighbourhood ripple: one ping each time the pointer
-        // crosses into the near band around the collapsed pill. Leaving the
-        // band re-arms it — it never loops while the pointer lingers.
-        let body = self.compact_body();
-        let near = self.mouse.is_some_and(|(mx, my)| {
-            if self.island_open > 0.25 || body.contains(mx, my) {
-                return false;
-            }
-            let qx = mx.clamp(body.x, body.right());
-            let qy = my.clamp(body.y, body.bottom());
-            (mx - qx).powi(2) + (my - qy).powi(2) < 70.0 * 70.0
-        });
-        if near && !self.near_was && self.fx.ripple.is_none() {
-            if let Some(m) = self.mouse {
-                self.fx.ripple(m);
-            }
-        }
-        self.near_was = near;
 
         // Recorder waveform: a new bar every 55 ms while recording, decaying after.
         self.voice_acc += dt;

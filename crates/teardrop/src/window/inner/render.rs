@@ -22,9 +22,6 @@ pub(super) fn render(hwnd: HWND) {
         }
     };
     UI.with(|u| u.borrow_mut().mouse = mouse);
-    // The OS caret: while a typing burst is live anywhere, the eyes shadow
-    // it. Same window-local logical px as `mouse` (undo the pill top gap).
-    let caret = if eyes_on() { caret_screen().map(|(x, y)| ((x - wx) as f32 / scale, (y - wy) as f32 / scale - gap)) } else { None };
     // Cheap per-frame signals for the eyes (the meter only while it dances).
     let peak = if VIEW.with(|v| v.borrow().music_active()) { volume::peak() } else { None };
     VIEW.with(|v| {
@@ -33,7 +30,6 @@ pub(super) fn render(hwnd: HWND) {
         vm.env.lbutton = env::lbutton();
         vm.env.caps = env::caps();
         vm.env.audio_peak = peak;
-        vm.env.caret = caret;
     });
 
     // System page: tell the sampler what is on screen, pull in new samples.
@@ -104,24 +100,6 @@ pub(super) fn render(hwnd: HWND) {
         }
     }
     HITS.with(|h| *h.borrow_mut() = frame.hits);
-}
-
-/// Screen coords of the active text caret (the foreground GUI thread's),
-/// or None when no caret is up anywhere. `GetGUIThreadInfo(0)` reports the
-/// currently active thread's caret rect in that window's client coords.
-fn caret_screen() -> Option<(i32, i32)> {
-    unsafe {
-        let mut g = GUITHREADINFO { cbSize: std::mem::size_of::<GUITHREADINFO>() as u32, ..Default::default() };
-        GetGUIThreadInfo(0, &mut g).ok()?;
-        if g.hwndCaret.is_invalid() {
-            return None;
-        }
-        let mut pt = POINT { x: g.rcCaret.left, y: g.rcCaret.top };
-        if !ClientToScreen(g.hwndCaret, &mut pt).as_bool() {
-            return None;
-        }
-        Some((pt.x, pt.y))
-    }
 }
 
 /// `TEARDROP_PERF=1` logs average render cost + achieved fps every 120 frames.
@@ -207,27 +185,17 @@ pub(super) fn tick(hwnd: HWND) {
         };
         with_eyes(|e| e.react(r));
     }
-    let (ui_moving, ambient, drip_detach) = UI.with(|u| {
+    let (ui_moving, ambient) = UI.with(|u| {
         VIEW.with(|v| {
             SETTINGS.with(|s| {
                 let mut ui = u.borrow_mut();
                 let (vm, set) = (v.borrow(), s.borrow());
                 ui.island_open = open;
                 let moving = ui.tick(dt, &vm, &set, ms);
-                (moving, ui.ambient(&vm, &set, open, ms), ui.take_detach())
+                (moving, ui.ambient(&vm, &set, open, ms))
             })
         })
     });
-    if drip_detach {
-        // The droplet just let go: the island flinches — the springs get a
-        // downward kick and ring out on their own.
-        ISLAND.with(|s| {
-            let mut st = s.borrow_mut();
-            st.h.velocity += 120.0;
-            st.w.velocity += 30.0;
-        });
-        FAST.set(true);
-    }
     let t0 = Instant::now();
     render(hwnd);
     perf_note(t0.elapsed().as_secs_f32() * 1000.0);

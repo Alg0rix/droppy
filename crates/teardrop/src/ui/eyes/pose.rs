@@ -243,53 +243,12 @@ impl Eyes {
             p.happy = 0.5;
         }
 
-        // Meeting tension: with an event in the approach window a calm face
-        // gets antsy — restless little fidget plus a glance at the corner
-        // where the countdown will appear, more often as the start nears.
-        // (The countdown pill itself and the crossing-zero Gasp live
-        // elsewhere; this is only the waiting, so it never competes.)
-        if s.meeting > 0.02 && matches!(self.mood, Neutral | Bored | Sleepy | Hungry | Grumpy | Relaxed) {
-            let k = s.meeting;
-            let cyc = 9.0 - 5.0 * k;
-            let f = (t / cyc).fract();
-            lv.dx += (t * (9.0 + 28.0 * k)).sin() * 0.55 * k;
-            if f > 0.72 {
-                look = Some((0.9, -0.35));
-                p.brow = p.brow.max(1.7 * k);
-                p.open = 1.0;
-                p.mouth = p.mouth.max(0.35 * k);
-            }
-        }
-
         if let Some((r, st)) = self.react {
             self.react_pose(r, t - st, s, &mut p, &mut x, &mut lv, &mut look);
         }
         if let Some(g) = self.live_gauge() {
             self.gauge_pose(g, &mut p, &mut x, &mut lv, &mut look);
         }
-
-        // Peek over the rim: a calm, idle face slides up until its pupils
-        // straddle the island's top edge, lids settling ~40% open, and
-        // follows the pointer circling outside. The window edge cuts the
-        // eyeballs at the rim so only the peeking bottoms show.
-        if self.rim_peek > 0.02 {
-            let k = self.rim_peek;
-            let k = k * k * (3.0 - 2.0 * k);
-            // area.1 ≈ face centre to the rim; -5.5 parks the pupils a
-            // few px under the edge so a solid half-eyeball — sclera
-            // ring and pupil — hangs visibly over the rim.
-            let rise = (s.area.1 - 5.5).max(8.0);
-            p.dy -= rise * k;
-            // Peeking, not squinting: the lids stay up or the pupil would
-            // fill the whole visible sliver and the peek would read dark.
-            p.open = p.open.min(1.0 - 0.15 * k);
-            p.happy = 0.0;
-            p.sad = 0.0;
-            p.angry = 0.0;
-            p.brow = p.brow.max(1.3 * k);
-            look = s.mouse.map(|(mx, my)| ((mx / 55.0).clamp(-1.0, 1.0), (my / 90.0).clamp(-0.35, 0.6)));
-        }
-
         (p, x, lv, look)
     }
 
@@ -707,13 +666,7 @@ impl Eyes {
     pub(super) fn update_gaze(&mut self, dt: f32, s: &Senses, own: Option<(f32, f32)>) {
         let t = self.t;
         let dist = s.mouse.map(|(x, y)| (x * x + y * y).sqrt()).unwrap_or(f32::MAX);
-        // The text caret is the shadow of the keys: while a typing burst is
-        // live and no reaction is acting something else out, the eyes track
-        // the caret itself instead of the pointer.
-        let caret = if self.typing_since.is_some() && self.react.is_none() { s.caret } else { None };
-        let target = if let Some((cx, cy)) = caret {
-            ((cx / 80.0).clamp(-1.0, 1.0), (cy / 50.0).clamp(-1.0, 1.0))
-        } else if let Some(l) = own {
+        let target = if let Some(l) = own {
             l
         } else if dist < 280.0 {
             let (x, y) = s.mouse.unwrap_or_default();

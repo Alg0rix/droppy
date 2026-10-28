@@ -2,7 +2,6 @@
 //! the clickable regions that match it.
 
 use super::eyes::{self, Paint, Spot};
-use super::fx;
 use super::icons::{self, Icon};
 use super::pages;
 use super::scene::{Align, Color, Fill, Rect, Scene, Weight};
@@ -1161,84 +1160,8 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
 
     let mut c = Ctx { s: Scene::new(), hits: Vec::new(), vm, set, ui, now_ms, live: true };
 
-    let mut pts: Vec<(f32, f32)> = g.outline(cx, 0.0, bw, bh, set.island_style == IslandStyle::Pill);
-    // ---- island-level fx --------------------------------------------------
-    // The silhouette itself answers events: files carried over it make it
-    // breathe in (inhale), a landing drop settles it (squish + burst ring),
-    // the drip pinches a nub off its bottom tip, and the freed edge shudders.
-    // All of it fades out as the island opens into the card.
-    {
-        let fade = 1.0 - smooth(open / 0.4);
-        let inhale = ui.drop_amt * fade;
-        let settle = ui.absorb_t * fade;
-        let drip_state = ui.fx.drip.map(fx::drip_state);
-        let grow = drip_state.map(|d| d.grow).unwrap_or(0.0);
-        let shudder = ui.fx.drip.map(fx::drip_shudder).unwrap_or(0.0) * fade;
-        if inhale > 0.01 || settle > 0.01 || grow > 0.01 || shudder.abs() > 0.01 {
-            let (hw, hh) = ((bw / 2.0).max(1.0), bh.max(1.0));
-            for p in pts.iter_mut() {
-                let nx = (p.0 - cx) / hw; // -1..1 across the body
-                let ny = (p.1 / hh).clamp(0.0, 1.0); // 0 top .. 1 bottom
-                p.0 += nx * (0.07 * inhale + 0.035 * settle) * hw;
-                p.1 += ny * (0.12 * inhale - 0.07 * settle) * hh;
-                // The drip nub forms under the bottom tip; the freed edge
-                // wiggles left-right as it recovers.
-                let belly = smooth((ny - 0.5) / 0.5);
-                p.1 += grow * belly * (-(nx * 4.0).powi(2)).exp();
-                p.0 += shudder * belly * ny;
-            }
-        }
-    }
+    let pts: Vec<(f32, f32)> = g.outline(cx, 0.0, bw, bh, set.island_style == IslandStyle::Pill);
     c.s.body(pts, Fill::VGrad(pal().body_top, pal().body_bottom), pal().rim, (0.45 + 0.55 * smooth(open)) * pal().shadow, pal().sheen);
-
-    // Sun-angle sheen: a soft band of light slides across the body with the
-    // local hour — dawn on the left edge, noon dead centre, dusk on the
-    // right. At night the palette's own sheen stands alone.
-    {
-        use chrono::Timelike;
-        let local = local_naive(vm.now);
-        if let Some((xf, al)) = fx::sheen_band(local.hour() as f32 + local.minute() as f32 / 60.0) {
-            let bx = body.x + xf * body.w;
-            c.s.clip(body);
-            c.s.circle(bx, body.cy(), body.h * 0.9, pal().ink(al * 0.45));
-            c.s.circle(bx, body.cy(), body.h * 0.55, pal().ink(al));
-            c.s.pop_clip();
-        }
-    }
-    // Pulse: a meaningful external event breathes rings off the rim.
-    if let Some((t, col)) = ui.fx.pulse {
-        for i in 0..3 {
-            if let Some((ph, a)) = fx::pulse_ring(t, i) {
-                let grow = 5.0 + ph * 30.0;
-                c.s.polyline(fx::ellipse_pts(cx, bh / 2.0, bw / 2.0 + grow, bh / 2.0 + grow * 0.7, 36), 1.7, col.fade(a * 0.55));
-            }
-        }
-    }
-    // Pointer ripple: rings off the rim point nearest the pointer that just
-    // entered the near band (fires once per entry, never loops).
-    if let Some((t, at)) = ui.fx.ripple {
-        let (qx, qy) = (at.0.clamp(body.x, body.right()), at.1.clamp(body.y, body.bottom()));
-        for i in 0..2 {
-            if let Some((ph, a)) = fx::ripple_ring(t, i) {
-                c.s.ring(qx, qy, 2.5 + ph * 24.0, 1.5, 0.0, 1.0, pal().text.fade(a * 0.5));
-            }
-        }
-    }
-    // The drip: the detached droplet falls away under the island.
-    if let Some((_, Some((dx, dy, stretch)), alpha)) = ui.fx.drip.map(|t| {
-        let d = fx::drip_state(t);
-        (d.grow, d.drop, d.alpha)
-    }) {
-        let col = accent(Page::Water).mix(pal().body_bottom, 0.45).fade(alpha);
-        c.s.poly(fx::drop_pts(cx + dx, bh + dy, 3.4, stretch), col);
-    }
-    // A drop landing while collapsed: a burst ring in the zone's colour.
-    if ui.absorb_t > 0.01 && open < 0.5 {
-        let a = ui.absorb_t * (1.0 - smooth(open / 0.5));
-        let col = if ui.absorb_zone == 1 { Color::rgb(56, 160, 255) } else { accent(Page::Shelf) };
-        let p = 1.0 - ui.absorb_t;
-        c.s.ring(cx, bh / 2.0, 16.0 + p * 44.0, 2.2 * a + 0.8, 0.0, 1.0, col.fade(a * 0.6));
-    }
 
     // Collapsed activity.
     let ca = eo(isl.compact_a);

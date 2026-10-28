@@ -8,10 +8,9 @@ impl Eyes {
         let j = &self.jig;
         // Keep the face inside the pill: skits may slide it around, but it
         // should never fully leave the window (that reads as the island
-        // blinking off, not as a dance move). The peek-over-rim slide needs
-        // extra headroom: the body clip keeps only the peeking part visible.
+        // blinking off, not as a dance move).
         let lx = (pt.bounds.w / 2.0 / pt.scale - 14.0).max(4.0);
-        let ly = (pt.bounds.h / 2.0 / pt.scale - 14.0).max(4.0) + self.rim_peek * 26.0;
+        let ly = (pt.bounds.h / 2.0 / pt.scale - 14.0).max(4.0);
         let xf = Xf::new(pt.cx, pt.cy, pt.scale, (p.dx + lv.dx).clamp(-lx, lx), (p.dy + lv.dy + j.y).clamp(-ly, ly), p.rot + lv.rot + j.rot, p.squash + lv.squash + j.sq);
         let tint = pt.tint.or(self.work.and_then(|w| w.tint).map(|[r, g, b]| Color::rgb(r, g, b))).or(self.ring);
         for side in [-1.0f32, 1.0] {
