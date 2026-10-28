@@ -162,15 +162,8 @@ headset battery, water reminder with one-click action.
 
 `update.rs` checks `GET /repos/{REPO}/releases/latest` in the background and
 compares the tag with the running version. On "Update" it downloads the
-installer plus `SHA256SUMS.txt` — but only trusts the checksum file after
-verifying `SHA256SUMS.txt.sig`: an ed25519 signature over its exact bytes.
-
-- The public key is baked into `update::UPDATE_PUBKEY` (empty = installs refuse).
-- The private seed lives only in the `DROPPY_SIGNING_KEY` Actions secret; the
-  release workflow signs `dist/SHA256SUMS.txt` before upload.
-- One-time setup: `cargo run -p teardrop-core --example release_sign -- keygen
-  secret.key`, put the printed key in `UPDATE_PUBKEY`, store the file contents
-  as the `DROPPY_SIGNING_KEY` secret, then delete `secret.key`.
+installer plus `SHA256SUMS.txt` (built by the release workflow) and runs the
+installer only when its SHA-256 matches the entry there.
 
 ## Testing without clicking around
 

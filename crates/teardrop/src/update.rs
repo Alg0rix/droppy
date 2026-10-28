@@ -6,24 +6,15 @@
 //! then closes Droppy itself so the installer never has to kill a running
 //! copy before replacing the exe.
 //!
-//! The checksum file itself is verified first: `SHA256SUMS.txt.sig` must hold
-//! a valid ed25519 signature (from `UPDATE_PUBKEY`) over the exact bytes of
-//! `SHA256SUMS.txt`, so a tampered asset or checksum can't install.
-//!
 //! Nothing is downloaded or run without the user clicking "Update", and a
-//! missing signature or mismatching checksum aborts the install.
+//! missing or mismatching checksum aborts the install.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
-use teardrop_core::release::{sha256_hex, verify_signature};
+use teardrop_core::release::sha256_hex;
 
 pub const REPO: &str = "Alg0rix/droppy";
 pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
-
-/// Hex ed25519 public key the release checksums must be signed with.
-/// Empty means updates refuse to install (generate a pair with
-/// `cargo run -p teardrop-core --example release_sign -- keygen <file>`).
-pub const UPDATE_PUBKEY: &str = "";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UpdatePhase {
@@ -55,7 +46,6 @@ pub struct Release {
     pub setup_name: String,
     pub setup_url: String,
     pub sums_url: String,
-    pub sig_url: String,
 }
 
 struct Shared {
@@ -116,10 +106,9 @@ pub fn parse_release(body: &str) -> Option<Release> {
     };
     let (setup_name, setup_url) = find(&|n| n.starts_with("droppy-setup-") && n.ends_with(".exe"))?;
     let (_, sums_url) = find(&|n| n.eq_ignore_ascii_case("SHA256SUMS.txt"))?;
-    let (_, sig_url) = find(&|n| n.eq_ignore_ascii_case("SHA256SUMS.txt.sig"))?;
     // Only ever fetch from the project's own GitHub release downloads.
     let ok = |u: &str| u.starts_with(&format!("https://github.com/{REPO}/releases/download/"));
-    (ok(&setup_url) && ok(&sums_url) && ok(&sig_url)).then(|| Release { version: tag.trim_start_matches(['v', 'V']).to_string(), setup_name, setup_url, sums_url, sig_url })
+    (ok(&setup_url) && ok(&sums_url)).then(|| Release { version: tag.trim_start_matches(['v', 'V']).to_string(), setup_name, setup_url, sums_url })
 }
 
 /// Expected hash of `name` from a `sha256sum`-style listing.
@@ -165,13 +154,7 @@ pub fn install() {
     set(|s| s.view.phase = UpdatePhase::Downloading);
     std::thread::spawn(move || {
         let ok = (|| {
-            // Verify the checksum file's signature before trusting its contents.
-            let sums_bytes = net::get_bytes(&release.sums_url, 2 * 1024 * 1024)?;
-            let sig = net::get_text(&release.sig_url)?;
-            if !verify_signature(UPDATE_PUBKEY, &sums_bytes, &sig) {
-                return None;
-            }
-            let sums = String::from_utf8(sums_bytes).ok()?;
+            let sums = net::get_text(&release.sums_url)?;
             let want = find_sum(&sums, &release.setup_name)?;
             let bytes = net::get_bytes(&release.setup_url, 64 * 1024 * 1024)?;
             if sha256_hex(&bytes) != want {
@@ -242,8 +225,7 @@ mod tests {
             r#"{{"tag_name":"v0.2.0","assets":[
               {{"name":"droppy-v0.2.0.exe","browser_download_url":"{base}/droppy-v0.2.0.exe"}},
               {{"name":"droppy-setup-0.2.0.exe","browser_download_url":"{base}/droppy-setup-0.2.0.exe"}},
-              {{"name":"SHA256SUMS.txt","browser_download_url":"{base}/SHA256SUMS.txt"}},
-              {{"name":"SHA256SUMS.txt.sig","browser_download_url":"{base}/SHA256SUMS.txt.sig"}}]}}"#
+              {{"name":"SHA256SUMS.txt","browser_download_url":"{base}/SHA256SUMS.txt"}}]}}"#
         );
         let r = parse_release(&body).unwrap();
         assert_eq!(r.version, "0.2.0");
@@ -251,12 +233,6 @@ mod tests {
         // An asset hosted anywhere else is rejected.
         let evil = body.replace("github.com/Alg0rix", "evil.example/Alg0rix");
         assert!(parse_release(&evil).is_none());
-        // A release without the signature asset is rejected.
-        let no_sig = body.replace(&format!(",\n              {{\"name\":\"SHA256SUMS.txt.sig\",\"browser_download_url\":\"{base}/SHA256SUMS.txt.sig\"}}"), "");
-        assert!(parse_release(&no_sig).is_none());
-        // A signature URL hosted anywhere else is rejected.
-        let evil_sig = body.replace(&format!("{base}/SHA256SUMS.txt.sig"), "https://evil.example/SHA256SUMS.txt.sig");
-        assert!(parse_release(&evil_sig).is_none());
         assert!(parse_release(r#"{"message":"Not Found"}"#).is_none());
     }
 
