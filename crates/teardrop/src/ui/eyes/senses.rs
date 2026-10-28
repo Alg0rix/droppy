@@ -35,6 +35,18 @@ impl Eyes {
         }
         self.work = work;
 
+        // Peek over the rim: only a calm, unoccupied face slides up toward
+        // a pointer circling the near band — never mid-act, never while the
+        // pointer rests on the island itself.
+        {
+            let dist = s.mouse.map(|(x, y)| (x * x + y * y).sqrt()).unwrap_or(f32::MAX);
+            let calm = matches!(self.mood, Mood::Neutral | Mood::Bored | Mood::Sleepy | Mood::Hungry | Mood::Grumpy | Mood::Relaxed);
+            let busy = self.react.is_some() || !self.queue.is_empty() || self.live_gauge().is_some();
+            let peeking = s.visible && crate::ui::fx::peek_eligible(calm, busy, s.hovering, dist);
+            let rate = if peeking { 10.0 } else { 18.0 };
+            self.rim_peek += (f32::from(peeking) - self.rim_peek) * (1.0 - (-rate * dt).exp());
+        }
+
         self.choreo(s);
 
         if let Some((r, st)) = self.react {

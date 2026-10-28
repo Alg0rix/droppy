@@ -109,6 +109,9 @@ pub struct Ambient {
     pub caps: bool,
     /// The app in front, sampled once a second while the eyes are on.
     pub app: Option<FocusApp>,
+    /// Screen position of the foreground text caret, window-local logical
+    /// px — the "caret shadow" the eyes track while typing (Windows only).
+    pub caret: Option<(f32, f32)>,
 }
 
 /// The app in front. Only the exe name is kept; the window

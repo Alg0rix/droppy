@@ -111,6 +111,7 @@ fn calendar_tick(hwnd: HWND, ms: u64) {
         });
         chime(880, 180);
         with_eyes(|e| e.react(React::Gasp));
+        UI.with(|u| u.borrow_mut().fx.pulse(ui::theme::accent(Page::Today)));
         wake(hwnd);
     }
     let text = VIEW.with(|v| v.borrow().meeting_soon().map(|e| crate::calendar::countdown(e, now)).unwrap_or_default());
@@ -243,6 +244,10 @@ pub(super) fn sync_ai() {
     });
     if let Some(ok) = ai_done {
         with_eyes(|e| e.react(if ok { React::Sparkle } else { React::Confused }));
+        if ok {
+            // The answer dropped.
+            UI.with(|u| u.borrow_mut().fx.drip());
+        }
     }
 }
 
@@ -264,6 +269,11 @@ pub(super) fn sync_update() {
     if announce {
         toast(&format!("Update {} available \u{2014} open Settings", snap.version));
         with_eyes(|e| e.react(React::Sparkle));
+        UI.with(|u| {
+            let mut u = u.borrow_mut();
+            u.fx.drip();
+            u.fx.pulse(ui::theme::accent(Page::Speed));
+        });
     }
 }
 
@@ -491,7 +501,13 @@ pub(super) fn slow_tick(hwnd: HWND) {
             vm.hud = Some(hud_water_due(ms));
             vm.water.snooze(now);
             chime(880, 120);
-            UI.with(|u| u.borrow_mut().eyes.water_due());
+            UI.with(|u| {
+                let mut u = u.borrow_mut();
+                u.eyes.water_due();
+                // A droplet for a glass of water, and a breath off the rim.
+                u.fx.drip();
+                u.fx.pulse(ui::theme::accent(Page::Water));
+            });
         }
     });
     if eyes_on() {

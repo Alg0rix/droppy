@@ -371,6 +371,10 @@ fn on_char(hwnd: HWND, code: u16) {
             if let Some(ch) = ch {
                 let s = ch.to_string();
                 edit_field(page, |f| f.insert(&s, cap));
+                // Keys landing in our own field feed the typing burst, so
+                // the eyes keep shadowing the caret (the OS caret query
+                // won't see the island's no-activate window).
+                with_eyes(|e| e.typed());
                 after_edit(hwnd, page);
                 return;
             }
@@ -503,6 +507,9 @@ fn on_key(hwnd: HWND, vk: u32) -> bool {
             }
             _ => return false,
         };
+        // Editing keys inside a field count as typing too (backspaces,
+        // caret hops — the caret shadow should track them).
+        with_eyes(|e| e.typed());
         if text_changed {
             after_edit(hwnd, page);
         } else {
@@ -996,13 +1003,16 @@ pub(super) unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, l
             }
             if wp.0 as u32 == 10 {
                 let ms = now_ms();
-                VIEW.with(|v| {
+                let charging = VIEW.with(|v| {
                     let mut vm = v.borrow_mut();
                     CPU.with(|c| vm.system = sample_all(&mut c.borrow_mut(), &vm.system));
                     let pct = vm.system.battery_pct.map(|b| format!("{b}%")).unwrap_or_default();
                     let (title, kind) = if vm.system.charging { ("Charging", HudKind::Charging) } else { ("On battery", HudKind::Charging) };
                     vm.hud = Some(Hud::transient(kind, title, &pct, ms, 3500));
+                    vm.system.charging
                 });
+                // Plugging in breathes green; going on battery breathes amber.
+                UI.with(|u| u.borrow_mut().fx.pulse(if charging { Color::rgb(74, 222, 128) } else { Color::rgb(251, 191, 36) }));
                 wake(hwnd);
             }
             DefWindowProcW(hwnd, msg, wp, lp)
@@ -1015,6 +1025,7 @@ pub(super) unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, l
                 crate::btdev::nudge();
                 VIEW.with(|v| v.borrow_mut().hud = Some(Hud::transient(HudKind::Device, "Device", "connected", ms, 3000)));
                 with_eyes(|e| e.react(React::Perk));
+                UI.with(|u| u.borrow_mut().fx.pulse(ui::theme::accent(Page::System)));
                 wake(hwnd);
             }
             DefWindowProcW(hwnd, msg, wp, lp)
@@ -1153,6 +1164,7 @@ pub(super) unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, l
                 let ms = now_ms();
                 VIEW.with(|v| v.borrow_mut().hud = Some(crate::viewmodel::hud_bluetooth(&dev.name, dev.battery, ms)));
                 with_eyes(|e| e.react(React::Perk));
+                UI.with(|u| u.borrow_mut().fx.pulse(Color::rgb(59, 130, 246)));
                 wake(hwnd);
             }
             LRESULT(0)
@@ -1179,6 +1191,7 @@ pub(super) unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, l
                 let body = if SETTINGS.with(|s| s.borrow().mesh_hud) { text } else { "message received".to_string() };
                 VIEW.with(|v| v.borrow_mut().hud = Some(crate::viewmodel::hud_chat(&who, &body, ms)));
                 with_eyes(|e| e.react(React::Perk));
+                UI.with(|u| u.borrow_mut().fx.pulse(ui::theme::accent(Page::Chat)));
             }
             wake(hwnd);
             LRESULT(0)
@@ -1195,6 +1208,12 @@ pub(super) unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, l
         }
         _ if msg == WM_APP_DOWNLOAD => {
             with_eyes(|e| e.react(React::Happy));
+            // The download dropped: a droplet lets go and the rim breathes.
+            UI.with(|u| {
+                let mut u = u.borrow_mut();
+                u.fx.drip();
+                u.fx.pulse(ui::theme::accent(Page::Speed));
+            });
             wake(hwnd);
             LRESULT(0)
         }
