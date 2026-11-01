@@ -35,7 +35,7 @@ pub use notes::{format_note_date, fuzzy_score, preview_of, title_of, Note, NoteD
 pub use pages::Page;
 pub use pomodoro::{Phase, Pomodoro};
 pub use quick::{slider_permille, BtDev, QuickState, WifiNet};
-pub use settings::{AiProvider, EyeStyle, IdleLook, IslandStyle, IslandTheme, Settings, PILL_GAP_MAX, PILL_GAP_STEP};
+pub use settings::{AiProvider, DockEdge, EyeStyle, IdleLook, IslandStyle, IslandTheme, Settings, PILL_GAP_MAX, PILL_GAP_STEP};
 pub use shelf::{Shelf, ShelfItem};
 pub use spring::Spring;
 pub use sysmon::{SysTab, SysView};

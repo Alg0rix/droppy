@@ -87,3 +87,75 @@ pub(super) fn water(c: &mut Ctx, a: Rect) {
         );
     }
 }
+
+/// Side-docked hydration: the wave circle centered on top, then the add
+/// pills row and the week chart stacked below.
+pub(super) fn water_v(c: &mut Ctx, a: Rect) {
+    let acc = accent(Page::Water);
+    let vm = c.vm;
+    let day = vm.day();
+    let today = vm.water.today(day);
+    let goal = vm.water.goal_ml.max(1);
+    let level = c.ui.water_level;
+    let ctr = (a.cx(), a.y + 118.0);
+    let r = 84.0;
+
+    c.s.circle(ctr.0, ctr.1, r, pal().ink(0.045));
+    let t = c.ui.clock_s;
+    if level > 0.001 {
+        c.s.poly(wave_poly(ctr.0, ctr.1, r - 1.0, level, t, 5.0, 2.0), Fill::VGrad(acc.fade(0.45), acc.mix(Color::rgb(0, 0, 0), 0.5).fade(0.55)));
+        c.s.poly(wave_poly(ctr.0, ctr.1, r - 1.0, level, t, 4.2, 0.0), Fill::VGrad(acc.fade(0.95), acc.mix(Color::rgb(0, 0, 0), 0.45)));
+    }
+    c.s.ring(ctr.0, ctr.1, r, 2.5, 0.0, 1.0, pal().ink(0.16));
+    let pct = (vm.water.progress(day) * 100.0).round() as u32;
+    c.text(format!("{pct}%"), Rect::new(ctr.0 - 50.0, ctr.1 - 24.0, 100.0, 36.0), 27.0, Weight::Semibold, WHITE, Align::Center);
+    c.text(
+        format!("{} / {}", teardrop_core::fmt_glasses(today), teardrop_core::glasses_label(goal)),
+        Rect::new(ctr.0 - 60.0, ctr.1 + 11.0, 120.0, 16.0),
+        11.0,
+        Weight::Medium,
+        WHITE.fade(0.85),
+        Align::Center,
+    );
+
+    let mut y = ctr.1 + r + 14.0;
+    let sub = if today >= goal { "Goal reached".to_string() } else { format!("{} to go", teardrop_core::glasses_label(goal - today)) };
+    c.text("Hydration", Rect::new(a.x, y, a.w, 20.0), 15.0, Weight::Semibold, pal().text, Align::Center);
+    c.text(sub, Rect::new(a.x, y + 20.0, a.w, 15.0), 11.0, Weight::Regular, pal().text_3, Align::Center);
+    y += 44.0;
+
+    // Add pills + undo, centered as a row.
+    let pills_w = 3.0 * 60.0 + 36.0;
+    let mut px = a.cx() - pills_w / 2.0;
+    for ml in [125u32, 250, 500].iter() {
+        c.pill(Rect::new(px, y, 54.0, 32.0), Action::WaterAdd(*ml), &teardrop_core::add_label(*ml), if *ml == 250 { Some(acc) } else { None }, 12.5);
+        px += 60.0;
+    }
+    c.icon_btn(Rect::new(px, y, 30.0, 32.0), Action::WaterUndo, Icon::Undo, 13.0, pal().text_2);
+
+    // Seven-day chart against the goal, full width.
+    let week = vm.water.week(day);
+    let base = a.bottom() - 14.0;
+    let ch = 44.0;
+    let bw = 22.0;
+    let gap = (a.w - 7.0 * bw) / 6.0;
+    for (i, (d, ml)) in week.iter().enumerate() {
+        let bx = a.x + i as f32 * (bw + gap);
+        let is_today = i == week.len() - 1;
+        c.s.rect(Rect::new(bx, base - ch, bw, ch), 5.0, pal().ink(0.055));
+        let f = (*ml as f32 / goal as f32).clamp(0.0, 1.0);
+        if f > 0.0 {
+            let hh = (ch * f).max(5.0);
+            c.s.rect(Rect::new(bx, base - hh, bw, hh), 5.0, if is_today { acc } else { acc.fade(0.5) });
+        }
+        let letter: String = d.format("%a").to_string().chars().take(1).collect();
+        c.text(
+            letter,
+            Rect::new(bx - 3.0, base + 3.0, bw + 6.0, 13.0),
+            10.0,
+            if is_today { Weight::Semibold } else { Weight::Regular },
+            if is_today { pal().text } else { pal().text_3 },
+            Align::Center,
+        );
+    }
+}

@@ -195,6 +195,154 @@ pub(super) fn music(c: &mut Ctx, a: Rect) {
     }
 }
 
+/// Side-docked music: a tall column — art on top with the equalizer along
+/// its foot, title/artist centered, a full-width seek bar, the transport,
+/// then the karaoke lines stacked.
+pub(super) fn music_v(c: &mut Ctx, a: Rect) {
+    let acc = accent(Page::Music);
+    let vm = c.vm;
+    let t = &vm.track;
+    let has = !t.title.is_empty();
+    let app_name = if has && !t.app.is_empty() { t.app.clone() } else { "Windows Media".to_string() };
+
+    // Top strip: source on the left, position/duration on the right.
+    c.s.circle(
+        a.x + 4.0,
+        a.y + 7.0,
+        3.5,
+        if app_name.to_lowercase().contains("spotify") {
+            Color::rgb(30, 215, 96)
+        } else if has {
+            acc
+        } else {
+            pal().text_3
+        },
+    );
+    let top = if has { format!("NOW PLAYING \u{00b7} {}", app_name.to_uppercase()) } else { "MUSIC".to_string() };
+    c.text(top, Rect::new(a.x + 12.0, a.y, a.w - 130.0, 15.0), 10.5, Weight::Semibold, pal().text_3, Align::Left);
+    if has {
+        c.text(format!("{} / {}", fmt_ms(t.position_ms), fmt_ms(t.duration_ms)), Rect::new(a.right() - 118.0, a.y, 118.0, 15.0), 10.5, Weight::Medium, pal().text_3, Align::Right);
+    }
+
+    // Album art centered, equalizer bars along its bottom edge.
+    let art_size = (a.w - 120.0).clamp(96.0, 150.0);
+    let art = Rect::new(a.cx() - art_size / 2.0, a.y + 24.0, art_size, art_size);
+    if has {
+        match crate::media_smtc::art_for(t) {
+            Some(img) => {
+                c.s.image_rounded(art, 22.0, &img);
+                let gh = art.h * 0.45;
+                c.s.rect(Rect::new(art.x, art.bottom() - gh, art.w, gh), 22.0, Fill::VGrad(Color::rgba(0, 0, 0, 0.0), Color::rgba(0, 0, 0, 0.35)));
+            }
+            None => {
+                let (c1, c2) = art_colors(&t.title);
+                c.s.rect(art, 22.0, Fill::DGrad(c1, c2));
+                c.s.rect(Rect::new(art.x, art.y, art.w, art.h * 0.55), 22.0, Fill::VGrad(pal().ink(0.22), pal().ink(0.0)));
+                icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy() - 6.0, 36.0, WHITE.fade(0.92));
+            }
+        }
+        let n = 16;
+        let (bw, gap) = (4.0, 2.5);
+        let x0 = art.cx() - (n as f32 * bw + (n as f32 - 1.0) * gap) / 2.0;
+        for (i, b) in c.ui.viz.sample(n).iter().enumerate() {
+            let h = 3.0 + b * 24.0;
+            c.s.rect(Rect::new(x0 + i as f32 * (bw + gap), art.bottom() - 10.0 - h, bw, h), 2.0, WHITE.fade(0.85));
+        }
+    } else {
+        c.s.rect(art, 22.0, pal().surface);
+        icons::draw(&mut c.s, Icon::Note, art.cx(), art.cy(), 36.0, pal().text_3);
+    }
+
+    // Title + artist, centered under the art.
+    let title = if has { t.title.clone() } else { "Play something".to_string() };
+    let ty = art.bottom() + 12.0;
+    c.text(title, Rect::new(a.x + 8.0, ty, a.w - 16.0, 20.0), 15.0, Weight::Semibold, if has { pal().text } else { pal().text_2 }, Align::Center);
+    let sub = if !has {
+        "Nothing playing".to_string()
+    } else if t.album.is_empty() {
+        t.display_artist().to_string()
+    } else {
+        format!("{} \u{00b7} {}", t.display_artist(), t.album)
+    };
+    c.text(sub, Rect::new(a.x + 8.0, ty + 20.0, a.w - 16.0, 16.0), 11.5, Weight::Regular, pal().text_2, Align::Center);
+
+    // Full-width seek bar with times at its ends.
+    let sy = ty + 50.0;
+    let pos_str = fmt_ms(t.position_ms);
+    let rem_ms = t.duration_ms.saturating_sub(t.position_ms);
+    let rem_str = if has && t.duration_ms > 0 { format!("-{}", fmt_ms(rem_ms)) } else { fmt_ms(t.duration_ms) };
+    c.text(pos_str, Rect::new(a.x, sy - 8.0, 36.0, 16.0), 11.0, Weight::Medium, pal().text_3, Align::Left);
+    c.text(rem_str, Rect::new(a.right() - 42.0, sy - 8.0, 42.0, 16.0), 11.0, Weight::Medium, pal().text_3, Align::Right);
+    let bar = Rect::new(a.x + 44.0, sy - 2.5, (a.w - 92.0).max(10.0), 5.0);
+    let seekable = has && t.duration_ms > 0;
+    let sh = if seekable { c.hov(Action::SeekBar) } else { 0.0 };
+    let bh = 5.0 + sh * 3.0;
+    let p = t.progress();
+    let n = (bar.w / 7.0).floor().clamp(12.0, 40.0) as usize;
+    let bw = bar.w / n as f32;
+    for (i, b) in c.ui.viz.sample(n).iter().enumerate() {
+        let bx = bar.x + i as f32 * bw;
+        let h = (3.0 + b * (13.0 + sh * 4.0)).max(bh);
+        let played = (bx + bw * 0.5 - bar.x) / bar.w <= p;
+        let col = if played { acc.mix(WHITE, 0.18) } else { pal().ink(0.16 + 0.10 * sh) };
+        c.s.rect(Rect::new(bx + 1.0, sy - h * 0.5, (bw - 2.0).max(1.5), h), (bw - 2.0) * 0.4, col);
+    }
+    if p > 0.0 || sh > 0.01 {
+        c.s.circle(bar.x + bar.w * p, sy, 5.0 + sh * 1.5, WHITE);
+    }
+    if seekable {
+        c.hit(Rect::new(bar.x, sy - 12.0, bar.w, 24.0), Action::SeekBar);
+    }
+
+    // Transport centered under the seek bar.
+    let tcx = a.cx();
+    let tcy = sy + 44.0;
+    c.ghost_icon(Rect::new(tcx - 76.0, tcy - 20.0, 40.0, 40.0), Action::MediaPrev, Icon::Prev, 19.0, pal().text);
+    c.ghost_icon(Rect::new(tcx + 36.0, tcy - 20.0, 40.0, 40.0), Action::MediaNext, Icon::Next, 19.0, pal().text);
+    let pa = Action::MediaPlayPause;
+    let r = 26.0 + c.hov(pa) * 1.5;
+    let fill = if c.pressed(pa) { WHITE.mix(Color::rgb(0, 0, 0), 0.2) } else { WHITE };
+    c.s.circle(tcx, tcy, r, fill);
+    let icon = if t.playback == Playback::Playing { Icon::Pause } else { Icon::Play };
+    let nudge = if icon == Icon::Play { 1.5 } else { 0.0 };
+    icons::draw(&mut c.s, icon, tcx + nudge, tcy, 22.0, ON_ACCENT);
+    c.hit(Rect::new(tcx - 28.0, tcy - 28.0, 56.0, 56.0), pa);
+
+    // Karaoke lines at the bottom of the column.
+    let lw = a.w;
+    if !c.set.lyrics_enabled {
+        c.text("Lyrics are turned off", Rect::new(a.x, tcy + 42.0, lw, 24.0), 13.5, Weight::Regular, pal().text_3, Align::Left);
+    } else if let (true, Some(i)) = (has, vm.lyric_idx) {
+        let curr_line = vm.lyric_lines.get(i);
+        let curr_sublines = curr_line.map(|l| wrap_lyrics(&l.text, lw, 17.0, true)).unwrap_or_default();
+        let prev_sublines = i.checked_sub(1).and_then(|j| vm.lyric_lines.get(j)).map(|l| wrap_lyrics(&l.text, lw, 13.0, false)).unwrap_or_default();
+        let next_sublines = vm.lyric_lines.get(i + 1).map(|l| wrap_lyrics(&l.text, lw, 13.0, false)).unwrap_or_default();
+        let mut ly = tcy + 36.0;
+        let prev_count = prev_sublines.len().min(1);
+        for line in &prev_sublines[prev_sublines.len() - prev_count..] {
+            c.text(line.clone(), Rect::new(a.x, ly, lw, 18.0), 13.0, Weight::Regular, pal().text_3, Align::Left);
+            ly += 19.0;
+        }
+        if curr_line.is_some() {
+            let frac = teardrop_core::line_progress(&vm.lyric_lines, i, t.position_ms);
+            for (subline, sub_frac) in karaoke_subline_progress(&curr_sublines, frac) {
+                c.s.text_karaoke(subline.to_string(), Rect::new(a.x, ly, lw, 24.0), 17.0, Weight::Bold, pal().text_2, WHITE, sub_frac);
+                ly += 26.0;
+            }
+            for line in next_sublines.iter().take(2) {
+                if ly + 18.0 > a.bottom() - 8.0 {
+                    break;
+                }
+                c.text(line.clone(), Rect::new(a.x, ly, lw, 18.0), 13.0, Weight::Regular, pal().text_3, Align::Left);
+                ly += 19.0;
+            }
+        }
+    } else {
+        let msg = if has { "No synced lyrics for this track" } else { "Lyrics appear here while music plays" };
+        c.text(msg, Rect::new(a.x, tcy + 42.0, lw, 24.0), 13.5, Weight::Regular, pal().text_3, Align::Left);
+    }
+}
+
 /// Wrap lyric line into visual lines that fit `max_w` pixels.
 /// Supports whitespace-separated words as well as CJK / long unbroken words by splitting at characters when needed.
 pub fn wrap_lyrics(text: &str, max_w: f32, size: f32, bold: bool) -> Vec<String> {

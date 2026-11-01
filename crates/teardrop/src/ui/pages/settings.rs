@@ -51,6 +51,20 @@ pub(super) fn settings(c: &mut Ctx, a: Rect) {
     style_tile(c, Rect::new(lx, ty2, tw, th), IslandStyle::Anchored, c.set.island_style == IslandStyle::Anchored, c.set.pill_gap as f32);
     style_tile(c, Rect::new(lx + tw + 8.0, ty2, tw, th), IslandStyle::Pill, c.set.island_style == IslandStyle::Pill, c.set.pill_gap as f32);
 
+    // Dock spot: which screen edge the island calls home. "Top" clears a
+    // custom spot (centred top, the default); Left/Right dock the vertical
+    // bar; Bottom parks it above the taskbar.
+    let py2 = ty2 + th + 8.0;
+    c.text("Position", Rect::new(lx, py2 + 2.0, 90.0, 24.0), 12.0, Weight::Medium, pal().text_2, Align::Left);
+    let spots = [
+        (Action::IslandCenter, "Top", c.set.island_pos.is_none()),
+        (Action::IslandDock(teardrop_core::DockEdge::Left), "Left", c.set.island_edge == Some(teardrop_core::DockEdge::Left)),
+        (Action::IslandDock(teardrop_core::DockEdge::Right), "Right", c.set.island_edge == Some(teardrop_core::DockEdge::Right)),
+        (Action::IslandDock(teardrop_core::DockEdge::Bottom), "Bottom", c.set.island_edge == Some(teardrop_core::DockEdge::Bottom)),
+    ];
+    segmented(c, Rect::new(lx + 92.0, py2, col_w - 156.0, 26.0), &spots, 10.5);
+    c.pill(Rect::new(lx + col_w - 58.0, py2 + 1.0, 58.0, 24.0), Action::Toggle(SettingKey::IslandLock), "Lock", c.set.island_locked.then_some(acc_on()), 10.5);
+
     // RIGHT COLUMN: Top buttons + Appearance & Mascot
     c.pill(Rect::new(rx + col_w - 60.0, a.y, 60.0, 24.0), Action::Quit, "Quit", None, 11.0);
     update_pill(c, Rect::new(rx, a.y, col_w - 68.0, 24.0));
@@ -190,7 +204,7 @@ fn style_tile(c: &mut Ctx, r: Rect, style: IslandStyle, on: bool, gap: f32) {
         IslandStyle::Anchored => {
             // Flat top flush with the screen edge, rounded bottom corners.
             let g = DropletGeom { card_radius: 7.0, ..Default::default() };
-            let pts = g.outline(icx, scr.y, iw, ih, false);
+            let pts = g.outline(icx, scr.y, iw, ih, Some(teardrop_core::DockEdge::Top));
             c.s.poly(pts.clone(), fill);
             c.s.polyline(pts, 1.0, pal().rim);
         }

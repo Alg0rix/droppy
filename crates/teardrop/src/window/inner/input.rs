@@ -87,10 +87,138 @@ fn maybe_start_shelf_drag(hwnd: HWND, wp: WPARAM, x: f32, y: f32) {
     wake(hwnd);
 }
 
+/// A press-and-move on the island body (or dead space in the open card)
+/// starts moving the whole window; a plain click still opens it. Same 6 px
+/// threshold as shelf drags.
+fn maybe_start_island_drag(hwnd: HWND, wp: WPARAM, x: f32, y: f32) {
+    if wp.0 & MK_LBUTTON.0 as usize == 0 || MOVING.get() {
+        return;
+    }
+    if SETTINGS.with(|s| s.borrow().island_locked) {
+        return;
+    }
+    let Some((ox, oy)) = PRESS_AT.get() else { return };
+    // Only the bare body is a grab point; controls keep their own drags.
+    let grab = matches!(UI.with(|u| u.borrow().pressed), None | Some(Action::Island) | Some(Action::HudWater) | Some(Action::MeetingJoin));
+    if !grab {
+        return;
+    }
+    let (dx, dy) = (x - ox, y - oy);
+    if dx * dx + dy * dy < 6.0 * 6.0 {
+        return;
+    }
+    // From here it's a move, not a click.
+    PRESS_AT.set(None);
+    UI.with(|u| u.borrow_mut().pressed = None);
+    let mut p = POINT::default();
+    let _ = unsafe { GetCursorPos(&mut p) };
+    let (wx, wy) = WIN_POS.get();
+    MOVE_OFF.set((p.x - wx, p.y - wy));
+    MOVING.set(true);
+    unsafe {
+        let _ = KillTimer(hwnd, T_HOVER);
+        let _ = KillTimer(hwnd, T_GLANCE);
+        let _ = KillTimer(hwnd, T_LEAVE);
+    }
+    HOVER_PENDING.set(false);
+}
+
+/// Snap a proposed window origin to the edges of the monitor it sits on:
+/// within 24 px of a work-area edge the visible body docks flush with it —
+/// same behaviour on all four sides, so corners attach both axes. Past the
+/// threshold the island floats freely. Returns the docked edge too —
+/// Left/Right put the island in its vertical side-bar orientation.
+fn snap_to_edges(x: i32, y: i32) -> (i32, i32, Option<DockEdge>) {
+    let scale = SCALE.get();
+    // Probe with the neutral (undocked) insets to pick the edge; the snap
+    // itself is re-computed with that edge's real insets below.
+    let (inl, inr, int, inb) = body_insets(None);
+    let (bw, bh) = ISLAND.with(|s| {
+        let st = s.borrow();
+        ((st.w.value * scale).round() as i32, (st.h.value * scale).round() as i32)
+    });
+    let (ww, wh) = (bw + inl + inr, bh + int + inb);
+    let mon = unsafe { MonitorFromPoint(POINT { x: x + ww / 2, y: y + wh / 2 }, MONITOR_DEFAULTTONEAREST) };
+    let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+    if !unsafe { GetMonitorInfoW(mon, &mut mi) }.as_bool() {
+        return (x, y, None);
+    }
+    let wa = mi.rcWork;
+    let snap = (24.0 * scale).max(24.0) as i32;
+    let left = ((x + inl) - wa.left).abs() <= snap;
+    let right = (wa.right - (x + ww - inr)).abs() <= snap;
+    let top = ((y + int) - wa.top).abs() <= snap;
+    let bottom = (wa.bottom - (y + wh - inb)).abs() <= snap;
+    // Corners dock both axes; a side edge takes over the orientation.
+    let edge = if left {
+        Some(DockEdge::Left)
+    } else if right {
+        Some(DockEdge::Right)
+    } else if top {
+        Some(DockEdge::Top)
+    } else if bottom {
+        Some(DockEdge::Bottom)
+    } else {
+        None
+    };
+    let (inl, inr, int, inb) = body_insets(edge);
+    let (ww, wh) = (bw + inl + inr, bh + int + inb);
+    let nx = if left {
+        wa.left - inl
+    } else if right {
+        wa.right - ww + inr
+    } else {
+        x
+    };
+    let ny = if top {
+        wa.top - int
+    } else if bottom {
+        wa.bottom - wh + inb
+    } else {
+        y
+    };
+    (nx, ny, edge)
+}
+
+/// While MOVING: park the window under the cursor, docking to screen edges
+/// when the body gets close (render() clamps it into the work area anyway).
+fn move_island_to_cursor() {
+    let mut p = POINT::default();
+    if unsafe { GetCursorPos(&mut p) }.is_err() {
+        return;
+    }
+    let (ox, oy) = MOVE_OFF.get();
+    let (nx, ny, edge) = snap_to_edges(p.x - ox, p.y - oy);
+    // Store the body's centre, not the surface's top-left — when the island
+    // morphs between surface sizes the parked spot stays put instead of the
+    // body sliding off it.
+    let scale = SCALE.get();
+    let (inl, _inr, int, _inb) = body_insets(edge);
+    let (bw, bh) = ISLAND.with(|s| {
+        let st = s.borrow();
+        ((st.w.value * scale).round() as i32, (st.h.value * scale).round() as i32)
+    });
+    SETTINGS.with(|s| {
+        let mut st = s.borrow_mut();
+        st.island_pos = Some((nx + inl + bw / 2, ny + int + bh / 2));
+        st.island_edge = edge;
+    });
+}
+
 fn on_mouse_move(hwnd: HWND, wp: WPARAM, lp: LPARAM) {
     let (x, y) = mouse_xy(lp);
     LAST_MOUSE.set((x, y));
     maybe_start_shelf_drag(hwnd, wp, x, y);
+    maybe_start_island_drag(hwnd, wp, x, y);
+    if MOVING.get() {
+        if wp.0 & MK_LBUTTON.0 as usize != 0 {
+            move_island_to_cursor();
+        } else {
+            MOVING.set(false);
+        }
+        wake(hwnd);
+        return;
+    }
     // A held Quick slider follows the pointer even off the track.
     if wp.0 & MK_LBUTTON.0 as usize != 0 {
         if let Some(a @ (Action::QsVol | Action::QsBright)) = UI.with(|u| u.borrow().pressed) {
@@ -137,7 +265,9 @@ fn on_mouse_leave(hwnd: HWND) {
             HOVER_PENDING.set(false);
             let _ = KillTimer(hwnd, T_HOVER);
         }
-        if is_open() {
+        // A move-drag owns the pointer while it's captured; leaving the
+        // window mid-drag must not collapse an unpinned card.
+        if is_open() && !MOVING.get() {
             let _ = SetTimer(hwnd, T_LEAVE, 450, None);
         }
     }
@@ -157,7 +287,15 @@ fn on_wheel(hwnd: HWND, wp: WPARAM) {
     }
     let (_, y) = LAST_MOUSE.get();
     let page = VIEW.with(|v| v.borrow().page);
-    let in_content = y >= CONTENT_TOP + SETTINGS.with(|s| s.borrow().top_gap());
+    let shift = SETTINGS.with(|s| {
+        let st = s.borrow();
+        if matches!(st.island_edge, Some(DockEdge::Left) | Some(DockEdge::Right)) {
+            ui::theme::PAD
+        } else {
+            st.top_gap()
+        }
+    });
+    let in_content = y >= CONTENT_TOP + shift;
     if hit_at(LAST_MOUSE.get().0, y).map(|h| h.action) == Some(Action::FocusAppTheme) {
         step_app_theme(hwnd, dir > 0);
         save_all();
@@ -841,10 +979,14 @@ pub(super) unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, l
         WM_SETCURSOR => {
             if (lp.0 & 0xffff) as u32 == HTCLIENT {
                 let (x, y) = LAST_MOUSE.get();
-                let cursor = match hit_at(x, y) {
-                    Some(h) if h.text => IDC_IBEAM,
-                    Some(_) => IDC_HAND,
-                    None => IDC_ARROW,
+                let cursor = if MOVING.get() {
+                    IDC_SIZEALL
+                } else {
+                    match hit_at(x, y) {
+                        Some(h) if h.text => IDC_IBEAM,
+                        Some(_) => IDC_HAND,
+                        None => IDC_ARROW,
+                    }
                 };
                 if let Ok(c) = LoadCursorW(None, cursor) {
                     SetCursor(c);
@@ -906,6 +1048,21 @@ pub(super) unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, l
         }
         WM_LBUTTONUP => {
             let _ = ReleaseCapture();
+            if MOVING.get() {
+                MOVING.set(false);
+                save_all();
+                // The leave event swallowed mid-drag: if the drop ended
+                // outside the window, run the normal leave path now.
+                let mut p = POINT::default();
+                let mut rc = RECT::default();
+                let inside =
+                    unsafe { GetCursorPos(&mut p).is_ok() && GetWindowRect(hwnd, &mut rc).is_ok() && p.x >= rc.left && p.x < rc.right && p.y >= rc.top && p.y < rc.bottom };
+                if !inside {
+                    on_mouse_leave(hwnd);
+                }
+                wake(hwnd);
+                return LRESULT(0);
+            }
             PRESS_AT.set(None);
             let (x, y) = mouse_xy(lp);
             let released = hit_at(x, y);

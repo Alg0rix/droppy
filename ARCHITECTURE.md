@@ -53,6 +53,16 @@ Hit regions come from the same frame that was drawn (`Frame.hits`), so what you
 see is what you click. Hover-intent opens after 170 ms (collapses 450 ms after
 leaving unless pinned by a click); click, tray, hotkey or file drop pin it.
 Clicking away closes a pinned island. Text entry (new task) uses `WM_CHAR`.
+Press-and-move on the pill (or dead space in the open card) moves the whole
+window; within 24 px of a screen edge the body docks flush with it (all four
+edges behave the same). The parked spot persists as `settings.island_pos`
+(plus `island_edge`, the docked side), is clamped into the nearest monitor's
+work area, and the tray menu (or the Settings "Center" pill) can re-center
+it. Docked to the left or right edge the island switches to a vertical bar:
+the collapsed activities restack top-to-bottom (clock as HH over MM, album
+art over an EQ ladder, focus ring over mm:ss, level HUDs as a bottom-up fill
+gauge), the glance peek becomes a vertical page rail whose icons open that
+page's card, and the open card hangs from the docked edge expanding inward.
 Shelf tiles are also OLE drag sources: after a 6 px press-and-move they call
 `DoDragDrop` with a `CF_HDROP` payload. Only copy/link effects are offered, so
 dragging never moves or deletes the original file; a click without movement

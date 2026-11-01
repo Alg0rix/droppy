@@ -11,7 +11,7 @@
 //! tracking the morph position.
 
 use crate::ui::layout::IslandView;
-use teardrop_core::{DropletGeom, Spring};
+use teardrop_core::{DockEdge, DropletGeom, Spring};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IslandMode {
@@ -42,6 +42,9 @@ pub struct IslandState {
     /// doesn't re-kick the height spring every pointer event.
     pub stretch_cd: f32,
     pub mode: IslandMode,
+    /// Screen edge the island is docked to (set per frame from settings);
+    /// Left/Right draw the vertical side-bar UI.
+    pub edge: Option<DockEdge>,
 }
 
 impl IslandState {
@@ -59,6 +62,7 @@ impl IslandState {
             hover: false,
             stretch_cd: 0.0,
             mode: IslandMode::Collapsed,
+            edge: None,
         }
     }
 
@@ -161,14 +165,16 @@ impl IslandState {
     }
 
     /// Derived morph progress 0..1 for consumers that want a scalar
-    /// (collapsed = 0, glance = 0.5, open = 1), mapped off the live height.
+    /// (collapsed = 0, glance = 0.5, open = 1), mapped off the live height —
+    /// or width for a side-docked island, where the morph runs horizontally.
     pub fn open(&self) -> f32 {
-        let p = self.geom.pill_h;
-        let g = self.geom.glance_h.max(p + 1.0);
-        let c = self.geom.card_h.max(g + 1.0);
-        let h = self.h.value;
-        let v = if h <= g { 0.5 * (h - p) / (g - p) } else { 0.5 + 0.5 * (h - g) / (c - g) };
-        v.clamp(0.0, 1.0)
+        let vert = matches!(self.edge, Some(DockEdge::Left) | Some(DockEdge::Right));
+        let (p, g, c, v) =
+            if vert { (self.geom.pill_w, self.geom.glance_w, self.geom.card_w, self.w.value) } else { (self.geom.pill_h, self.geom.glance_h, self.geom.card_h, self.h.value) };
+        let g = g.max(p + 1.0);
+        let c = c.max(g + 1.0);
+        let o = if v <= g { 0.5 * (v - p) / (g - p) } else { 0.5 + 0.5 * (v - g) / (c - g) };
+        o.clamp(0.0, 1.0)
     }
 
     #[allow(dead_code)]
@@ -178,7 +184,16 @@ impl IslandState {
 
     /// Snapshot for the renderer: live size, content alphas, derived progress.
     pub fn view(&self) -> IslandView {
-        IslandView { geom: self.geom, open: self.open(), w: self.w.value, h: self.h.value, compact_a: self.compact_a, glance_a: self.glance_a, card_a: self.card_a }
+        IslandView {
+            geom: self.geom,
+            open: self.open(),
+            w: self.w.value,
+            h: self.h.value,
+            compact_a: self.compact_a,
+            glance_a: self.glance_a,
+            card_a: self.card_a,
+            edge: self.edge,
+        }
     }
 }
 

@@ -10,9 +10,12 @@ pub(super) fn render(hwnd: HWND) {
     let scale = SCALE.get();
 
     // Pointer in window-local logical px (drives the eyes). The eyes
-    // compute in un-shifted coords, so undo the pill-mode top gap.
+    // compute in un-shifted coords, so undo the frame's content shift —
+    // the pill top gap horizontally, PAD for a side-docked bar.
     let (wx, wy) = WIN_POS.get();
-    let gap = SETTINGS.with(|s| s.borrow().top_gap());
+    let edge = SETTINGS.with(|s| s.borrow().island_edge);
+    let vert = matches!(edge, Some(DockEdge::Left) | Some(DockEdge::Right));
+    let gap = if vert { ui::theme::PAD } else { SETTINGS.with(|s| s.borrow().top_gap()) };
     let mouse = unsafe {
         let mut p = POINT::default();
         if GetCursorPos(&mut p).is_ok() {
@@ -55,6 +58,7 @@ pub(super) fn render(hwnd: HWND) {
             st.geom.card_h = ui.card_h;
             st.geom.glance_w = ui.glance_w;
             st.geom.glance_h = ui.glance_h;
+            st.edge = SETTINGS.with(|s| s.borrow().island_edge);
         });
         let view = st.view();
         VIEW.with(|v| {
@@ -65,9 +69,8 @@ pub(super) fn render(hwnd: HWND) {
         })
     });
 
-    let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
-    let x = ((screen_w as f32 - frame.w * scale) / 2.0).round() as i32;
-    WIN_POS.set((x, 0));
+    let pos = island_screen_pos(frame.w, frame.h);
+    WIN_POS.set(pos);
     let ok = PRESENTER.with(|p| {
         let mut p = p.borrow_mut();
         if p.is_none() {
@@ -76,8 +79,9 @@ pub(super) fn render(hwnd: HWND) {
             let (mut max_cw, mut max_ch) = (0.0f32, 0.0f32);
             for pg in Page::all().iter().chain(std::iter::once(&Page::Settings)) {
                 let (cw, ch) = UiState::card_target(*pg);
-                max_cw = max_cw.max(cw);
-                max_ch = max_ch.max(ch);
+                let (vw, vh) = UiState::card_target_v(*pg);
+                max_cw = max_cw.max(cw).max(vw);
+                max_ch = max_ch.max(ch).max(vh);
             }
             let cap_w = ((max_cw + 2.0 * ui::theme::PAD + 32.0) * scale).ceil() as i32;
             let cap_h = ((max_ch + ui::theme::PAD + 40.0 + teardrop_core::PILL_GAP_MAX as f32) * scale).ceil() as i32;
@@ -88,7 +92,7 @@ pub(super) fn render(hwnd: HWND) {
             }
         }
         match p.as_mut() {
-            Some(pr) => pr.present(hwnd, &frame.scene, (frame.w, frame.h), scale, (x, 0)),
+            Some(pr) => pr.present(hwnd, &frame.scene, (frame.w, frame.h), scale, pos),
             None => false,
         }
     });
@@ -100,6 +104,69 @@ pub(super) fn render(hwnd: HWND) {
         }
     }
     HITS.with(|h| *h.borrow_mut() = frame.hits);
+}
+
+/// (left, right, top, bottom) insets between the window edge and the
+/// visible body, in physical px. Floating/top docks: `PAD` on the sides and
+/// bottom, `top_gap` above (Pill mode). Side-docked bars are flush on the
+/// docked edge with `PAD` on the other three. Edge snapping docks the
+/// body, not the padding.
+pub(super) fn body_insets(edge: Option<DockEdge>) -> (i32, i32, i32, i32) {
+    let scale = SCALE.get();
+    let pad = (ui::theme::PAD * scale).round() as i32;
+    match edge {
+        Some(DockEdge::Left) => (0, pad, pad, pad),
+        Some(DockEdge::Right) => (pad, 0, pad, pad),
+        _ => {
+            let gap = (SETTINGS.with(|s| s.borrow().top_gap()) * scale).round() as i32;
+            (pad, pad, gap, pad)
+        }
+    }
+}
+
+/// Window top-left in physical px: `island_pos` stores the body's parked
+/// centre point, so the spot survives the surface resizing as the island
+/// morphs (pill ↔ glance ↔ card); a docked axis is pinned to the work-area
+/// edge and only the free axis honours the point. The body is clamped into
+/// the nearest monitor's work area so a detached display or a DPI change
+/// can't strand it off-screen. `None` = centred top of the primary screen.
+fn island_screen_pos(frame_w: f32, frame_h: f32) -> (i32, i32) {
+    let scale = SCALE.get();
+    let (w, h) = ((frame_w * scale).ceil() as i32, (frame_h * scale).ceil() as i32);
+    let Some((cx, cy)) = SETTINGS.with(|s| s.borrow().island_pos) else {
+        let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
+        return (((screen_w as f32 - frame_w * scale) / 2.0).round() as i32, 0);
+    };
+    let mon = unsafe { MonitorFromPoint(POINT { x: cx, y: cy }, MONITOR_DEFAULTTONEAREST) };
+    let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+    let wa = if unsafe { GetMonitorInfoW(mon, &mut mi) }.as_bool() { mi.rcWork } else { RECT { left: cx - w / 2, right: cx + w / 2, top: cy - h / 2, bottom: cy + h / 2 } };
+    let edge = SETTINGS.with(|s| s.borrow().island_edge);
+    let (inl, inr, int, inb) = body_insets(edge);
+    let (bw, bh) = (w - inl - inr, h - int - inb);
+    let (mw, mh) = (wa.right - wa.left, wa.bottom - wa.top);
+    let bx = match edge {
+        Some(DockEdge::Left) => wa.left,
+        Some(DockEdge::Right) => wa.right - bw,
+        _ => {
+            if bw >= mw {
+                wa.left + (mw - bw) / 2
+            } else {
+                (cx - bw / 2).clamp(wa.left, wa.right - bw)
+            }
+        }
+    };
+    let by = match edge {
+        Some(DockEdge::Top) => wa.top,
+        Some(DockEdge::Bottom) => wa.bottom - bh,
+        _ => {
+            if bh >= mh {
+                wa.top + (mh - bh) / 2
+            } else {
+                (cy - bh / 2).clamp(wa.top, wa.bottom - bh)
+            }
+        }
+    };
+    (bx - inl, by - int)
 }
 
 /// `TEARDROP_PERF=1` logs average render cost + achieved fps every 120 frames.

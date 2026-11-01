@@ -3,6 +3,17 @@ use crate::apps::EyeTheme;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// The screen edge a drag snapped the island to. `None` = floating free or
+/// still at the default centre-top. Left/Right give it a vertical bar UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DockEdge {
+    Top,
+    Right,
+    Bottom,
+    Left,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum IdleLook {
@@ -214,6 +225,18 @@ pub struct Settings {
     /// Pill mode: gap between the island and the screen top, logical px.
     #[serde(default = "default_pill_gap")]
     pub pill_gap: u32,
+    /// Where the user parked the island (physical px, the body's centre
+    /// point — so resizing surfaces keep the spot instead of drifting off
+    /// it); `None` keeps it centred at the top of the primary screen.
+    #[serde(default)]
+    pub island_pos: Option<(i32, i32)>,
+    /// Which screen edge the island last snapped to, if any. Left/Right
+    /// switch the collapsed island to its vertical side-bar UI.
+    #[serde(default)]
+    pub island_edge: Option<DockEdge>,
+    /// Lock the island in place: press-and-drag on the body does nothing.
+    #[serde(default)]
+    pub island_locked: bool,
     /// Eye colour drifts with CPU load, time of day and water intake.
     #[serde(default = "yes")]
     pub mood_ring: bool,
@@ -395,6 +418,9 @@ impl Default for Settings {
             theme: IslandTheme::Onyx,
             island_style: IslandStyle::Anchored,
             pill_gap: default_pill_gap(),
+            island_pos: None,
+            island_edge: None,
+            island_locked: false,
             mood_ring: true,
             weather_mood: true,
             birthday: None,
@@ -428,7 +454,7 @@ mod tests {
         let old = r#"{"idle_look":"eyes","lyrics_enabled":true,"water_reminders":true,"clipboard_history":true,"sounds":false,"hide_in_fullscreen":true,"start_with_windows":false,"goal_ml":2000}"#;
         let s: Settings = serde_json::from_str(old).unwrap();
         assert_eq!(s.eye_style, EyeStyle::Round);
-        assert!(s.island_style == IslandStyle::Anchored && s.pill_gap == 10);
+        assert!(s.island_style == IslandStyle::Anchored && s.pill_gap == 10 && s.island_pos.is_none());
         assert!(s.hotkey_island && s.hotkey_search && s.hotkey_note && s.hotkey_ai, "hotkeys default on");
         assert!(s.weather_mood && s.mood_ring && !s.open_on_hover && s.focus_app_eyes && s.birthday.is_none());
         assert_eq!(s.ai_provider, AiProvider::ChatGpt);

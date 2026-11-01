@@ -44,6 +44,18 @@ use voice::*;
 pub use water::*;
 
 pub fn draw(c: &mut Ctx, page: Page, a: Rect) {
+    // Side-docked: the card is a tall column, so the split-column widget
+    // pages get stacked variants; the rest reflow into the narrow area.
+    let vert = matches!(c.set.island_edge, Some(teardrop_core::DockEdge::Left) | Some(teardrop_core::DockEdge::Right));
+    if vert {
+        match page {
+            Page::Music => return music_v(c, a),
+            Page::Focus => return focus_v(c, a),
+            Page::Water => return water_v(c, a),
+            Page::System => return super::system::system_v(c, a),
+            _ => {}
+        }
+    }
     match page {
         Page::Music => music(c, a),
         Page::Focus => focus(c, a),

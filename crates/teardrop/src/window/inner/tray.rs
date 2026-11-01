@@ -71,7 +71,11 @@ pub(super) fn remove_tray(hwnd: HWND) {
 pub(super) fn show_menu(hwnd: HWND) {
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return };
-        let items: [(usize, &str); 3] = [(ID_TOGGLE, if is_open() { "Collapse island" } else { "Open island" }), (ID_SETTINGS, "Settings"), (ID_QUIT, "Quit Droppy")];
+        let mut items: Vec<(usize, &str)> = vec![(ID_TOGGLE, if is_open() { "Collapse island" } else { "Open island" }), (ID_SETTINGS, "Settings")];
+        if SETTINGS.with(|s| s.borrow().island_pos.is_some()) {
+            items.push((ID_CENTER, "Center island"));
+        }
+        items.push((ID_QUIT, "Quit Droppy"));
         for (id, label) in items {
             let l = wide(label);
             let _ = AppendMenuW(menu, MF_STRING, id, PCWSTR::from_raw(l.as_ptr()));
@@ -103,6 +107,15 @@ pub(super) fn show_menu(hwnd: HWND) {
                     }
                 });
                 open_island(hwnd, true);
+            }
+            ID_CENTER => {
+                SETTINGS.with(|s| {
+                    let mut st = s.borrow_mut();
+                    st.island_pos = None;
+                    st.island_edge = None;
+                });
+                save_all();
+                wake(hwnd);
             }
             _ => {}
         }

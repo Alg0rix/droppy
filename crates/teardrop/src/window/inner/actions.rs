@@ -397,6 +397,12 @@ pub(super) fn perform(hwnd: HWND, a: Action) {
                 crate::radios::nudge();
             }
             VIEW.with(|v| v.borrow_mut().page = p);
+            // A rail click while the island rests at the glance goes straight
+            // to that page's card (the side-docked peek is the page rail).
+            let peeking = ISLAND.with(|s| matches!(s.borrow().mode, IslandMode::Glance | IslandMode::Glancing));
+            if peeking {
+                ISLAND.with(|s| s.borrow_mut().expand());
+            }
         }
         Action::CalStep(d) => {
             UI.with(|u| u.borrow_mut().cal_offset += d as i32);
@@ -848,6 +854,42 @@ pub(super) fn perform(hwnd: HWND, a: Action) {
         Action::IslandStyle(st) => {
             SETTINGS.with(|s| s.borrow_mut().island_style = st);
             with_eyes(|e| e.react(React::Sparkle));
+        }
+        Action::IslandCenter => {
+            SETTINGS.with(|s| {
+                let mut st = s.borrow_mut();
+                st.island_pos = None;
+                st.island_edge = None;
+            });
+            with_eyes(|e| e.react(React::Nod));
+        }
+        Action::IslandDock(edge) => {
+            SETTINGS.with(|s| {
+                let mut st = s.borrow_mut();
+                st.island_edge = Some(edge);
+                // Park the collapsed body's centre on the monitor's work
+                // area; the docked axis is re-pinned to the edge every
+                // render, so a centred value there is harmless.
+                let mon = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+                let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+                if unsafe { GetMonitorInfoW(mon, &mut mi) }.as_bool() {
+                    let wa = mi.rcWork;
+                    let (mw, mh) = (wa.right - wa.left, wa.bottom - wa.top);
+                    let scale = SCALE.get();
+                    let (bw, bh) = VIEW.with(|v| {
+                        let (w, h) = UI.with(|u| u.borrow().compact_target(&v.borrow(), &st, ms));
+                        ((w * scale).round() as i32, (h * scale).round() as i32)
+                    });
+                    let pos = match edge {
+                        DockEdge::Left => (wa.left + bw / 2, wa.top + mh / 2),
+                        DockEdge::Right => (wa.right - bw / 2, wa.top + mh / 2),
+                        DockEdge::Top => (wa.left + mw / 2, wa.top + bh / 2),
+                        DockEdge::Bottom => (wa.left + mw / 2, wa.bottom - bh / 2),
+                    };
+                    st.island_pos = Some(pos);
+                }
+            });
+            with_eyes(|e| e.react(React::Nod));
         }
         Action::PillGap(d) => {
             SETTINGS.with(|s| {

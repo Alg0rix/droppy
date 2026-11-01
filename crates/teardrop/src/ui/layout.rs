@@ -8,7 +8,7 @@ use super::scene::{Align, Color, Fill, Rect, Scene, Weight};
 use super::state::{Action, Hit, UiState};
 use super::theme::*;
 use crate::viewmodel::{local_naive, mmss, one_line, ViewModel};
-use teardrop_core::{DropletGeom, HudKind, IdleLook, IslandStyle, Page, Playback, Settings};
+use teardrop_core::{DockEdge, DropletGeom, HudKind, IdleLook, IslandStyle, Page, Playback, Settings};
 
 /// Morph input from the island springs: live size + content-layer alphas.
 #[derive(Debug, Clone, Copy)]
@@ -21,6 +21,8 @@ pub struct IslandView {
     pub compact_a: f32,
     pub glance_a: f32,
     pub card_a: f32,
+    /// Screen edge the island is docked to; Left/Right draw the vertical UI.
+    pub edge: Option<DockEdge>,
 }
 
 impl IslandView {
@@ -34,6 +36,7 @@ impl IslandView {
             compact_a: 1.0 - smooth(open / 0.28),
             glance_a: 1.0 - smooth(((open - 0.5).abs() - 0.04) / 0.14),
             card_a: smooth((open - 0.80) / 0.18),
+            edge: None,
         }
     }
 }
@@ -280,8 +283,8 @@ pub fn compact_lyric(vm: &ViewModel, s: &Settings) -> Option<(Vec<String>, f32, 
 }
 
 /// Content area of the open card for a card whose left edge is `card_x`.
-pub fn content_rect(card_x: f32, geom: &DropletGeom) -> Rect {
-    Rect::new(card_x + 22.0, CONTENT_TOP, geom.card_w - 44.0, geom.card_h - CONTENT_TOP - 18.0)
+pub fn content_rect(card_x: f32, card_y: f32, geom: &DropletGeom) -> Rect {
+    Rect::new(card_x + 22.0, card_y + CONTENT_TOP, geom.card_w - 44.0, geom.card_h - CONTENT_TOP - 18.0)
 }
 
 /// Pages drawn as self-contained blobs: no header row, the bottom strip
@@ -291,13 +294,13 @@ pub fn is_blob_page(p: Page) -> bool {
 }
 
 /// Content area of a blob page: the whole card minus padding and the nav strip.
-fn blob_content_rect(card_x: f32, geom: &DropletGeom) -> Rect {
-    Rect::new(card_x + 18.0, 14.0, geom.card_w - 36.0, geom.card_h - 14.0 - 44.0)
+fn blob_content_rect(card_x: f32, card_y: f32, geom: &DropletGeom) -> Rect {
+    Rect::new(card_x + 18.0, card_y + 14.0, geom.card_w - 36.0, geom.card_h - 14.0 - 44.0)
 }
 
 /// Bottom strip for blob pages: clock left, page dots centre, pin + gear right.
-fn blob_nav(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
-    let y = geom.card_h - 34.0;
+fn blob_nav(c: &mut Ctx, card_x: f32, card_y: f32, geom: &DropletGeom) {
+    let y = card_y + geom.card_h - 34.0;
     let narrow = geom.card_w < 480.0;
     let local = local_naive(c.vm.now);
     let fmt = if narrow { "%H:%M" } else { "%a %d %b  %H:%M" };
@@ -345,11 +348,11 @@ fn blob_nav(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
     c.hit(pr, Action::Pin);
 }
 
-fn header(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
+fn header(c: &mut Ctx, card_x: f32, card_y: f32, geom: &DropletGeom) {
     // Live clock and date at the far left (e.g. "Sat 24 Oct  13:49").
     let local = local_naive(c.vm.now);
     let date_str = local.format("%a %d %b  %H:%M").to_string();
-    let tr = Rect::new(card_x + 20.0, HEADER_Y + 7.0, 120.0, 20.0);
+    let tr = Rect::new(card_x + 20.0, card_y + HEADER_Y + 7.0, 120.0, 20.0);
     c.s.text(date_str, tr, 11.5, Weight::Medium, pal().text_2, Align::Left);
 
     // Page tabs centred in the card; the active one widens to show its label.
@@ -360,7 +363,7 @@ fn header(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
     for (i, &p) in visible_pages(c.set).iter().enumerate() {
         let amt = c.ui.tab_amt[super::state::page_index(p).min(super::state::PAGE_SLOTS - 1)];
         let w = widths[i];
-        let r = Rect::new(x, HEADER_Y, w, HEADER_H);
+        let r = Rect::new(x, card_y + HEADER_Y, w, HEADER_H);
         let a = Action::Tab(p);
         let h = c.hov(a);
         let acc = accent(p);
@@ -381,7 +384,7 @@ fn header(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
     }
 
     // Settings gear, far right.
-    let gr = Rect::new(card_x + geom.card_w - 18.0 - HEADER_H, HEADER_Y, HEADER_H, HEADER_H);
+    let gr = Rect::new(card_x + geom.card_w - 18.0 - HEADER_H, card_y + HEADER_Y, HEADER_H, HEADER_H);
     let on = c.vm.page == Page::Settings;
     let h = c.hov(Action::Gear);
     if on {
@@ -397,7 +400,7 @@ fn header(c: &mut Ctx, card_x: f32, geom: &DropletGeom) {
     c.hit(gr, Action::Gear);
 
     // Pin toggle button, just left of the gear.
-    let pr = Rect::new(gr.x - 32.0, HEADER_Y + 3.0, 26.0, HEADER_H - 6.0);
+    let pr = Rect::new(gr.x - 32.0, card_y + HEADER_Y + 3.0, 26.0, HEADER_H - 6.0);
     let ph = c.hov(Action::Pin);
     let pin_on = c.vm.pinned;
     if pin_on {
@@ -558,6 +561,184 @@ fn collapsed(c: &mut Ctx, r: Rect, a: f32) {
         }
     }
     c.s.reset_transform();
+}
+
+/// The face drawn inside a narrow side-docked bar: centred, scaled to fit.
+fn face_v(c: &mut Ctx, r: Rect, accent: Option<Color>) {
+    let (cx, cy, _) = eyes::place(Spot::Idle, r);
+    c.s.clip(r);
+    c.ui.eyes.draw(&mut c.s, &Paint { cx, cy, scale: 0.8, bounds: r, style: c.set.eye_style, tint: None, accent, props: true });
+    c.s.pop_clip();
+}
+
+/// Collapsed content for a side-docked island: the same activities restacked
+/// top to bottom inside the vertical bar.
+fn collapsed_v(c: &mut Ctx, r: Rect, a: f32) {
+    if a <= 0.01 {
+        return;
+    }
+    c.s.set_transform(0.0, 0.0, a);
+    let cx = r.cx();
+    let vm = c.vm;
+    if let Some(h) = vm.live_hud(c.now_ms) {
+        hud_v(c, r, h);
+    } else if vm.voice.phase == crate::voice::VoicePhase::Recording {
+        let acc = accent(Page::Voice);
+        // Pulsing REC dot, label and live clock; the listening face below.
+        let pulse = ((c.now_ms % 1600) as f32 / 1600.0 * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+        c.s.circle(cx, r.y + 16.0, 6.0 + 2.5 * pulse, acc.fade(0.35));
+        c.s.circle(cx, r.y + 16.0, 4.2, acc);
+        c.text("REC", Rect::new(r.x, r.y + 25.0, r.w, 14.0), 9.5, Weight::Semibold, acc, Align::Center);
+        c.text(crate::voice::clock(vm.voice.elapsed_ms), Rect::new(r.x, r.y + 40.0, r.w, 15.0), 10.5, Weight::Semibold, pal().text, Align::Center);
+        if c.set.idle_look == IdleLook::Eyes {
+            face_v(c, Rect::new(r.x, r.bottom() - 40.0, r.w, 36.0), Some(acc));
+        }
+    } else if let Some(ev) = vm.meeting_soon() {
+        let acc = accent(Page::Today);
+        icons::draw(&mut c.s, Icon::Calendar, cx, r.y + 18.0, 15.0, acc);
+        c.text(crate::calendar::countdown(ev, vm.now.timestamp()), Rect::new(r.x, r.y + 32.0, r.w, 15.0), 10.0, Weight::Semibold, pal().text, Align::Center);
+    } else if vm.focus_visible() {
+        let acc = accent(Page::Focus);
+        let ring_y = r.y + 20.0;
+        c.s.ring(cx, ring_y, 10.0, 2.8, 0.0, 1.0, pal().ink(0.16));
+        c.s.ring(cx, ring_y, 10.0, 2.8, 0.0, vm.focus_progress().max(0.02), acc);
+        let t = mmss(vm.focus_remaining_ms());
+        let col = if vm.focus_running() { pal().text } else { pal().text_2 };
+        c.text(t, Rect::new(r.x, ring_y + 12.0, r.w, 15.0), 10.5, Weight::Semibold, col, Align::Center);
+        if vm.music_active() {
+            let (c1, c2) = art_colors(&vm.track.title);
+            let art = Rect::new(cx - 11.0, ring_y + 32.0, 22.0, 22.0);
+            match crate::media_smtc::art_for(&vm.track) {
+                Some(img) => c.s.image_rounded(art, 6.5, &img),
+                None => c.s.rect(art, 6.5, Fill::DGrad(c1, c2)),
+            }
+            // Vertical EQ ladder: bars of varying length below the art.
+            let acc_m = c1.mix(Color::rgb(255, 255, 255), 0.25);
+            let mut y = art.bottom() + 9.0;
+            for b in c.ui.viz.sample(5).iter() {
+                let len = 4.0 + b * 18.0;
+                c.s.rect(Rect::new(cx - len / 2.0, y, len, 3.0), 1.5, acc_m);
+                y += 5.0;
+            }
+            if c.set.idle_look == IdleLook::Eyes {
+                face_v(c, Rect::new(r.x, r.bottom() - 40.0, r.w, 36.0), Some(acc_m));
+            }
+        } else if c.set.idle_look == IdleLook::Eyes {
+            face_v(c, Rect::new(r.x, r.bottom() - 40.0, r.w, 36.0), Some(acc));
+        }
+    } else if vm.music_active() {
+        let (c1, c2) = art_colors(&vm.track.title);
+        let art = Rect::new(cx - 11.0, r.y + 10.0, 22.0, 22.0);
+        match crate::media_smtc::art_for(&vm.track) {
+            Some(img) => c.s.image_rounded(art, 6.5, &img),
+            None => c.s.rect(art, 6.5, Fill::DGrad(c1, c2)),
+        }
+        let acc = c1.mix(Color::rgb(255, 255, 255), 0.25);
+        let mut y = art.bottom() + 9.0;
+        for b in c.ui.viz.sample(5).iter() {
+            let len = 4.0 + b * 18.0;
+            c.s.rect(Rect::new(cx - len / 2.0, y, len, 3.0), 1.5, acc);
+            y += 5.0;
+        }
+        if c.set.idle_look == IdleLook::Eyes {
+            face_v(c, Rect::new(r.x, r.bottom() - 40.0, r.w, 36.0), Some(acc));
+        }
+    } else {
+        match c.set.idle_look {
+            // "13:49" stacks as "13" over "49".
+            IdleLook::Clock => {
+                let clock = vm.clock_text();
+                let mut parts = clock.splitn(2, ':');
+                let (hh, mm) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+                c.text(hh, Rect::new(r.x, r.cy() - 19.0, r.w, 18.0), 13.5, Weight::Semibold, pal().text, Align::Center);
+                c.text(mm, Rect::new(r.x, r.cy() + 0.0, r.w, 16.0), 12.0, Weight::Medium, pal().text_2, Align::Center);
+            }
+            IdleLook::Eyes => face_v(c, r, None),
+            IdleLook::Minimal => c.s.circle(cx, r.cy(), 2.8, pal().text_3),
+            IdleLook::Hidden => {}
+        }
+    }
+    c.s.reset_transform();
+}
+
+/// Level HUDs in a side dock: icon on top, a bottom-up fill gauge and the
+/// % under it; non-gauge HUDs show just their icon and short detail.
+fn hud_v(c: &mut Ctx, r: Rect, h: &teardrop_core::Hud) {
+    let cx = r.cx();
+    match h.kind {
+        HudKind::Volume | HudKind::Muted | HudKind::Brightness => {
+            let muted = h.kind == HudKind::Muted;
+            let icon = match h.kind {
+                HudKind::Muted => Icon::Muted,
+                HudKind::Brightness => Icon::Sun,
+                _ => Icon::Speaker,
+            };
+            let eyes = c.set.idle_look == IdleLook::Eyes;
+            icons::draw(&mut c.s, icon, cx, r.y + 14.0, 14.0, pal().text);
+            let bottom_pad = if eyes { 46.0 } else { 26.0 };
+            let track = Rect::new(cx - 3.0, r.y + 28.0, 6.0, (r.h - 28.0 - bottom_pad).max(20.0));
+            c.s.rect(track, 3.0, pal().ink(0.18));
+            let p = if muted { 0.0 } else { h.progress.unwrap_or(0.0).clamp(0.0, 1.0) };
+            if p > 0.0 {
+                let fh = (track.h * p).max(6.0);
+                c.s.rect(Rect::new(track.x, track.bottom() - fh, track.w, fh), 3.0, pal().text);
+            }
+            c.text(h.detail.clone(), Rect::new(r.x, track.bottom() + 4.0, r.w, 14.0), 9.5, Weight::Semibold, pal().text, Align::Center);
+            if eyes {
+                face_v(c, Rect::new(r.x, r.bottom() - 40.0, r.w, 36.0), None);
+            }
+        }
+        HudKind::Water => {
+            let acc = accent(Page::Water);
+            icons::draw(&mut c.s, Icon::Drop, cx, r.y + 15.0, 15.0, acc);
+            if h.action_label.is_some() {
+                // The +1 glass action shrinks to a small badge; the body hit
+                // still carries the click.
+                let sq = Rect::new(cx - 11.0, r.y + 30.0, 22.0, 20.0);
+                c.s.rect(sq, 7.0, acc.fade(0.25));
+                c.text("+1", sq, 9.5, Weight::Semibold, acc, Align::Center);
+            } else {
+                c.text(h.detail.clone(), Rect::new(r.x, r.y + 28.0, r.w, 15.0), 9.5, Weight::Semibold, pal().text, Align::Center);
+            }
+        }
+        _ => {
+            let (icon, col) = match h.kind {
+                HudKind::Meeting => (Icon::Calendar, accent(Page::Today)),
+                HudKind::Charging => (Icon::Bolt, pal().green),
+                HudKind::Bluetooth => (Icon::Headphones, Color::rgb(59, 130, 246)),
+                HudKind::Device => (Icon::Chip, accent(Page::System)),
+                HudKind::Timer => (Icon::Timer, accent(Page::Focus)),
+                HudKind::Chat => (Icon::Chat, accent(Page::Chat)),
+                _ => (Icon::Note, pal().text),
+            };
+            icons::draw(&mut c.s, icon, cx, r.y + 15.0, 15.0, col);
+            let detail = if h.kind == HudKind::Meeting { &h.detail } else { &h.title };
+            c.text(detail.clone(), Rect::new(r.x, r.y + 28.0, r.w, 30.0), 9.0, Weight::Semibold, pal().text, Align::Center);
+        }
+    }
+}
+
+/// Side-docked glance: the page rail, stacked. Hover dwell peeks at where
+/// the island can go; clicking an icon switches to that page.
+fn glance_v(c: &mut Ctx, r: Rect) {
+    let pages = visible_pages(c.set);
+    let n = pages.len() as f32;
+    let pitch = ((r.h - 14.0) / n).min(30.0);
+    let mut y = r.cy() - n * pitch / 2.0 + pitch / 2.0;
+    for &p in pages.iter() {
+        let cell = Rect::new(r.cx() - 11.0, y - 11.0, 22.0, 22.0);
+        let amt = c.ui.tab_amt[super::state::page_index(p).min(super::state::PAGE_SLOTS - 1)];
+        let a = Action::Tab(p);
+        let h = c.hov(a);
+        if amt > 0.01 {
+            c.s.rect(cell, 8.0, accent(p).fade(0.22 * amt));
+        } else if h > 0.01 {
+            c.s.rect(cell, 8.0, pal().surface_hover.fade(h));
+        }
+        icons::draw(&mut c.s, tab_icon(p), cell.cx(), cell.cy(), 12.0, pal().text_3.mix(pal().text, h).mix(accent(p), amt));
+        c.hit(cell, a);
+        y += pitch;
+    }
 }
 
 /// One line of text that fits `r`, or scrolls through it (hold, glide, hold).
@@ -1150,22 +1331,38 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
     set_theme(set.theme);
     let g = &isl.geom;
     let open = isl.open;
+    let vert = matches!(isl.edge, Some(DockEdge::Left) | Some(DockEdge::Right));
     let (bw, bh) = (isl.w, isl.h);
-    let w = bw + PAD * 2.0;
+    // Side-docked: the body hangs flush on its docked edge, so that side
+    // carries no padding.
+    let w = bw + if vert { PAD } else { PAD * 2.0 };
     let h = bh + PAD;
-    let cx = w / 2.0;
-    let body = Rect::new(cx - bw / 2.0, 0.0, bw, bh);
+    let bx = if isl.edge == Some(DockEdge::Left) { 0.0 } else { PAD };
+    let cx = bx + bw / 2.0;
+    let body = Rect::new(bx, 0.0, bw, bh);
     // Ease-out on the content layers so fades decelerate into place.
     let eo = |a: f32| 1.0 - (1.0 - a).powi(3);
 
     let mut c = Ctx { s: Scene::new(), hits: Vec::new(), vm, set, ui, now_ms, live: true };
 
-    let pts: Vec<(f32, f32)> = g.outline(cx, 0.0, bw, bh, set.island_style == IslandStyle::Pill);
+    // Anchored keeps a flat edge while it touches the screen: the top at the
+    // default spot, whichever side it docked to otherwise. Parked free it
+    // draws as a floating capsule.
+    let flat = match (set.island_style, isl.edge) {
+        (IslandStyle::Anchored, Some(e)) => Some(e),
+        (IslandStyle::Anchored, None) if set.island_pos.is_none_or(|(_, y)| y <= 0) => Some(DockEdge::Top),
+        _ => None,
+    };
+    let pts: Vec<(f32, f32)> = g.outline(cx, 0.0, bw, bh, flat);
     c.s.body(pts, Fill::VGrad(pal().body_top, pal().body_bottom), pal().rim, (0.45 + 0.55 * smooth(open)) * pal().shadow, pal().sheen);
 
     // Collapsed activity.
     let ca = eo(isl.compact_a);
-    collapsed(&mut c, body, ca);
+    if vert {
+        collapsed_v(&mut c, body, ca);
+    } else {
+        collapsed(&mut c, body, ca);
+    }
     if isl.card_a < 0.5 {
         let a = match vm.live_hud(now_ms) {
             Some(h) if h.kind == HudKind::Water && h.action_label.is_some() => Action::HudWater,
@@ -1185,15 +1382,21 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
         let eb = ui.page_ease_back();
         let sliding = ui.page_t < 1.0;
         let dy = -5.0 * (1.0 - ga);
-        if sliding {
-            c.live = false;
-            c.s.set_transform(-ui.page_dir * 26.0 * eb, -(ease * 5.0) + dy, ga * (1.0 - ease));
-            glance(&mut c, body, ui.prev_page);
+        if vert {
+            c.live = isl.glance_a > 0.9;
+            c.s.set_transform(0.0, dy, ga);
+            glance_v(&mut c, body);
+        } else {
+            if sliding {
+                c.live = false;
+                c.s.set_transform(-ui.page_dir * 26.0 * eb, -(ease * 5.0) + dy, ga * (1.0 - ease));
+                glance(&mut c, body, ui.prev_page);
+            }
+            c.live = isl.glance_a > 0.9 && !sliding;
+            let (dx, a) = if sliding { (ui.page_dir * 26.0 * (1.0 - eb), ga * ease.min(1.0)) } else { (0.0, ga) };
+            c.s.set_transform(dx, if sliding { (1.0 - ease) * 5.0 + dy } else { dy }, a);
+            glance(&mut c, body, vm.page);
         }
-        c.live = isl.glance_a > 0.9 && !sliding;
-        let (dx, a) = if sliding { (ui.page_dir * 26.0 * (1.0 - eb), ga * ease.min(1.0)) } else { (0.0, ga) };
-        c.s.set_transform(dx, if sliding { (1.0 - ease) * 5.0 + dy } else { dy }, a);
-        glance(&mut c, body, vm.page);
         c.s.reset_transform();
         c.live = true;
         c.s.pop_clip();
@@ -1202,18 +1405,27 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
     // Open card.
     let oa = eo(isl.card_a);
     if oa > 0.01 {
-        let card_x = cx - g.card_w / 2.0;
+        // Anchor the card to the docked edge so it grows inward from the
+        // screen; floating/top docks centre it inside the body as before.
+        let card_x = match isl.edge {
+            Some(DockEdge::Left) => body.x,
+            Some(DockEdge::Right) => body.right() - g.card_w,
+            _ => cx - g.card_w / 2.0,
+        };
+        let card_y = if isl.edge == Some(DockEdge::Bottom) { (body.bottom() - g.card_h).max(0.0) } else { 0.0 };
         c.s.clip(Rect::new(body.x + 1.0, 0.0, body.w - 2.0, body.h - 1.0));
         c.s.set_transform(0.0, -8.0 * (1.0 - oa), oa);
         c.live = isl.card_a > 0.9;
-        if is_blob_page(vm.page) {
-            blob_nav(&mut c, card_x, g);
+        // Side-docked: the narrow column can't host the tab row, so every
+        // page gets the bottom icon strip instead of the header.
+        if is_blob_page(vm.page) || vert {
+            blob_nav(&mut c, card_x, card_y, g);
         } else {
-            header(&mut c, card_x, g);
+            header(&mut c, card_x, card_y, g);
         }
         c.s.reset_transform();
 
-        let area_of = |p: Page| if is_blob_page(p) { blob_content_rect(card_x, g) } else { content_rect(card_x, g) };
+        let area_of = |p: Page| if is_blob_page(p) || vert { blob_content_rect(card_x, card_y, g) } else { content_rect(card_x, card_y, g) };
         let ease = ui.page_ease();
         let sliding = ui.page_t < 1.0;
         let dy = -8.0 * (1.0 - oa);
@@ -1232,7 +1444,7 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
             c.live = false;
             c.s.set_transform(0.0, 0.0, oa);
             let tw = est_w(msg, 12.5) + 28.0;
-            let tr = Rect::new(cx - tw / 2.0, g.card_h - 46.0, tw, 28.0);
+            let tr = Rect::new(cx - tw / 2.0, card_y + g.card_h - 46.0, tw, 28.0);
             c.s.rect(tr, 14.0, Color::rgba(40, 40, 48, 0.96));
             c.s.stroke(tr, 14.0, 1.0, pal().hairline);
             c.text(msg.clone(), tr, 12.5, Weight::Medium, pal().text, Align::Center);
@@ -1241,15 +1453,17 @@ pub fn build(vm: &ViewModel, set: &Settings, ui: &UiState, isl: &IslandView, now
         c.s.pop_clip();
     }
 
-    // Pill mode floats the whole island `gap` px below the screen edge.
-    let gap = set.top_gap();
-    if gap > 0.0 {
-        c.s.shift_y(gap);
+    // Pill mode floats the whole island `gap` px below the screen top; a
+    // side-docked bar shifts down by PAD instead so its top cap keeps the
+    // shadow padding the flat docked edge doesn't need.
+    let shift = if vert { PAD } else { set.top_gap() };
+    if shift > 0.0 {
+        c.s.shift_y(shift);
         for hit in c.hits.iter_mut() {
-            hit.rect.y += gap;
+            hit.rect.y += shift;
         }
     }
-    Frame { scene: c.s, hits: c.hits, w, h: h + gap }
+    Frame { scene: c.s, hits: c.hits, w, h: h + shift }
 }
 
 pub fn hit_test(hits: &[Hit], x: f32, y: f32) -> Option<Hit> {
@@ -1337,6 +1551,46 @@ mod tests {
     fn midway_morph_has_no_interactive_content() {
         let f = frame(Page::Music, 0.4);
         assert!(!f.hits.iter().any(|h| matches!(h.action, Action::Tab(_) | Action::MediaPlayPause)));
+    }
+
+    #[test]
+    fn side_docked_draws_a_vertical_bar_with_hits_inside() {
+        let now = Utc::now();
+        let mut vm = ViewModel::demo(now);
+        vm.sys.loaded = true;
+        let now_ms = now.timestamp_millis() as u64;
+        let mut set = Settings { island_pos: Some((0, 300)), ..Settings::default() };
+        for e in [DockEdge::Left, DockEdge::Right] {
+            set.island_edge = Some(e);
+            let mut ui = UiState::new(Page::Music);
+            for _ in 0..120 {
+                ui.tick(1.0 / 60.0, &vm, &set, now_ms);
+            }
+            let geom = DropletGeom {
+                pill_w: ui.compact_w,
+                pill_h: ui.compact_h,
+                glance_w: ui.glance_w,
+                glance_h: ui.glance_h,
+                card_w: ui.card_w,
+                card_h: ui.card_h,
+                ..DropletGeom::default()
+            };
+            assert!(ui.compact_w < ui.compact_h, "{e:?} compact should be a tall bar");
+            assert!(ui.glance_w < ui.glance_h, "{e:?} glance rail should be tall");
+            for open in [0.0, 0.5, 1.0] {
+                let isl = IslandView { edge: Some(e), ..IslandView::at(geom, open) };
+                let f = build(&vm, &set, &ui, &isl, now_ms);
+                for h in &f.hits {
+                    assert!(h.rect.x >= -0.01 && h.rect.right() <= f.w + 0.51, "{e:?} {:?} x-overflow {:?} vs {}", h.action, h.rect, f.w);
+                    assert!(h.rect.y >= -0.01 && h.rect.bottom() <= f.h + 0.01, "{e:?} {:?} y-overflow {:?} vs {}", h.action, h.rect, f.h);
+                }
+                if open < 1.0 {
+                    assert!(f.hits.iter().any(|h| h.action == Action::Island), "{e:?} open={open} lost the body hit");
+                } else {
+                    assert!(f.hits.iter().any(|h| matches!(h.action, Action::Tab(_))), "{e:?} open card lost its tabs");
+                }
+            }
+        }
     }
 
     /// No page may cover its glance with a click target of its own: that

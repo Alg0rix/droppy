@@ -35,11 +35,11 @@ use std::cell::{Cell, RefCell};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
-use teardrop_core::{apps, line_at, Hud, HudKind, IdleLook, LyricLine, Page, Playback, Settings};
+use teardrop_core::{apps, line_at, DockEdge, Hud, HudKind, IdleLook, LyricLine, Page, Playback, Settings};
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HANDLE, HGLOBAL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::DwmFlush;
-use windows::Win32::Graphics::Gdi::{CreateBitmap, DeleteObject, GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+use windows::Win32::Graphics::Gdi::{CreateBitmap, DeleteObject, GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::System::DataExchange::{
     AddClipboardFormatListener, CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard, RegisterClipboardFormatW,
     RemoveClipboardFormatListener, SetClipboardData,
@@ -64,6 +64,7 @@ const TRAY_MSG: u32 = 0x8001;
 const ID_QUIT: usize = 1000;
 const ID_TOGGLE: usize = 1001;
 const ID_SETTINGS: usize = 1002;
+const ID_CENTER: usize = 1003;
 const HOTKEY_ID: i32 = 1;
 const HOTKEY_VK: u32 = 0x54; // T
 /// Alt+Space: open straight into the launcher search.
@@ -139,6 +140,10 @@ thread_local! {
     static WHEEL_ACC: Cell<i32> = const { Cell::new(0) };
     static WHEEL_LAST: Cell<u64> = const { Cell::new(0) };
     static PRESS_AT: Cell<Option<(f32, f32)>> = const { Cell::new(None) };
+    /// Island-move drag: live while a body press travels past 6 px; the grab
+    /// offset (cursor px - window origin) keeps the pickup point under the cursor.
+    static MOVING: Cell<bool> = const { Cell::new(false) };
+    static MOVE_OFF: Cell<(i32, i32)> = const { Cell::new((0, 0)) };
     static SEEK_AT: Cell<Option<u64>> = const { Cell::new(None) };
     static WIN_POS: Cell<(i32, i32)> = const { Cell::new((0, 0)) };
     static LAST_TAB: Cell<Page> = const { Cell::new(Page::Music) };

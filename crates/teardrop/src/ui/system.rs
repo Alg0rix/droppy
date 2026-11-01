@@ -74,6 +74,59 @@ pub fn system(c: &mut Ctx, a: Rect) {
     }
 }
 
+/// Side-docked System: the chips row shrinks to fit the column, and each
+/// metric is a stacked row (label, value, sparkline) instead of three
+/// columns.
+pub fn system_v(c: &mut Ctx, a: Rect) {
+    chips(c, a, c.ui.sys_tab);
+    let mut y = a.y + CHIP_H + 10.0;
+    if !c.vm.sys.loaded {
+        c.empty_state(Rect::new(a.x, y, a.w, a.h - CHIP_H - 10.0), Icon::Chip, accent(Page::System), "Reading your system\u{2026}", "Live stats appear in a moment");
+        return;
+    }
+    let s = &c.vm.sys;
+    for &t in SysTab::ALL.iter() {
+        let col = tab_color(t, s);
+        let on = t == c.ui.sys_tab;
+        let r = Rect::new(a.x, y, a.w, 58.0);
+        let act = Action::SysTab(t);
+        let hv = c.hov(act);
+        if on {
+            c.s.rect(r, 13.0, col.fade(0.15));
+            c.s.stroke(r, 13.0, 1.2, col.fade(0.55));
+        } else if hv > 0.01 {
+            c.s.rect(r, 13.0, pal().surface_hover.fade(hv));
+        } else {
+            c.s.rect(r, 13.0, pal().surface);
+        }
+        let (value, hist, max): (String, Vec<&Series>, f32) = match t {
+            SysTab::Cpu => (format!("{:.0}%", s.cpu.total), vec![&s.cpu.history], 100.0),
+            SysTab::Gpu if s.gpu.available => (format!("{:.0}%", s.gpu.util), vec![&s.gpu.history], 100.0),
+            SysTab::Gpu => ("\u{2014}".into(), vec![], 100.0),
+            SysTab::Memory => (format!("{:.0}%", s.mem.pct()), vec![&s.mem.history], 100.0),
+            SysTab::Drives => {
+                let pk = s.drives.read_hist.peak().max(s.drives.write_hist.peak()).max(1.0e6);
+                (sysmon::fmt_rate(s.drives.read_bps + s.drives.write_bps), vec![&s.drives.read_hist, &s.drives.write_hist], pk)
+            }
+            SysTab::Network => {
+                let pk = s.net.down_hist.peak().max(s.net.up_hist.peak()).max(1.0e5);
+                (sysmon::fmt_rate(s.net.down_bps + s.net.up_bps), vec![&s.net.down_hist, &s.net.up_hist], pk)
+            }
+            SysTab::Battery if s.battery.present => (format!("{:.0}%", s.battery.pct), vec![&s.battery.history], 100.0),
+            SysTab::Battery => ("AC".into(), vec![], 100.0),
+        };
+        c.text(t.label(), Rect::new(r.x + 12.0, r.y + 7.0, r.w - 120.0, 14.0), 10.0, Weight::Medium, if on { col } else { pal().text_3 }, Align::Left);
+        c.text(value, Rect::new(r.right() - 108.0, r.y + 7.0, 96.0, 20.0), 15.0, Weight::Semibold, pal().text, Align::Right);
+        let sp = Rect::new(r.x + 12.0, r.bottom() - 24.0, r.w - 24.0, 18.0);
+        let multi = hist.len() > 1;
+        for (k, h) in hist.iter().enumerate() {
+            spark(c, sp, h, max, if multi && k == 1 { col.mix(pal().text, 0.45) } else { col });
+        }
+        c.hit(r, act);
+        y += 64.0;
+    }
+}
+
 // ------------------------------------------------------------------ chips
 
 fn chips(c: &mut Ctx, a: Rect, cur: SysTab) {

@@ -16,6 +16,7 @@
 //! turns into a path geometry. `width`/`height` are static samplers of the
 //! same pill -> glance -> card staging, used for tests and still frames.
 
+use crate::settings::DockEdge;
 use serde::{Deserialize, Serialize};
 
 /// Pixel geometry of one frame of the morph.
@@ -64,23 +65,28 @@ impl DropletGeom {
     }
 
     /// Sample the closed outline centered at `cx`, top edge at `top`: a
-    /// rounded rect `w` x `h`. Anchored keeps the top edge flat (glued to
-    /// the screen) with bottom radius `card_radius`; `floating` rounds all
-    /// four corners with a radius capped at half the height so the collapsed
-    /// pill is a true capsule. Returns a dense polygon (clockwise from the
-    /// top centre): straight runs every ~5px, corner arcs in 24 steps.
-    pub fn outline(&self, cx: f32, top: f32, w: f32, h: f32, floating: bool) -> Vec<(f32, f32)> {
+    /// rounded rect `w` x `h`. `flat` picks which side is drawn straight —
+    /// glued to that screen edge — so its two corners stay square. The other
+    /// corners take `card_radius`, capped at half the smaller side so the
+    /// collapsed pill is a true capsule. `None` rounds all four corners.
+    /// Returns a dense polygon (clockwise from the top centre): straight
+    /// runs every ~5px, corner arcs in 24 steps.
+    pub fn outline(&self, cx: f32, top: f32, w: f32, h: f32, flat: Option<DockEdge>) -> Vec<(f32, f32)> {
         use std::f32::consts::{FRAC_PI_2, PI};
         let h = h.max(2.0);
-        // Anchored only curves the bottom corners (the top is pinned flat to
-        // the screen edge), so the radius may use the full height, not just
-        // half of it.
+        // A flat side pinned to the screen edge lets the opposing corners
+        // use the full edge length for their radius; a floating capsule caps
+        // them at half so both arcs fit.
         let rb = self.card_radius.min(h).min(w / 2.0).max(1.0);
-        let (rt, rb) = if floating {
-            let r = self.card_radius.min(h / 2.0).min(w / 2.0).max(1.0);
-            (r, r)
-        } else {
-            (0.0, rb)
+        let rf = self.card_radius.min(h / 2.0).min(w / 2.0).max(1.0);
+        // Corner radii, clockwise from the top-left. Corners touching the
+        // flat side get zero (the edge itself is the silhouette there).
+        let (rtl, rtr, rbr, rbl) = match flat {
+            Some(DockEdge::Top) => (0.0, 0.0, rb, rb),
+            Some(DockEdge::Bottom) => (rb, rb, 0.0, 0.0),
+            Some(DockEdge::Left) => (0.0, rf, rf, 0.0),
+            Some(DockEdge::Right) => (rf, 0.0, 0.0, rf),
+            None => (rf, rf, rf, rf),
         };
 
         let (l, r, b) = (cx - w / 2.0, cx + w / 2.0, top + h);
@@ -100,19 +106,23 @@ impl DropletGeom {
                 poly.push((ccx + rad * a.cos(), ccy + rad * a.sin()));
             }
         };
-        straight(&mut poly, cx, top, r - rt, top);
-        if floating {
-            arc(&mut poly, r - rt, top + rt, -FRAC_PI_2, 0.0, rt);
+        straight(&mut poly, cx, top, r - rtr, top);
+        if rtr > 0.0 {
+            arc(&mut poly, r - rtr, top + rtr, -FRAC_PI_2, 0.0, rtr);
         }
-        straight(&mut poly, r, top + rt, r, b - rb);
-        arc(&mut poly, r - rb, b - rb, 0.0, FRAC_PI_2, rb);
-        straight(&mut poly, r - rb, b, l + rb, b);
-        arc(&mut poly, l + rb, b - rb, FRAC_PI_2, PI, rb);
-        straight(&mut poly, l, b - rb, l, top + rt);
-        if floating {
-            arc(&mut poly, l + rt, top + rt, PI, 3.0 * FRAC_PI_2, rt);
+        straight(&mut poly, r, top + rtr, r, b - rbr);
+        if rbr > 0.0 {
+            arc(&mut poly, r - rbr, b - rbr, 0.0, FRAC_PI_2, rbr);
         }
-        straight(&mut poly, l + rt, top, cx, top);
+        straight(&mut poly, r - rbr, b, l + rbl, b);
+        if rbl > 0.0 {
+            arc(&mut poly, l + rbl, b - rbl, FRAC_PI_2, PI, rbl);
+        }
+        straight(&mut poly, l, b - rbl, l, top + rtl);
+        if rtl > 0.0 {
+            arc(&mut poly, l + rtl, top + rtl, PI, 3.0 * FRAC_PI_2, rtl);
+        }
+        straight(&mut poly, l + rtl, top, cx, top);
         poly
     }
 }
@@ -140,7 +150,7 @@ mod tests {
         let g = DropletGeom::default();
         for t in [0.0, 0.25, 0.45, 0.7, 1.0] {
             let (w, h) = (g.width(t), g.height(t));
-            let pts = g.outline(500.0, 0.0, w, h, false);
+            let pts = g.outline(500.0, 0.0, w, h, Some(DockEdge::Top));
             assert!(pts.len() >= 48);
             let mean_x: f32 = pts.iter().map(|p| p.0).sum::<f32>() / pts.len() as f32;
             assert!((mean_x - 500.0).abs() < 2.0, "t={t} mean {mean_x}");
@@ -154,9 +164,29 @@ mod tests {
     }
 
     #[test]
+    fn side_docked_outline_is_flat_on_the_docked_edge() {
+        let g = DropletGeom::default();
+        // A left-docked bar: tall and narrow, left side straight to the edge.
+        let (w, h) = (42.0, 140.0);
+        let pts = g.outline(500.0, 10.0, w, h, Some(DockEdge::Left));
+        let left_x = 500.0 - w / 2.0;
+        let lft: Vec<f32> = pts.iter().filter(|p| (p.0 - left_x).abs() < 0.01).map(|p| p.1).collect();
+        let (min, max) = (lft.iter().cloned().fold(f32::MAX, f32::min), lft.iter().cloned().fold(f32::MIN, f32::max));
+        assert!(min <= 10.0 + 0.5 && max >= 10.0 + h - 0.5, "left run {min}..{max} vs h={h}");
+        assert!(pts.iter().all(|p| p.0 >= left_x - 0.01));
+        // Right dock mirrors it: no point left of the body's left edge.
+        let pts = g.outline(500.0, 10.0, w, h, Some(DockEdge::Right));
+        let right_x = 500.0 + w / 2.0;
+        let rgt: Vec<f32> = pts.iter().filter(|p| (p.0 - right_x).abs() < 0.01).map(|p| p.1).collect();
+        let (min, max) = (rgt.iter().cloned().fold(f32::MAX, f32::min), rgt.iter().cloned().fold(f32::MIN, f32::max));
+        assert!(min <= 10.0 + 0.5 && max >= 10.0 + h - 0.5, "right run {min}..{max}");
+        assert!(pts.iter().all(|p| p.0 <= right_x + 0.01));
+    }
+
+    #[test]
     fn floating_outline_rounds_the_top() {
         let g = DropletGeom::default();
-        let pts = g.outline(500.0, 0.0, g.pill_w, g.pill_h, true);
+        let pts = g.outline(500.0, 0.0, g.pill_w, g.pill_h, None);
         let r = g.card_radius.min(g.pill_h / 2.0).min(g.pill_w / 2.0).max(1.0);
         // No point sits on a top corner: every point on the top edge lies
         // within w/2 - r of the centre (the flat run between the two arcs).

@@ -10,7 +10,7 @@ use super::scene::Rect;
 use super::theme::PAD;
 use crate::viewmodel::{local_naive, ViewModel};
 use std::collections::HashMap;
-use teardrop_core::{AiProvider, EyeStyle, IdleLook, IslandStyle, IslandTheme, NoteDateFilter, Page, Settings, Spring};
+use teardrop_core::{AiProvider, DockEdge, EyeStyle, IdleLook, IslandStyle, IslandTheme, NoteDateFilter, Page, Settings, Spring};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SettingKey {
@@ -31,10 +31,11 @@ pub enum SettingKey {
     HotkeyAi,
     MeshChat,
     MeshHud,
+    IslandLock,
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 17] = [
+    pub const ALL: [SettingKey; 18] = [
         SettingKey::OpenOnHover,
         SettingKey::Lyrics,
         SettingKey::WaterReminders,
@@ -52,6 +53,7 @@ impl SettingKey {
         SettingKey::HotkeyAi,
         SettingKey::MeshChat,
         SettingKey::MeshHud,
+        SettingKey::IslandLock,
     ];
 
     pub fn get(self, s: &Settings) -> bool {
@@ -73,6 +75,7 @@ impl SettingKey {
             SettingKey::HotkeyAi => s.hotkey_ai,
             SettingKey::MeshChat => s.mesh_chat,
             SettingKey::MeshHud => s.mesh_hud,
+            SettingKey::IslandLock => s.island_locked,
         }
     }
 
@@ -96,6 +99,7 @@ impl SettingKey {
             SettingKey::HotkeyAi => s.hotkey_ai = v,
             SettingKey::MeshChat => s.mesh_chat = v,
             SettingKey::MeshHud => s.mesh_hud = v,
+            SettingKey::IslandLock => s.island_locked = v,
         }
     }
 
@@ -118,6 +122,7 @@ impl SettingKey {
             SettingKey::HotkeyAi => "Alt+I",
             SettingKey::MeshChat => "Mesh chat (BLE)",
             SettingKey::MeshHud => "Message previews",
+            SettingKey::IslandLock => "Lock place",
         }
     }
 }
@@ -191,6 +196,10 @@ pub enum Action {
     IslandStyle(IslandStyle),
     /// Step the pill mode's top gap (Settings stepper).
     PillGap(i8),
+    /// Reset a dragged island back to the centred top edge.
+    IslandCenter,
+    /// Dock the island centred on a chosen screen edge (Settings presets).
+    IslandDock(DockEdge),
     /// Set the birthday to today, or clear it (wheel nudges the day).
     Birthday,
     GoalStep(i8),
@@ -551,6 +560,9 @@ impl UiState {
 
     /// Compact (collapsed) size the island wants right now.
     pub fn compact_target(&self, vm: &ViewModel, s: &Settings, now_ms: u64) -> (f32, f32) {
+        if matches!(s.island_edge, Some(DockEdge::Left) | Some(DockEdge::Right)) {
+            return Self::compact_target_v(vm, s, now_ms);
+        }
         if let Some(h) = vm.live_hud(now_ms) {
             use teardrop_core::HudKind::*;
             let w = match h.kind {
@@ -602,6 +614,38 @@ impl UiState {
             IdleLook::Eyes => (128.0, 46.0),
             IdleLook::Minimal => (70.0, 30.0),
             IdleLook::Hidden => (132.0, 6.0),
+        }
+    }
+
+    /// Compact size for a side-docked island: a narrow vertical bar where
+    /// the same activities restack top to bottom. Returns (thickness, height).
+    fn compact_target_v(vm: &ViewModel, s: &Settings, now_ms: u64) -> (f32, f32) {
+        use teardrop_core::HudKind::*;
+        if let Some(h) = vm.live_hud(now_ms) {
+            return match h.kind {
+                Volume | Muted | Brightness if s.idle_look == IdleLook::Eyes => (46.0, 168.0),
+                Volume | Muted | Brightness => (46.0, 128.0),
+                _ if s.idle_look == IdleLook::Eyes => (46.0, 110.0),
+                _ => (46.0, 76.0),
+            };
+        }
+        if vm.voice.phase == crate::voice::VoicePhase::Recording {
+            return (44.0, if s.idle_look == IdleLook::Eyes { 136.0 } else { 96.0 });
+        }
+        if vm.meeting_soon().is_some() {
+            return (44.0, 76.0);
+        }
+        if vm.focus_visible() {
+            return (46.0, if vm.music_active() { 188.0 } else { 110.0 });
+        }
+        if vm.music_active() {
+            return (46.0, if s.idle_look == IdleLook::Eyes { 152.0 } else { 116.0 });
+        }
+        match s.idle_look {
+            IdleLook::Clock => (42.0, 66.0),
+            IdleLook::Eyes => (46.0, 62.0),
+            IdleLook::Minimal => (28.0, 56.0),
+            IdleLook::Hidden => (6.0, 110.0),
         }
     }
 
@@ -677,6 +721,30 @@ impl UiState {
         (w, 80.0)
     }
 
+    /// Open-card size for a side-docked island: a tall column hanging off
+    /// the screen edge instead of the wide card.
+    pub fn card_target_v(page: Page) -> (f32, f32) {
+        match page {
+            Page::Music => (336.0, 470.0),
+            Page::Focus => (336.0, 420.0),
+            Page::Water => (336.0, 420.0),
+            Page::Shelf => (336.0, 400.0),
+            Page::Tasks => (336.0, 380.0),
+            Page::Notes => (336.0, 420.0),
+            Page::Clipboard => (336.0, 360.0),
+            Page::Today => (336.0, 460.0),
+            Page::System => (336.0, 470.0),
+            Page::Quick => (336.0, 420.0),
+            Page::Speed => (336.0, 360.0),
+            Page::Usage => (336.0, 300.0),
+            Page::Voice => (336.0, 320.0),
+            Page::Ai => (336.0, 460.0),
+            Page::Chat => (336.0, 430.0),
+            Page::Windows => (336.0, 360.0),
+            Page::Settings => (336.0, 578.0),
+        }
+    }
+
     /// Open-card size the island wants for `page` (w, h). Pages drawn as
     /// blobs get their own size; the rest share the classic card.
     pub fn card_target(page: Page) -> (f32, f32) {
@@ -697,18 +765,21 @@ impl UiState {
             Page::Ai => (640.0, 400.0),
             Page::Chat => (620.0, 330.0),
             Page::Windows => (500.0, 300.0),
-            Page::Settings => (680.0, 470.0),
+            Page::Settings => (680.0, 512.0),
         }
     }
 
-    /// The collapsed body rect in window-local px (matches `layout::build`).
-    pub fn compact_body(&self) -> Rect {
-        Rect::new(PAD, 0.0, self.compact_w, self.compact_h)
+    /// The collapsed body rect in window-local px (matches `layout::build`'s
+    /// pre-shift space: the docked-side flush edge, y=0 — `build` shifts it
+    /// down by PAD at the end for vertical docks).
+    pub fn compact_body(&self, s: &Settings) -> Rect {
+        let bx = if s.island_edge == Some(DockEdge::Left) { 0.0 } else { PAD };
+        Rect::new(bx, 0.0, self.compact_w, self.compact_h)
     }
 
     fn tick_eyes(&mut self, dt: f32, vm: &ViewModel, s: &Settings, now_ms: u64) {
         let spot = self.face_spot(vm, s, now_ms);
-        let body = self.compact_body();
+        let body = self.compact_body(s);
         let collapsed = self.island_open < 0.12;
         let (fx, fy, k) = eyes::place(spot.unwrap_or(Spot::Idle), body);
         let senses = Senses {
@@ -790,13 +861,15 @@ impl UiState {
 
         // Open-card size follows the page (all pages share 680x318 today;
         // redesigned pages can claim their own blob size).
-        let (cw, ch) = Self::card_target(vm.page);
+        let vert = matches!(s.island_edge, Some(DockEdge::Left) | Some(DockEdge::Right));
+        let (cw, ch) = if vert { Self::card_target_v(vm.page) } else { Self::card_target(vm.page) };
         moving |= approach(&mut self.card_w, cw, 14.0, dt);
         moving |= approach(&mut self.card_h, ch, 14.0, dt);
 
         // Glance size eases per page too, so switching pages while peeking
-        // reflows the pill instead of snapping.
-        let (gw, gh) = Self::glance_target(vm.page);
+        // reflows the pill instead of snapping. Side-docked: the peek is the
+        // vertical page rail instead of a wide pill.
+        let (gw, gh) = if vert { (64.0, (super::layout::visible_pages(s).len() as f32 * 30.0 + 16.0).min(320.0)) } else { Self::glance_target(vm.page) };
         moving |= self.glance_ws.step(gw, dt);
         moving |= self.glance_hs.step(gh, dt);
         self.glance_w = self.glance_ws.value;
