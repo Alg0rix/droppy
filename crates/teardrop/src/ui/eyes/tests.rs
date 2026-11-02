@@ -107,6 +107,99 @@ fn real_peaks_drive_beats() {
     assert!((b.period - 0.5).abs() < 0.12, "period {}", b.period);
 }
 
+/// Feed `secs` of frames at a constant low level; the closure ticks `t`.
+fn quiet(b: &mut Beat, t: &mut f32, secs: f32) {
+    let dt = 1.0 / 60.0;
+    for _ in 0..(secs * 60.0) as usize {
+        *t += dt;
+        b.feed(Some(0.08), true, *t, dt);
+    }
+}
+
+/// One loud tick, surrounded by quiet frames.
+fn kick(b: &mut Beat, t: &mut f32) {
+    *t += 1.0 / 60.0;
+    b.feed(Some(0.9), true, *t, 1.0 / 60.0);
+}
+
+#[test]
+fn missed_beats_fill_on_the_grid() {
+    let mut b = Beat::new();
+    let mut t = 0.0;
+    // Lock onto a 0.5 s groove.
+    for _ in 0..6 {
+        kick(&mut b, &mut t);
+        quiet(&mut b, &mut t, 0.48);
+    }
+    let (count, last) = (b.count, b.last);
+    // The drummer drops out for two bars: fills must land on the grid,
+    // not lurch at some other interval.
+    quiet(&mut b, &mut t, 2.0);
+    let fills = b.count - count;
+    assert!(fills >= 3, "only {fills} fills in 2 s");
+    let off = ((b.last - last) / b.period).fract().abs();
+    assert!(off < 0.05 || off > 0.95, "grid drifted {off}");
+    // And the hit after the dropout re-locks without double counting.
+    let count = b.count;
+    kick(&mut b, &mut t);
+    assert!(b.count - count <= 2, "double counted a late hit");
+}
+
+#[test]
+fn off_beat_hits_accent_not_count() {
+    let mut b = Beat::new();
+    let mut t = 0.0;
+    // Lock the grid: six clean beats.
+    for _ in 0..6 {
+        kick(&mut b, &mut t);
+        quiet(&mut b, &mut t, 0.48);
+    }
+    assert!(b.sure >= 4, "grid never locked");
+    // One grid fill lands while it goes quiet.
+    quiet(&mut b, &mut t, 0.31);
+    let count = b.count;
+    // A syncopated hit between beats: an accent, not a beat.
+    kick(&mut b, &mut t);
+    assert_eq!(b.count, count, "an off-beat hit moved the count");
+    assert!((b.accent - (t - BEAT_LAG)).abs() < 1e-4, "no accent recorded");
+    // It still kicks the pulse a little, softer than a real beat.
+    let p = b.pulse(t);
+    assert!(p > 0.35 && p < 0.9, "accent pulse {p}");
+    // And a hit right behind a counted beat is the same hit, not a new one.
+    quiet(&mut b, &mut t, 0.45);
+    let count = b.count;
+    quiet(&mut b, &mut t, 0.2);
+    kick(&mut b, &mut t);
+    assert_eq!(b.count, count + 1, "the next on-grid hit should count once");
+}
+
+#[test]
+fn tempo_locks_onto_a_new_speed() {
+    let mut b = Beat::new();
+    let mut t = 0.0;
+    // 0.42 s hits against the 0.5 s starting guess.
+    for _ in 0..10 {
+        kick(&mut b, &mut t);
+        quiet(&mut b, &mut t, 0.40);
+    }
+    assert!((b.period - 0.42).abs() < 0.05, "period {}", b.period);
+    assert!(b.sure >= 4, "grid never locked");
+}
+
+#[test]
+fn sustained_loudness_doesnt_machine_gun() {
+    let mut b = Beat::new();
+    let mut t = 0.0;
+    let dt = 1.0 / 60.0;
+    for _ in 0..180 {
+        t += dt;
+        b.feed(Some(0.9), true, t, dt);
+    }
+    // Three seconds pinned loud: one crossing, then only grid fills —
+    // never a beat every 0.27 s.
+    assert!(b.count <= 8, "count {}", b.count);
+}
+
 #[test]
 fn bits_remember_and_follow_the_weather() {
     let (mut e, w) = settled();

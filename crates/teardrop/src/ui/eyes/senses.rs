@@ -237,6 +237,7 @@ impl Eyes {
             self.track_key = key;
             self.track_t = t;
             self.genre = genre_of(tr);
+            self.beat.relock();
         } else if !tr.title.is_empty() {
             if tr.playback == Playback::Playing && self.last_pos > 15_000 && tr.position_ms < 4_000 {
                 self.react(React::Sparkle);

@@ -1158,8 +1158,12 @@ fn genre_of(t: &Track) -> Genre {
     }
 }
 
-/// Onset detector over the output peak meter. Falls back to a steady
-/// 120 bpm when there is no meter (or it reads silence while "playing").
+/// Onset detector + tempo grid over the output peak meter. A heard hit
+/// near the grid confirms the beat (and lands the pulse on the hit itself);
+/// a hit that lands off the grid is an accent — it kicks the pulse but
+/// doesn't move the count; a beat the detector misses still counts on-grid
+/// so a quiet bar never bends the groove. Falls back to a steady 120 bpm
+/// metronome when there is no meter (or it reads silence while "playing").
 #[derive(Debug, Clone)]
 pub(crate) struct Beat {
     slow: f32,
@@ -1170,44 +1174,106 @@ pub(crate) struct Beat {
     real: bool,
     silent_s: f32,
     /// Strength of the latest beat 0..1 (how far the onset jumped over the
-    /// running level); filler beats are soft.
+    /// running level); grid fills are soft.
     pub(crate) hit: f32,
+    /// Previous peak sample: an onset is a crossing, not a loud frame.
+    prev: f32,
+    /// Last detected onset (refractory), counted or accented.
+    on: f32,
+    /// Last off-beat hit: a softer pulse that leaves the count alone.
+    accent: f32,
+    /// Consecutive onsets that confirmed the grid. Below a few, off-grid
+    /// hits mean the tempo guess is wrong and bend it hard; above, they
+    /// ride along as accents.
+    sure: u32,
 }
+
+/// The heard hit always lands before we see it: the meter holds a whole
+/// metering period and it is read on a 30 fps tick, so the beat anchor sits
+/// ~a frame behind the sample to put the pulse crest on the audible beat.
+const BEAT_LAG: f32 = 0.04;
 
 impl Beat {
     pub(crate) fn new() -> Self {
-        Self { slow: 0.0, energy: 0.35, last: 0.0, period: 0.5, count: 0, real: false, silent_s: 0.0, hit: 0.5 }
+        Self { slow: 0.0, energy: 0.35, last: 0.0, period: 0.5, count: 0, real: false, silent_s: 0.0, hit: 0.5, prev: 0.0, on: -1.0, accent: -10.0, sure: 0 }
+    }
+
+    /// A different track is playing: keep the tempo as a first guess but
+    /// let off-grid hits re-anchor the grid right away.
+    pub(crate) fn relock(&mut self) {
+        self.sure = 0;
     }
 
     pub(crate) fn feed(&mut self, peak: Option<f32>, playing: bool, t: f32, dt: f32) {
         if !playing {
             self.real = false;
+            self.prev = 0.0;
+            self.sure = 0;
             return;
         }
         let k = |r: f32| 1.0 - (-r * dt).exp();
-        match peak {
-            Some(pk) => {
-                self.slow += (pk - self.slow) * k(1.2);
-                self.energy += (self.slow.min(1.0) - self.energy) * k(0.8);
-                self.silent_s = if pk < 0.002 { self.silent_s + dt } else { 0.0 };
-                self.real = self.silent_s < 3.0;
-                let gap = t - self.last;
-                let edge = self.slow * 1.3 + 0.015;
-                if self.real && pk > edge && gap > 0.27 {
-                    if gap < 1.4 {
-                        self.period += (gap.clamp(0.3, 1.2) - self.period) * 0.3;
-                    }
-                    self.last = t;
+        if let Some(pk) = peak {
+            self.slow += (pk - self.slow) * k(1.2);
+            self.energy += (self.slow.min(1.0) - self.energy) * k(0.8);
+            self.silent_s = if pk < 0.002 { self.silent_s + dt } else { 0.0 };
+            self.real = self.silent_s < 3.0;
+            // Onset = the peak crossing UP through a level just above the
+            // running loudness. Requiring the crossing (not just a loud
+            // frame) is one hit per transient, so a sustained chorus
+            // doesn't machine-gun beats the way a plain threshold did.
+            let edge = self.slow * 1.28 + 0.02;
+            let crossed = pk > edge && self.prev <= edge;
+            // Refractory scales with tempo: 8th-note hits still register.
+            let refr = (self.period * 0.45).clamp(0.15, 0.27);
+            let onset = self.real && crossed && t - self.on > refr;
+            self.prev = pk;
+            if onset {
+                self.on = t;
+                let at = t - BEAT_LAG;
+                let gap = at - self.last;
+                let n = (gap / self.period).round() as i32;
+                let err = if (1..=4).contains(&n) { at - (self.last + n as f32 * self.period) } else { f32::MAX };
+                let strength = (0.45 + (pk / edge - 1.0) * 1.2).clamp(0.45, 1.0);
+                if err.abs() <= 0.32 * self.period {
+                    // On the grid: count it (`n` covers a hit the detector
+                    // skipped) and ease the tempo toward the observed gap.
+                    self.period += ((gap / n as f32).clamp(0.28, 1.4) - self.period) * 0.22;
+                    self.last = at;
+                    self.count += n as u32;
+                    self.hit = strength;
+                    self.sure = (self.sure + 1).min(12);
+                } else if self.sure >= 4 || gap < 0.5 * self.period {
+                    // Off-beat on a locked grid — or the same hit arriving a
+                    // tick after its grid fill: a softer kick, count stays.
+                    self.accent = at;
+                    self.hit = self.hit.max(strength);
+                    self.sure = self.sure.saturating_sub(1);
+                } else {
+                    // Off the grid and not locked: the tempo guess is wrong,
+                    // so count the hit and bend the period toward its spacing.
+                    self.period += (gap.clamp(0.28, 1.4) - self.period) * 0.45;
+                    self.last = at;
                     self.count += 1;
-                    self.hit = (0.45 + (pk / edge - 1.0) * 1.2).clamp(0.45, 1.0);
+                    self.hit = strength;
+                    self.sure = 1;
                 }
+                self.period = self.period.clamp(0.28, 1.4);
             }
-            None => self.real = false,
+        } else {
+            self.real = false;
+            self.prev = 0.0;
         }
-        // Keep moving: metronome without a meter, filler beats in quiet bars.
-        let wait = if self.real { self.period * 2.2 } else { self.period };
-        if t - self.last >= wait {
+        // A pause isn't a silent solo: snap forward instead of counting
+        // hundreds of missed bars.
+        if t - self.last > self.period * 4.0 {
             self.last = t;
+            self.count += 1;
+        }
+        // Grid fill: a beat the detector misses still counts, right on the
+        // predicted time (a 12% grace leaves room for a late hit to claim
+        // it first). Without a meter the same loop is the metronome.
+        while t - self.last >= self.period * if self.real { 1.12 } else { 1.0 } {
+            self.last += self.period;
             self.count += 1;
             self.hit = if self.real { 0.35 } else { 0.6 };
         }
@@ -1218,8 +1284,11 @@ impl Beat {
         ((t - self.last) / self.period).clamp(0.0, 1.0)
     }
 
+    /// Sharp crest on each counted beat; off-beat accents kick at 60%.
     pub(crate) fn pulse(&self, t: f32) -> f32 {
-        (-(t - self.last).max(0.0) * 7.0).exp()
+        let main = (-(t - self.last).max(0.0) * 8.0).exp() * 1.35;
+        let off = (-(t - self.accent).max(0.0) * 8.0).exp() * 0.6;
+        main.max(off).min(1.0)
     }
 
     fn sway(&self, t: f32) -> f32 {

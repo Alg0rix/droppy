@@ -115,8 +115,12 @@ Each page is `core` state + a thin Windows sampler:
   and level changes kick it (hop, squish, wobble), so motion overshoots
   and settles instead of easing in flat.
 - **Dance**: while music plays the dancer picks a `Move` per phrase (4 or 8
-  beats) from a pool per mood (Dance/Headbang/Vibe) weighted by energy;
-  beat strength from the peak meter scales each accent, notes fly on the beat.
+  beats) from a pool per mood (Dance/Headbang/Vibe) weighted by energy. The
+  `Beat` tracker runs a tempo grid over the peak meter: rising-edge onsets
+  near the grid confirm (snapping the pulse to the heard hit and easing the
+  period), off-grid hits ride along as softer accents, beats the detector
+  misses fill exactly on-grid, and a new track re-locks. Beat strength
+  scales each accent; notes fly on the beat.
 - **Gauge**: volume and brightness HUDs carry the face (`Spot::Hud`). It
   acts out the level live: watches the bar, eyes grow with volume, winces
   near max, clamps shut on mute; pupils dilate in the dark and squint (then
